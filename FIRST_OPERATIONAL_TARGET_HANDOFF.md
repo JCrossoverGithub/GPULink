@@ -24,7 +24,7 @@ cancellation, persistence, and the worker lifecycle. The remaining acceptance
 work requires the operator's real infrastructure:
 
 - a DNS hostname pointed to the DigitalOcean droplet;
-- the control-plane and Caddy services installed on the droplet;
+- the Docker control plane and Nginx HTTPS route installed on the droplet;
 - WSL2 workers enrolled on the RTX 3070 Ti desktop and RTX 4060 laptop;
 - the diagnostic, drain/resume, restart, persistence, and external-access
   checks in `docs/FIRST_OPERATIONAL_TARGET.md` completed.

@@ -64,4 +64,4 @@ systemctl enable --now gpulink-control.service
 systemctl --no-pager --full status gpulink-control.service
 
 echo "GPUlink is listening only on 127.0.0.1:8088."
-echo "Configure Caddy and HTTPS before allowing external clients."
+echo "Configure a reverse proxy and HTTPS before allowing external clients."

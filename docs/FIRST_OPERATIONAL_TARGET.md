@@ -15,8 +15,8 @@ This target does not install Parakeet or a local LLM.
 - A private GitHub repository containing this tree
 - A domain or subdomain pointed at the droplet
 - Ubuntu on the DigitalOcean droplet
-- Node.js 24 or newer at `/usr/bin/node`
-- Caddy on the droplet
+- Docker Engine and Docker Compose v2 on the droplet
+- Nginx and Certbot on the droplet
 - WSL2 Ubuntu with systemd on both Windows machines
 - Node.js 24 or newer at `/usr/bin/node` inside each WSL distribution
 - `nvidia-smi` working inside WSL
@@ -33,29 +33,34 @@ git clone <your-private-gpulink-repository-url>
 cd gpulink
 ```
 
-Verify the source before installing:
+Verify the container tooling and source before installing:
 
 ```bash
-node --version
-node --test
+docker version
+docker compose version
 git status --short
 ```
 
-Install the service:
+Install the isolated Docker service:
 
 ```bash
-sudo ./scripts/install-control-plane.sh
+sudo ./scripts/install-control-plane-docker.sh
 ```
 
-The installer creates a locked-down system account, installs source under
-`/opt/gpulink`, generates three credentials if none exist, stores durable state
-under `/var/lib/gpulink`, and binds the API only to `127.0.0.1:8088`.
+The installer copies the reviewed source under `/opt/gpulink`, generates three
+credentials if none exist, creates a named Docker volume for durable state, and
+publishes the API only on `127.0.0.1:8088`. The container uses the pinned
+official Node.js 24 image, a read-only root filesystem, no Linux capabilities,
+and explicit CPU and memory limits.
 
 Confirm local health:
 
 ```bash
 curl --fail http://127.0.0.1:8088/healthz
-sudo journalctl -u gpulink-control -n 100 --no-pager
+sudo docker compose \
+  -f /opt/gpulink/deploy/digitalocean/compose.yml ps
+sudo docker compose \
+  -f /opt/gpulink/deploy/digitalocean/compose.yml logs --tail=100
 ```
 
 Retrieve credentials only from a secure administrative session:
@@ -70,14 +75,17 @@ with the operator.
 
 ## 2. Configure HTTPS
 
-Copy the example and replace `gpu.example.com` with the real hostname:
+Copy the Nginx example and replace the example hostname when necessary:
 
 ```bash
 sudo install -o root -g root -m 0644 \
-  deploy/digitalocean/Caddyfile.example /etc/caddy/Caddyfile
-sudo editor /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+  deploy/digitalocean/nginx-gpulink.conf.example \
+  /etc/nginx/sites-available/gpulink
+sudo editor /etc/nginx/sites-available/gpulink
+sudo ln -s /etc/nginx/sites-available/gpulink /etc/nginx/sites-enabled/gpulink
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d gpulink.schultzsystems.com
 ```
 
 Only SSH, HTTP, and HTTPS should be publicly permitted. Port `8088` must remain
@@ -86,7 +94,7 @@ closed externally.
 Verify from a device outside the droplet:
 
 ```bash
-curl --fail https://gpu.example.com/healthz
+curl --fail https://gpulink.schultzsystems.com/healthz
 ```
 
 Do not enroll workers until HTTPS succeeds with a valid certificate.
@@ -124,7 +132,7 @@ cd gpulink
 read -rsp "GPUlink worker token: " GPULINK_WORKER_TOKEN
 echo
 export GPULINK_WORKER_TOKEN
-export GPULINK_URL=https://gpu.example.com
+export GPULINK_URL=https://gpulink.schultzsystems.com
 export GPULINK_WORKER_HOST_TYPE=desktop
 sudo -E ./scripts/install-worker-wsl.sh desktop-3070ti
 unset GPULINK_WORKER_TOKEN
@@ -168,7 +176,7 @@ connection and scheduling target is accepted.
 From an administrative copy of the repository:
 
 ```bash
-export GPULINK_URL=https://gpu.example.com
+export GPULINK_URL=https://gpulink.schultzsystems.com
 read -rsp "GPUlink admin token: " GPULINK_ADMIN_TOKEN
 echo
 export GPULINK_ADMIN_TOKEN
@@ -222,7 +230,8 @@ Confirm it returns online without creating a duplicate worker identity.
 Submit a job while both workers are drained, then restart the control plane:
 
 ```bash
-sudo systemctl restart gpulink-control
+sudo docker compose \
+  -f /opt/gpulink/deploy/digitalocean/compose.yml restart control-plane
 ```
 
 Confirm the queued job still exists. Resume one worker and confirm the job is
