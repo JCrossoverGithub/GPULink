@@ -11,7 +11,7 @@
 - Server-sent operational events
 - Prometheus-format platform metrics
 - Tested worker and job lifecycle contracts
-- DigitalOcean control plane behind Caddy HTTPS
+- Docker-isolated DigitalOcean control plane behind Nginx HTTPS
 - Outbound-only WSL2 worker services on Windows hosts
 - Separate client, worker, and administrator credentials
 - Allowlisted per-GPU `nvidia-smi` diagnostic workload

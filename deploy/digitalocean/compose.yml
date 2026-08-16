@@ -1,0 +1,43 @@
+services:
+  control-plane:
+    image: gpulink-control-plane:local
+    build:
+      context: ../..
+      dockerfile: deploy/digitalocean/Dockerfile
+    env_file:
+      - /etc/gpulink/control-plane.env
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - gpulink-data:/var/lib/gpulink
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 0.50
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8088/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  gpulink-data:
+    name: gpulink-control-data

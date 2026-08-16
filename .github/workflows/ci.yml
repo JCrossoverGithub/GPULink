@@ -23,3 +23,5 @@ jobs:
         with:
           node-version: 24
       - run: npm run check
+      - if: runner.os == 'Linux'
+        run: docker build -f deploy/digitalocean/Dockerfile -t gpulink-control-plane:test .

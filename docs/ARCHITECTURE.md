@@ -52,12 +52,13 @@ GPUlink's scheduling or identity model.
 
 ## Deployment topology
 
-The public DigitalOcean droplet runs the control plane on loopback. Caddy is
-the only public listener and terminates HTTPS. Each Windows GPU host runs the
-worker under WSL2 and initiates outbound HTTPS requests to the droplet; no
-worker port is exposed to the internet. Restartable system services run both
-components. Workers can be drained before gaming, maintenance, or desktop-heavy
-work and resumed without changing their identity.
+The public DigitalOcean droplet runs the control plane in a resource-bounded,
+read-only Docker container. Docker publishes it only on loopback, while the
+droplet's existing Nginx service is the public listener and terminates HTTPS.
+Each Windows GPU host runs the worker under WSL2 and initiates outbound HTTPS
+requests to the droplet; no worker port is exposed to the internet. Workers can
+be drained before gaming, maintenance, or desktop-heavy work and resumed
+without changing their identity.
 
 ## Durable state machine
 
