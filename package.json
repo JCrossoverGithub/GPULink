@@ -1,0 +1,18 @@
+{
+  "name": "gpulink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An open-source platform for securely scheduling and serving GPU workloads across personal computers.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "control-plane": "node src/control-plane/main.mjs",
+    "worker": "node src/worker/main.mjs",
+    "cli": "node src/cli/main.mjs",
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --test"
+  }
+}

@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createControlPlane } from "../src/control-plane/app.mjs";
+import { WorkerAgent } from "../src/worker/agent.mjs";
+
+test("worker agent discovers a GPU and completes an allowlisted diagnostic job", async () => {
+  const tokens = {
+    client: "worker-e2e-client-token-at-least-32-characters",
+    worker: "worker-e2e-worker-token-at-least-32-characters",
+    admin: "worker-e2e-admin-token-at-least-32-characters",
+  };
+  const app = createControlPlane({
+    host: "127.0.0.1",
+    port: 0,
+    dataPath: ":memory:",
+    tokens,
+    heartbeatTimeoutMs: 5_000,
+    leaseDurationMs: 2_000,
+    schedulerIntervalMs: 20,
+    vramSafetyMiB: 512,
+  });
+  const address = await app.start();
+  const agent = new WorkerAgent({
+    controlPlaneUrl: `http://127.0.0.1:${address.port}`,
+    token: tokens.worker,
+    name: "agent-e2e-worker",
+    version: "test",
+    heartbeatIntervalMs: 100,
+    assignmentIntervalMs: 20,
+    capabilities: ["diagnostic.echo"],
+    labels: {},
+    warmModels: [],
+    fakeGpus: [{
+      uuid: "GPU-AGENT-E2E",
+      index: 0,
+      name: "Agent E2E GPU",
+      memoryTotalMiB: 24576,
+      memoryUsedMiB: 0,
+      utilizationPercent: 0,
+      temperatureC: 35,
+      powerDrawWatts: 25,
+    }],
+  });
+
+  try {
+    await agent.start();
+    const submitted = app.service.submitJob({
+      projectId: "test",
+      type: "diagnostic.echo",
+      constraints: { minVramMiB: 1000 },
+      payload: { echo: "verified", durationMs: 10 },
+    }).job;
+
+    const finished = await waitForJob(app.database, submitted.id, "succeeded", 2_000);
+    assert.equal(finished.assignedGpuUuid, "GPU-AGENT-E2E");
+    assert.equal(finished.result.echo, "verified");
+  } finally {
+    await agent.stop();
+    await app.stop();
+  }
+});
+
+async function waitForJob(database, jobId, status, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = database.getJob(jobId);
+    if (job.status === status) return job;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const job = database.getJob(jobId);
+  throw new Error(`Timed out waiting for ${jobId} to become ${status}; current state is ${job.status}`);
+}

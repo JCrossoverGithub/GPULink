@@ -1,0 +1,13 @@
+{
+  "name": "gpu-worker-01",
+  "labels": {
+    "hostType": "desktop",
+    "operatingSystem": "windows-wsl",
+    "availabilityProfile": "shared"
+  },
+  "capabilities": [
+    "diagnostic.echo",
+    "diagnostic.gpu-status"
+  ],
+  "warmModels": []
+}

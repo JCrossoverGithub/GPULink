@@ -1,0 +1,28 @@
+[Unit]
+Description=GPUlink control plane and public API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gpulink
+Group=gpulink
+WorkingDirectory=/opt/gpulink
+EnvironmentFile=/etc/gpulink/control-plane.env
+ExecStart=/usr/bin/node /opt/gpulink/src/control-plane/main.mjs
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gpulink
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

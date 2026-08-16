@@ -1,0 +1,27 @@
+[Unit]
+Description=GPUlink WSL GPU worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gpulink
+Group=gpulink
+WorkingDirectory=/opt/gpulink
+EnvironmentFile=/etc/gpulink/worker.env
+ExecStart=/usr/bin/node /opt/gpulink/src/worker/main.mjs
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

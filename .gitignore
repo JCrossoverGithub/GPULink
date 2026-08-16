@@ -1,0 +1,14 @@
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+.env
+*.env
+!*.env.example
+appsettings.Development.json
+credentials*.json
+service-account*.json
+node_modules/
+coverage/
+dist/
