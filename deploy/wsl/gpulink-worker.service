@@ -9,7 +9,8 @@ User=gpulink
 Group=gpulink
 WorkingDirectory=/opt/gpulink
 EnvironmentFile=/etc/gpulink/worker.env
-ExecStart=/usr/bin/node /opt/gpulink/src/worker/main.mjs
+Environment="PATH=/opt/gpulink/runtime:/usr/lib/wsl/lib:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+ExecStart=/opt/gpulink/runtime/node /opt/gpulink/src/worker/main.mjs
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
