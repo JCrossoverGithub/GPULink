@@ -18,7 +18,7 @@ This target does not install Parakeet or a local LLM.
 - Docker Engine and Docker Compose v2 on the droplet
 - Nginx and Certbot on the droplet
 - WSL2 Ubuntu with systemd on both Windows machines
-- Node.js 24 or newer at `/usr/bin/node` inside each WSL distribution
+- Node.js 24 or newer available inside each WSL distribution; NVM is supported
 - `nvidia-smi` working inside WSL
 
 Never paste tokens into GitHub, an issue, a commit, or chat. Keep the three
@@ -134,8 +134,10 @@ echo
 export GPULINK_WORKER_TOKEN
 export GPULINK_URL=https://gpulink.schultzsystems.com
 export GPULINK_WORKER_HOST_TYPE=desktop
+export GPULINK_NODE_BINARY="$(command -v node)"
 sudo -E ./scripts/install-worker-wsl.sh desktop-3070ti
 unset GPULINK_WORKER_TOKEN
+unset GPULINK_NODE_BINARY
 ```
 
 Verify:
@@ -164,7 +166,9 @@ Repeat the process on the laptop with:
 
 ```bash
 export GPULINK_WORKER_HOST_TYPE=laptop
+export GPULINK_NODE_BINARY="$(command -v node)"
 sudo -E ./scripts/install-worker-wsl.sh laptop-4060
+unset GPULINK_NODE_BINARY
 ```
 
 The current sign-in task uses Windows Task Scheduler's battery-safe defaults.

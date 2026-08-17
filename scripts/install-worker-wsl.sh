@@ -26,20 +26,24 @@ if [[ ${#GPULINK_WORKER_TOKEN} -lt 32 ]]; then
 fi
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-node_major="$(node --version 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/' || true)"
-if [[ -z ${node_major} || ${node_major} -lt 24 ]]; then
-  echo "Node.js 24 or newer is required inside WSL." >&2
+node_binary="${GPULINK_NODE_BINARY:-}"
+if [[ -z ${node_binary} || ${node_binary} != /* || ! -x ${node_binary} ]]; then
+  echo "Set GPULINK_NODE_BINARY to an absolute, executable Node.js 24 path before sudo." >&2
   exit 1
 fi
-if [[ $(command -v node) != "/usr/bin/node" ]]; then
-  echo "Install Node.js 24 system-wide at /usr/bin/node so the system service can start it." >&2
+node_binary="$(readlink -f "${node_binary}")"
+node_major="$("${node_binary}" --version 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/' || true)"
+if [[ -z ${node_major} || ${node_major} -lt 24 ]]; then
+  echo "GPULINK_NODE_BINARY must identify Node.js 24 or newer." >&2
   exit 1
 fi
 if ! systemctl show --property=Version >/dev/null 2>&1; then
   echo "WSL systemd is not running. Enable systemd in /etc/wsl.conf and restart WSL." >&2
   exit 1
 fi
-if ! nvidia-smi >/dev/null 2>&1; then
+nvidia_smi_binary="${GPULINK_NVIDIA_SMI_BINARY:-/usr/lib/wsl/lib/nvidia-smi}"
+if [[ ${nvidia_smi_binary} != /* || ! -x ${nvidia_smi_binary} ]] \
+  || ! "${nvidia_smi_binary}" >/dev/null 2>&1; then
   echo "nvidia-smi is not available inside WSL. Fix NVIDIA WSL GPU access first." >&2
   exit 1
 fi
@@ -48,12 +52,15 @@ id -u gpulink >/dev/null 2>&1 || useradd --system --home /var/lib/gpulink --crea
 getent group video >/dev/null 2>&1 && usermod -aG video gpulink
 getent group render >/dev/null 2>&1 && usermod -aG render gpulink
 install -d -o root -g root -m 0755 /opt/gpulink
+install -d -o root -g root -m 0755 /opt/gpulink/runtime
 install -d -o root -g gpulink -m 0750 /etc/gpulink
 
 cp -a "${repository_root}/package.json" "${repository_root}/src" /opt/gpulink/
 chown -R root:root /opt/gpulink
 find /opt/gpulink -type d -exec chmod 0755 {} +
 find /opt/gpulink -type f -exec chmod 0644 {} +
+install -o root -g root -m 0755 "${node_binary}" /opt/gpulink/runtime/node
+/opt/gpulink/runtime/node --version
 
 host_type="${GPULINK_WORKER_HOST_TYPE:-desktop}"
 environment_file=/etc/gpulink/worker.env

@@ -55,6 +55,7 @@ outward for leases, so no inbound port is opened on a desktop or laptop.
 - Node.js 24 or newer for local development
 - Ubuntu host with Docker Engine, Docker Compose v2, and Nginx for the control plane
 - Windows 11 with WSL2 and systemd for GPU workers
+- Node.js 24 or newer in WSL; the installer copies the selected runtime out of NVM or another installation
 - NVIDIA drivers with a working `nvidia-smi` inside WSL
 - A domain or subdomain pointed at the DigitalOcean droplet
 
