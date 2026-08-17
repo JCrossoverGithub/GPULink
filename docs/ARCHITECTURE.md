@@ -60,6 +60,31 @@ requests to the droplet; no worker port is exposed to the internet. Workers can
 be drained before gaming, maintenance, or desktop-heavy work and resumed
 without changing their identity.
 
+## Operations console
+
+The first visual operations slice uses Angular for presentation and a small
+Flask backend-for-frontend for read-only aggregation:
+
+```mermaid
+flowchart LR
+    Browser["Angular console"]
+    Gateway["Flask operations gateway"]
+    Control["Node.js control plane"]
+
+    Browser -->|"same-origin /api"| Gateway
+    Gateway -->|"scoped HTTPS calls"| Control
+```
+
+Flask holds the existing administrator and client bootstrap credentials in its
+process environment. Angular never receives either credential. The gateway
+returns bounded fleet and job projections, excludes job payloads and results,
+and adds no cross-origin access. The development listener stays on loopback.
+
+The control plane remains the only authority for scheduling and durable state.
+The operations gateway does not write to the scheduler database, emulate job
+state, or contact workers directly. Authenticated production exposure and safe
+administrative controls are later dashboard slices.
+
 ## Durable state machine
 
 Jobs use these states:
