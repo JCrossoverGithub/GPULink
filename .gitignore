@@ -12,3 +12,7 @@ service-account*.json
 node_modules/
 coverage/
 dist/
+.angular/
+.venv/
+__pycache__/
+*.pyc

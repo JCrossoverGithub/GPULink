@@ -1,0 +1,236 @@
+<main class="console-shell">
+  <header class="topbar">
+    <div class="brand-lockup">
+      <div class="brand-mark" aria-hidden="true">
+        <span>GL</span>
+      </div>
+      <div>
+        <p class="eyebrow">GPUlink</p>
+        <h1>Operations console</h1>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      @if (snapshot(); as current) {
+        <div class="control-state" [class.is-offline]="current.controlPlane.status !== 'ok'">
+          <span class="status-light"></span>
+          Control plane {{ current.controlPlane.status }}
+        </div>
+        <p class="sync-time">
+          Synced {{ current.generatedAt | date:'HH:mm:ss':'UTC' }} UTC
+        </p>
+      }
+      <button class="refresh-button" type="button" (click)="refresh()" [disabled]="loading()">
+        <span class="refresh-icon" aria-hidden="true">↻</span>
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  @if (error(); as errorMessage) {
+    <section class="error-banner" role="alert">
+      <span>Snapshot delayed</span>
+      <p>{{ errorMessage }} The last valid fleet state remains on screen.</p>
+    </section>
+  }
+
+  @if (snapshot(); as current) {
+    <section class="summary-grid" aria-label="Platform summary">
+      <article class="summary-card summary-card--primary">
+        <p>Fleet online</p>
+        <div class="summary-value">
+          {{ current.summary.workersOnline }}<span>/{{ current.summary.workersTotal }}</span>
+        </div>
+        <div class="summary-detail">
+          <span>{{ current.summary.gpusTotal }} GPU{{ current.summary.gpusTotal === 1 ? '' : 's' }}</span>
+          <span>{{ current.summary.workersDrained }} drained</span>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <p>VRAM allocated</p>
+        <div class="summary-value summary-value--compact">
+          {{ current.summary.memoryUsedMiB / 1024 | number:'1.1-1' }}<span>GiB</span>
+        </div>
+        <div class="summary-detail">
+          <span>of {{ current.summary.memoryTotalMiB / 1024 | number:'1.0-1' }} GiB</span>
+          <span>reported</span>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <p>Queue depth</p>
+        <div class="summary-value">{{ current.summary.jobsQueued }}</div>
+        <div class="summary-detail">
+          <span>{{ current.summary.jobsRunning }} running</span>
+          <span>{{ current.summary.jobsTotal }} retained</span>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <p>Failed jobs</p>
+        <div class="summary-value" [class.warning-value]="current.summary.jobsFailed > 0">
+          {{ current.summary.jobsFailed }}
+        </div>
+        <div class="summary-detail">
+          <span>{{ statusCount(current, 'succeeded') }} succeeded</span>
+          <span>{{ statusCount(current, 'cancelled') }} cancelled</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="workspace-grid">
+      <div class="fleet-column">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Fleet</p>
+            <h2>Compute nodes</h2>
+          </div>
+          <span class="section-count">{{ current.workers.length }}</span>
+        </div>
+
+        @if (current.workers.length === 0) {
+          <div class="empty-panel">No workers have registered.</div>
+        }
+
+        <div class="worker-list">
+          @for (worker of current.workers; track worker.id) {
+            <article class="worker-card">
+              <header class="worker-header">
+                <div>
+                  <div class="worker-title-line">
+                    <h3>{{ worker.name }}</h3>
+                    <span class="state-pill" [attr.data-state]="workerState(worker)">
+                      {{ workerState(worker) }}
+                    </span>
+                  </div>
+                  <p>
+                    {{ worker.labels['operatingSystem'] || 'unknown OS' }} ·
+                    {{ worker.labels['hostType'] || 'worker' }} · v{{ worker.version }}
+                  </p>
+                </div>
+                <div class="heartbeat">
+                  <span>Last heartbeat</span>
+                  <strong>{{ worker.lastSeenAt | date:'HH:mm:ss':'UTC' }} UTC</strong>
+                </div>
+              </header>
+
+              <div class="gpu-list">
+                @for (gpu of worker.gpus; track gpu.uuid) {
+                  <section class="gpu-panel">
+                    <div class="gpu-title">
+                      <div class="gpu-index">{{ gpu.index }}</div>
+                      <div>
+                        <h4>{{ gpu.name }}</h4>
+                        <p>{{ shortId(gpu.uuid, 18) }}</p>
+                      </div>
+                      <div class="vram-free">
+                        <strong>{{ memoryFreeMiB(gpu) }}</strong>
+                        <span>MiB free</span>
+                      </div>
+                    </div>
+
+                    <div class="telemetry-grid">
+                      <div class="telemetry-item">
+                        <div class="metric-label">
+                          <span>GPU load</span>
+                          <strong>{{ gpu.utilizationPercent | number:'1.0-0' }}%</strong>
+                        </div>
+                        <div class="metric-track">
+                          <span [style.width.%]="utilizationPercent(gpu)"></span>
+                        </div>
+                      </div>
+
+                      <div class="telemetry-item">
+                        <div class="metric-label">
+                          <span>VRAM</span>
+                          <strong>{{ gpu.memoryUsedMiB }} / {{ gpu.memoryTotalMiB }} MiB</strong>
+                        </div>
+                        <div class="metric-track metric-track--memory">
+                          <span [style.width.%]="memoryPercent(gpu)"></span>
+                        </div>
+                      </div>
+
+                      <div class="telemetry-item">
+                        <div class="metric-label">
+                          <span>Temperature</span>
+                          <strong>{{ gpu.temperatureC | number:'1.0-0' }}°C</strong>
+                        </div>
+                        <div class="metric-track metric-track--temperature">
+                          <span [style.width.%]="temperaturePercent(gpu)"></span>
+                        </div>
+                      </div>
+
+                      <div class="telemetry-item">
+                        <div class="metric-label">
+                          <span>Board power</span>
+                          <strong>{{ powerLabel(gpu) }}</strong>
+                        </div>
+                        <div class="metric-track metric-track--power">
+                          <span [style.width.%]="powerPercent(gpu)"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                }
+              </div>
+
+              <footer class="worker-footer">
+                <span>{{ shortId(worker.id, 22) }}</span>
+                <span>{{ worker.capabilities.length }} capabilities</span>
+              </footer>
+            </article>
+          }
+        </div>
+      </div>
+
+      <aside class="jobs-column">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Scheduler</p>
+            <h2>Recent work</h2>
+          </div>
+          <span class="section-count">{{ current.jobs.length }}</span>
+        </div>
+
+        <div class="job-status-strip" aria-label="Job status totals">
+          @for (status of ['queued', 'leased', 'running', 'succeeded', 'failed']; track status) {
+            <div>
+              <span class="job-dot" [attr.data-status]="status"></span>
+              <p>{{ status }}</p>
+              <strong>{{ statusCount(current, status) }}</strong>
+            </div>
+          }
+        </div>
+
+        <div class="job-list">
+          @if (current.jobs.length === 0) {
+            <div class="empty-panel">No jobs have been submitted.</div>
+          }
+
+          @for (job of current.jobs; track job.id) {
+            <article class="job-row">
+              <div class="job-row-topline">
+                <span class="job-state" [attr.data-status]="job.status">{{ job.status }}</span>
+                <span class="job-age">{{ jobAge(job) }} ago</span>
+              </div>
+              <h3>{{ job.type }}</h3>
+              <p class="job-project">{{ job.projectId }}</p>
+              <div class="job-metadata">
+                <span title="Job ID">{{ shortId(job.id, 17) }}</span>
+                <span title="Assigned worker">{{ shortId(job.assignedWorkerId, 15) }}</span>
+                <span title="Attempts">try {{ job.attempt }}/{{ job.maxAttempts }}</span>
+              </div>
+            </article>
+          }
+        </div>
+      </aside>
+    </section>
+  } @else {
+    <section class="loading-state" aria-live="polite">
+      <div class="loading-mark"></div>
+      <p>Establishing operations view</p>
+      <span>Waiting for the Flask gateway</span>
+    </section>
+  }
+</main>

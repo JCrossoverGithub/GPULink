@@ -32,6 +32,11 @@ GPUlink does not accept arbitrary commands, Python, or containers. Model
 adapters such as Parakeet and local LLM serving come after this diagnostic
 milestone is accepted on physical hardware.
 
+The repository also contains a read-only [operations console](dashboard/README.md)
+with an Angular frontend and a loopback Flask gateway. It visualizes the live
+fleet and scheduler without placing administrator or client credentials in the
+browser.
+
 ## Architecture
 
 ```mermaid
@@ -53,6 +58,7 @@ outward for leases, so no inbound port is opened on a desktop or laptop.
 ## Requirements
 
 - Node.js 24 or newer for local development
+- Python 3.12 or newer for the optional operations console gateway
 - Ubuntu host with Docker Engine, Docker Compose v2, and Nginx for the control plane
 - Windows 11 with WSL2 and systemd for GPU workers
 - Node.js 24 or newer in WSL; the installer copies the selected runtime out of NVM or another installation
@@ -109,6 +115,7 @@ npm run cli -- resume <worker-id>
 - [API](docs/API.md)
 - [Roadmap](docs/ROADMAP.md)
 - [First Operational Target](docs/FIRST_OPERATIONAL_TARGET.md)
+- [Operations Console](dashboard/README.md)
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 

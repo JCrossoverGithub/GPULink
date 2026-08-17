@@ -22,6 +22,21 @@ Exit criterion: the RTX 3070 Ti desktop and RTX 4060 laptop register through
 the public HTTPS gateway, each completes a diagnostic job on its assigned GPU,
 drain/resume works, and authoritative state survives a droplet service restart.
 
+## Operations console foundation — brought forward
+
+- Loopback Flask backend-for-frontend
+- Angular fleet and scheduler overview
+- Worker health and drain-state visibility
+- GPU memory, utilization, temperature, and power telemetry
+- Recent bounded job history without payload or result exposure
+- Five-second polling with last-valid-snapshot behavior
+- Server-side ownership of administrator and client credentials
+- Backend tests and a production Angular build check in CI
+
+This read-only slice is intentionally delivered ahead of the full operations
+dashboard milestone. Authenticated public deployment, historical time-series
+storage, and administrative actions remain in Milestone 4.
+
 ## Milestone 2 — Parakeet and adapter hardening
 
 - Adapter manifest and version contract
