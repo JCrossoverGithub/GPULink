@@ -1,3 +1,9 @@
+import {
+  BENCHMARK_DEFAULTS,
+  BENCHMARK_TYPE,
+  validateBenchmarkPayload,
+} from "../shared/benchmark-contract.mjs";
+
 const [command, ...arguments_] = process.argv.slice(2);
 const baseUrl = requiredEnvironment("GPULINK_URL").replace(/\/$/u, "");
 
@@ -31,6 +37,27 @@ try {
       }, "client", { "Idempotency-Key": `diagnostic-${crypto.randomUUID()}` }));
       break;
     }
+    case "submit-benchmark": {
+      const payload = validateBenchmarkPayload({
+        schemaVersion: 1,
+        matrixSize: optionalNumber(arguments_[0], BENCHMARK_DEFAULTS.matrixSize),
+        warmupIterations: optionalNumber(arguments_[1], BENCHMARK_DEFAULTS.warmupIterations),
+        measuredIterations: optionalNumber(arguments_[2], BENCHMARK_DEFAULTS.measuredIterations),
+      });
+      print(await request("POST", "/v1/jobs", {
+        projectId: "gpulink-benchmark",
+        type: BENCHMARK_TYPE,
+        priority: 100,
+        constraints: {
+          gpuCount: 1,
+          minVramMiB: 4096,
+          capabilities: [BENCHMARK_TYPE],
+        },
+        payload,
+        maxAttempts: 2,
+      }, "client", { "Idempotency-Key": `benchmark-${crypto.randomUUID()}` }));
+      break;
+    }
     case "wait":
       print(await waitForJob(requiredArgument(arguments_[0], "job id")));
       break;
@@ -59,7 +86,7 @@ async function setDrain(workerId, drain) {
 }
 
 async function waitForJob(jobId) {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
     const response = await request(
       "GET",
@@ -107,6 +134,10 @@ function requiredArgument(value, name) {
   return value;
 }
 
+function optionalNumber(value, fallback) {
+  return value === undefined ? fallback : Number(value);
+}
+
 function print(value) {
   console.log(JSON.stringify(value, null, 2));
 }
@@ -117,6 +148,7 @@ function usage() {
   npm run cli -- jobs
   npm run cli -- job <job-id>
   npm run cli -- submit-diagnostic [minimum-vram-mib]
+  npm run cli -- submit-benchmark [matrix-size] [warmup-iterations] [measured-iterations]
   npm run cli -- wait <job-id>
   npm run cli -- drain <worker-id>
   npm run cli -- resume <worker-id>`);

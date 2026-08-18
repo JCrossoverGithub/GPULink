@@ -7,6 +7,12 @@ function positiveInteger(value, fallback, name) {
   return parsed;
 }
 
+function boundedPositiveInteger(value, fallback, name, maximum) {
+  const result = positiveInteger(value, fallback, name);
+  if (result > maximum) throw new Error(`${name} must be at most ${maximum}`);
+  return result;
+}
+
 export function loadWorkerConfig(environment = process.env) {
   const token = environment.GPULINK_WORKER_TOKEN?.trim();
   if (!token || token.length < 32) {
@@ -32,6 +38,12 @@ export function loadWorkerConfig(environment = process.env) {
       1_000,
       "GPULINK_WORKER_ASSIGNMENT_INTERVAL_MS",
     ),
+    capabilityProbeIntervalMs: boundedPositiveInteger(
+      environment.GPULINK_WORKER_CAPABILITY_PROBE_INTERVAL_MS,
+      300_000,
+      "GPULINK_WORKER_CAPABILITY_PROBE_INTERVAL_MS",
+      3_600_000,
+    ),
     capabilities: [...new Set(
       (environment.GPULINK_WORKER_CAPABILITIES?.trim() || "diagnostic.echo,diagnostic.gpu-status")
         .split(",")
@@ -41,7 +53,26 @@ export function loadWorkerConfig(environment = process.env) {
     labels: parseObject(environment.GPULINK_WORKER_LABELS_JSON, "GPULINK_WORKER_LABELS_JSON", {}),
     warmModels: parseArray(environment.GPULINK_WORKER_WARM_MODELS_JSON, "GPULINK_WORKER_WARM_MODELS_JSON", []),
     fakeGpus: parseArray(environment.GPULINK_WORKER_FAKE_GPU_JSON, "GPULINK_WORKER_FAKE_GPU_JSON", null),
+    benchmark: Object.freeze({
+      pythonPath: absolutePath(
+        environment.GPULINK_BENCHMARK_PYTHON,
+        "GPULINK_BENCHMARK_PYTHON",
+        "/opt/gpulink/runtime/benchmark/bin/python",
+      ),
+      timeoutMs: boundedPositiveInteger(
+        environment.GPULINK_BENCHMARK_TIMEOUT_MS,
+        60_000,
+        "GPULINK_BENCHMARK_TIMEOUT_MS",
+        120_000,
+      ),
+    }),
   });
+}
+
+function absolutePath(value, name, fallback) {
+  const result = value?.trim() || fallback;
+  if (!result.startsWith("/")) throw new Error(`${name} must be an absolute path`);
+  return result;
 }
 
 function parseObject(value, name, fallback) {

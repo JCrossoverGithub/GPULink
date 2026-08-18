@@ -33,6 +33,26 @@ A workload adapter owns:
 - model-level health and metrics;
 - graceful cancellation and cleanup.
 
+## Bounded GPU benchmark adapter
+
+`benchmark.gpu` is the first real CUDA execution path. It is not a generic
+Python or process adapter. The client supplies only a schema version, one of
+four allowlisted matrix sizes, and bounded warmup/measured iteration counts.
+The control plane validates and normalizes that contract before persistence;
+the worker validates it again before execution.
+
+The worker launches one repository-owned Python script through one configured,
+absolute interpreter path without a shell. It supplies a minimal environment,
+sets `CUDA_VISIBLE_DEVICES` to the leased GPU UUID, caps stdout and stderr,
+enforces a fixed timeout, and terminates the child process group on timeout or
+lease cancellation. The worker—not the Python process—attaches authoritative
+GPU identity and timing boundaries to the result.
+
+Workers advertise `benchmark.gpu` only when the capability is configured and a
+bounded health probe confirms the isolated PyTorch CUDA runtime can see exactly
+one selected GPU. The probe is refreshed periodically rather than on every
+heartbeat. CI injects a fake process runner and does not require NVIDIA hardware.
+
 TransGo continues to own audio capture, the 16 kHz mono PCM contract,
 interim/final caption rendering, and client reconnection behavior. Its existing
 `/v1/transcription` WebSocket protocol will be preserved by a TransGo adapter.
