@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createId } from "../shared/ids.mjs";
+import { validateWorkloadPayload } from "../shared/benchmark-contract.mjs";
 import {
   boundedInteger,
   optionalObject,
@@ -231,6 +232,7 @@ function validateGpus(value) {
 function validateJob(input, idempotencyHeader, now) {
   const object = requireObject(input, "job");
   const constraints = optionalObject(object.constraints, "constraints");
+  const type = requireString(object.type, "type", { maximum: 100 });
   const gpuCount = boundedInteger(constraints.gpuCount, "constraints.gpuCount", {
     minimum: 1,
     maximum: 1,
@@ -239,7 +241,7 @@ function validateJob(input, idempotencyHeader, now) {
   return {
     id: createId("job"),
     projectId: requireString(object.projectId, "projectId", { maximum: 100 }),
-    type: requireString(object.type, "type", { maximum: 100 }),
+    type,
     priority: boundedInteger(object.priority, "priority", {
       minimum: -1000,
       maximum: 1000,
@@ -256,7 +258,7 @@ function validateJob(input, idempotencyHeader, now) {
       "constraints.capabilities",
     ),
     requestedModel: optionalString(constraints.model, "constraints.model", null, { maximum: 300 }),
-    payload: optionalObject(object.payload, "payload"),
+    payload: validateWorkloadPayload(type, optionalObject(object.payload, "payload")),
     maxAttempts: boundedInteger(object.maxAttempts, "maxAttempts", {
       minimum: 1,
       maximum: 20,

@@ -49,6 +49,14 @@ export function stringArray(value, name, { maximumItems = 64 } = {}) {
     .sort();
 }
 
+export function rejectUnknownFields(object, name, allowedFields) {
+  const allowed = new Set(allowedFields);
+  const unknown = Object.keys(object).filter((field) => !allowed.has(field));
+  if (unknown.length > 0) {
+    throw new ValidationError(`${name} contains unexpected field ${unknown.sort()[0]}`);
+  }
+}
+
 export class ValidationError extends Error {
   constructor(message) {
     super(message);

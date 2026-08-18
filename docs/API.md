@@ -71,6 +71,31 @@ Relevant request fields:
 }
 ```
 
+#### `benchmark.gpu` payload
+
+The first real CUDA workload is a fixed float32 PyTorch matrix multiplication.
+The control plane normalizes and validates its payload before persistence, and
+the worker repeats the same validation before launch:
+
+```json
+{
+  "schemaVersion": 1,
+  "matrixSize": 4096,
+  "warmupIterations": 3,
+  "measuredIterations": 10
+}
+```
+
+`matrixSize` must be `1024`, `2048`, `4096`, or `8192`. Warmup iterations are
+limited to 1–10 and measured iterations to 1–25. Missing fields use the values
+shown above. Unexpected fields are rejected. The job cannot select a command,
+script, Python module, backend, data type, environment variable, or output path.
+
+The result reports the assigned GPU identity, pinned backend/runtime versions,
+median and P95 iteration time, estimated TFLOPS, peak allocated memory, and
+worker-owned timestamps. Runner output must match the submitted request and
+the exact result schema or the job fails.
+
 ### `GET /v1/jobs`
 
 Supports `status` and `limit` query parameters.

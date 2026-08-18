@@ -1,13 +1,19 @@
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
-import { executeJob, hasAdapter } from "./adapters.mjs";
+import { executeJob, hasAdapter, resolveAvailableCapabilities } from "./adapters.mjs";
 
 export class WorkerAgent {
   constructor(config, options = {}) {
     this.config = config;
     this.client = options.client ?? new ControlPlaneClient(config.controlPlaneUrl, config.token);
     this.discoverGpus = options.discoverGpus ?? (() => discoverGpus({ fakeGpus: config.fakeGpus }));
+    this.executeJob = options.executeJob ?? executeJob;
+    this.resolveCapabilities = options.resolveCapabilities ?? resolveAvailableCapabilities;
+    this.adapterContext = options.adapterContext ?? {};
     this.workerId = null;
+    this.gpus = [];
+    this.capabilities = [];
+    this.capabilitiesCheckedAt = 0;
     this.running = false;
     this.heartbeatTimer = null;
     this.assignmentTimer = null;
@@ -18,11 +24,13 @@ export class WorkerAgent {
   async start() {
     if (this.running) return;
     const gpus = await this.discoverGpus();
+    this.gpus = gpus;
+    await this.#refreshCapabilities(true);
     const response = await this.client.registerWorker({
       name: this.config.name,
       version: this.config.version,
       labels: this.config.labels,
-      capabilities: this.config.capabilities,
+      capabilities: this.capabilities,
       warmModels: this.config.warmModels,
       gpus,
     });
@@ -55,8 +63,10 @@ export class WorkerAgent {
       const operation = (async () => {
         try {
           const gpus = await this.discoverGpus();
+          this.gpus = gpus;
+          await this.#refreshCapabilities(false);
           await this.client.heartbeat(this.workerId, {
-            capabilities: this.config.capabilities,
+            capabilities: this.capabilities,
             warmModels: this.config.warmModels,
             gpus,
           });
@@ -102,6 +112,18 @@ export class WorkerAgent {
     operation.finally(() => this.pendingOperations.delete(operation));
   }
 
+  async #refreshCapabilities(force) {
+    const now = Date.now();
+    const intervalMs = this.config.capabilityProbeIntervalMs ?? 300_000;
+    if (!force && now - this.capabilitiesCheckedAt < intervalMs) return;
+    this.capabilities = await this.resolveCapabilities(this.config.capabilities, {
+      ...this.adapterContext,
+      benchmark: this.config.benchmark,
+      gpus: this.gpus,
+    });
+    this.capabilitiesCheckedAt = now;
+  }
+
   #runJob(job) {
     const controller = new AbortController();
     const promise = this.#executeLease(job, controller.signal)
@@ -143,7 +165,13 @@ export class WorkerAgent {
     }, renewIntervalMs);
 
     try {
-      const result = await executeJob(job, { signal });
+      const gpu = this.gpus.find((candidate) => candidate.uuid === job.assignedGpuUuid) ?? null;
+      const result = await this.executeJob(job, {
+        ...this.adapterContext,
+        signal,
+        gpu,
+        benchmark: this.config.benchmark,
+      });
       await this.client.finishJob(job.id, { ...lease, outcome: "succeeded", result });
       console.log(JSON.stringify({ event: "job_succeeded", jobId: job.id }));
     } catch (error) {

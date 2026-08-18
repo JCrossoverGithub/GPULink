@@ -24,13 +24,15 @@ The first operational target supports:
 - replayable server-sent operational events;
 - Prometheus-format platform metrics;
 - an allowlisted GPU status diagnostic;
+- an allowlisted, bounded PyTorch CUDA matrix benchmark;
 - Docker Compose lifecycle management on a shared droplet;
 - a systemd service for each WSL worker;
 - a Windows sign-in task that starts the WSL worker.
 
-GPUlink does not accept arbitrary commands, Python, or containers. Model
-adapters such as Parakeet and local LLM serving come after this diagnostic
-milestone is accepted on physical hardware.
+GPUlink does not accept arbitrary commands, Python, or containers. The
+benchmark is the first real CUDA workload and remains fixed to validated matrix
+sizes and iteration limits. Model adapters such as Parakeet and local LLM
+serving follow after the benchmark is accepted on physical hardware.
 
 The repository also contains a read-only [operations console](dashboard/README.md)
 with an Angular frontend and a loopback Flask gateway. It visualizes the live
@@ -63,6 +65,7 @@ outward for leases, so no inbound port is opened on a desktop or laptop.
 - Windows 11 with WSL2 and systemd for GPU workers
 - Node.js 24 or newer in WSL; the installer copies the selected runtime out of NVM or another installation
 - NVIDIA drivers with a working `nvidia-smi` inside WSL
+- Python 3.10 through 3.14 for the optional isolated benchmark runtime
 - A domain or subdomain pointed at the DigitalOcean droplet
 
 GPUlink has no npm runtime dependencies.
@@ -104,6 +107,7 @@ Then:
 ```bash
 npm run cli -- workers
 npm run cli -- submit-diagnostic 256
+npm run cli -- submit-benchmark 4096 3 10
 npm run cli -- wait <job-id>
 npm run cli -- drain <worker-id>
 npm run cli -- resume <worker-id>
@@ -115,6 +119,7 @@ npm run cli -- resume <worker-id>
 - [API](docs/API.md)
 - [Roadmap](docs/ROADMAP.md)
 - [First Operational Target](docs/FIRST_OPERATIONAL_TARGET.md)
+- [GPU Benchmark Workload](docs/GPU_BENCHMARK.md)
 - [Operations Console](dashboard/README.md)
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)

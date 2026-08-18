@@ -1,8 +1,11 @@
 import { execFile } from "node:child_process";
+import { BENCHMARK_TYPE } from "../shared/benchmark-contract.mjs";
+import { probeBenchmarkRuntime, runGpuBenchmark } from "./gpu-benchmark.mjs";
 
 const adapters = new Map([
   ["diagnostic.echo", runDiagnosticEcho],
   ["diagnostic.gpu-status", runGpuStatus],
+  [BENCHMARK_TYPE, runGpuBenchmark],
 ]);
 
 const gpuStatusFields = [
@@ -22,17 +25,29 @@ export function hasAdapter(type) {
   return adapters.has(type);
 }
 
-export async function executeJob(job, { signal }) {
+export async function executeJob(job, context) {
   const adapter = adapters.get(job.type);
   if (!adapter) {
     const error = new Error(`No installed adapter for workload type ${job.type}`);
     error.code = "adapter_not_installed";
     throw error;
   }
-  return adapter(job, signal);
+  return adapter(job, context);
 }
 
-async function runDiagnosticEcho(job, signal) {
+export async function resolveAvailableCapabilities(capabilities, context = {}) {
+  const available = capabilities.filter((capability) => hasAdapter(capability));
+  if (!available.includes(BENCHMARK_TYPE)) return available;
+  const ready = await probeBenchmarkRuntime({
+    benchmark: context.benchmark,
+    gpu: context.gpus?.[0],
+    runProcess: context.runProcess,
+    fileAccess: context.fileAccess,
+  });
+  return ready ? available : available.filter((capability) => capability !== BENCHMARK_TYPE);
+}
+
+async function runDiagnosticEcho(job, { signal }) {
   const payload = job.payload;
   const durationMs = Number.isSafeInteger(payload.durationMs)
     ? Math.min(Math.max(payload.durationMs, 0), 10_000)
@@ -49,7 +64,7 @@ async function runDiagnosticEcho(job, signal) {
   return { echo: payload.echo ?? null, completedAt: Date.now() };
 }
 
-async function runGpuStatus(job, signal) {
+async function runGpuStatus(job, { signal }) {
   const stdout = await runCommand("nvidia-smi", [
     "-i",
     job.assignedGpuUuid,

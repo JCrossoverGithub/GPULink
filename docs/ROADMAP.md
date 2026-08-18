@@ -22,6 +22,21 @@ Exit criterion: the RTX 3070 Ti desktop and RTX 4060 laptop register through
 the public HTTPS gateway, each completes a diagnostic job on its assigned GPU,
 drain/resume works, and authoritative state survives a droplet service restart.
 
+## Real GPU benchmark workload
+
+- Versioned, strictly bounded `benchmark.gpu` request and result contracts
+- Fixed float32 PyTorch CUDA matrix multiplication
+- Isolated pinned Python runtime under `/opt/gpulink/runtime`
+- Runtime health-gated capability advertisement
+- Fixed executable and script launch without a shell
+- Output limits, timeout, cancellation, and process-group cleanup
+- GPU-independent CI through an injected process runner
+- CLI submission and two-worker comparison workflow
+
+Exit criterion: both physical GPUs complete the benchmark independently and
+concurrently, failure paths remain bounded, one-job-per-GPU scheduling still
+holds, and neither worker gains an inbound listener or arbitrary execution path.
+
 ## Operations console foundation — brought forward
 
 - Loopback Flask backend-for-frontend
