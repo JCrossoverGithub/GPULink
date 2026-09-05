@@ -53,6 +53,20 @@ bounded health probe confirms the isolated PyTorch CUDA runtime can see exactly
 one selected GPU. The probe is refreshed periodically rather than on every
 heartbeat. CI injects a fake process runner and does not require NVIDIA hardware.
 
+## Transcription session contract
+
+The first Parakeet foundation slice defines a versioned `speech.streaming`
+session request without pretending the streaming data plane is a normal durable
+job payload. The persisted request contains only the `transgo-v1` protocol
+version, the fixed 16 kHz mono signed-16-bit PCM/100 ms frame contract, and
+whether interim results are requested. Unknown fields are rejected by the
+control plane.
+
+No audio bytes, audio URLs, client credentials, executable commands, or process
+configuration enter the scheduler database. A worker does not advertise
+`speech.streaming` merely because this shared contract exists. Advertisement
+will begin only after the Parakeet adapter and its readiness probe are installed.
+
 TransGo continues to own audio capture, the 16 kHz mono PCM contract,
 interim/final caption rendering, and client reconnection behavior. Its existing
 `/v1/transcription` WebSocket protocol will be preserved by a TransGo adapter.

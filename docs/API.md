@@ -71,6 +71,32 @@ Relevant request fields:
 }
 ```
 
+#### `speech.streaming` session payload
+
+The durable job contains only the bounded metadata needed to schedule a TransGo
+streaming session. Audio frames, bearer tokens, callback URLs, executable
+commands, and transport controls are not accepted in this payload:
+
+```json
+{
+  "schemaVersion": 1,
+  "protocol": "transgo-v1",
+  "audio": {
+    "encoding": "pcm-s16le",
+    "sampleRateHz": 16000,
+    "channels": 1,
+    "frameDurationMs": 100
+  },
+  "interimResults": true
+}
+```
+
+All omitted fields use the values shown above. `interimResults` may be disabled;
+the protocol and audio format are otherwise fixed for the first compatibility
+version. Unexpected fields are rejected. This contract does not add the
+WebSocket data plane or advertise `speech.streaming` from a worker; those are
+later Parakeet adapter slices.
+
 #### `benchmark.gpu` payload
 
 The first real CUDA workload is a fixed float32 PyTorch matrix multiplication.

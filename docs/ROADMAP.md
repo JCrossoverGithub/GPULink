@@ -54,6 +54,15 @@ storage, and administrative actions remain in Milestone 4.
 
 ## Milestone 2 — Parakeet and adapter hardening
 
+Foundation delivered in the current development branch:
+
+- Versioned, strictly validated `speech.streaming` session metadata
+- Fixed `transgo-v1` 16 kHz mono PCM/100 ms audio contract
+- Explicit exclusion of audio data and transport controls from durable jobs
+- Central workload-contract registry for model-specific validation
+
+Remaining work:
+
 - Adapter manifest and version contract
 - Allowlisted process/container launcher
 - Per-adapter health and readiness

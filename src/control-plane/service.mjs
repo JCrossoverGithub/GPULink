@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createId } from "../shared/ids.mjs";
-import { validateWorkloadPayload } from "../shared/benchmark-contract.mjs";
+import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
 import {
   boundedInteger,
   optionalObject,
