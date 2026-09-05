@@ -38,6 +38,13 @@ Ready installed adapters are described separately from the capability names:
     "type": "benchmark.gpu",
     "version": "1.0.0",
     "executionMode": "bounded-process"
+  }],
+  "adapterHealth": [{
+    "schemaVersion": 1,
+    "type": "benchmark.gpu",
+    "state": "ready",
+    "code": "ready",
+    "checkedAt": 1788566400000
   }]
 }
 ```
@@ -47,10 +54,17 @@ Each manifest type must match an advertised capability. Older workers may omit
 contain descriptive metadata only and cannot provide commands, arguments,
 environment variables, images, or executable paths.
 
+`adapterHealth` reports every configured adapter as `ready`, `unavailable`, or
+`not-installed`. Codes are fixed to `ready`, `readiness_probe_failed`, and
+`adapter_not_installed`; raw exception messages are never sent to the control
+plane. When health is present, its ready entries must exactly match the worker's
+advertised capabilities and manifests. Older workers may omit health.
+
 ### `POST /v1/workers/{workerId}/heartbeat`
 
 Refreshes liveness, capabilities, warm-model inventory, and bounded GPU
 telemetry. It also refreshes the versioned manifest for each ready adapter.
+It refreshes bounded adapter health from the same periodic readiness probe.
 
 ### `GET /v1/workers` (administrator)
 

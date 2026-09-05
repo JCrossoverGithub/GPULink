@@ -51,6 +51,19 @@ test("worker agent discovers a GPU and completes an allowlisted diagnostic job",
       version: "1.0.0",
       executionMode: "in-process",
     }]);
+    assert.deepEqual(
+      app.database.listWorkers()[0].adapterHealth.map(({ checkedAt, ...report }) => ({
+        ...report,
+        checkedAtValid: Number.isSafeInteger(checkedAt),
+      })),
+      [{
+        schemaVersion: 1,
+        type: "diagnostic.echo",
+        state: "ready",
+        code: "ready",
+        checkedAtValid: true,
+      }],
+    );
     const submitted = app.service.submitJob({
       projectId: "test",
       type: "diagnostic.echo",
@@ -147,6 +160,8 @@ test("worker agent completes a scheduled benchmark through an injected GPU-free 
       version: "1.0.0",
       executionMode: "bounded-process",
     }]);
+    assert.equal(app.database.listWorkers()[0].adapterHealth[0].state, "ready");
+    assert.equal(app.database.listWorkers()[0].adapterHealth[0].type, "benchmark.gpu");
     const submitted = app.service.submitJob({
       projectId: "test",
       type: "benchmark.gpu",

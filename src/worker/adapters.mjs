@@ -3,6 +3,7 @@ import {
   ADAPTER_MANIFEST_SCHEMA_VERSION,
   validateAdapterManifest,
 } from "../shared/adapter-manifest.mjs";
+import { adapterHealthReport } from "../shared/adapter-health.mjs";
 import { BENCHMARK_TYPE } from "../shared/benchmark-contract.mjs";
 import { probeBenchmarkRuntime, runGpuBenchmark } from "./gpu-benchmark.mjs";
 
@@ -62,17 +63,38 @@ export async function executeJob(job, context) {
 }
 
 export async function resolveAvailableCapabilities(capabilities, context = {}) {
-  const available = [];
-  for (const capability of capabilities) {
+  return (await resolveAdapterHealth(capabilities, context)).capabilities;
+}
+
+export async function resolveAdapterHealth(
+  configuredCapabilities,
+  context = {},
+  checkedAt = Date.now(),
+) {
+  const capabilities = [];
+  const adapterManifests = [];
+  const adapterHealth = [];
+  for (const capability of [...new Set(configuredCapabilities)].sort()) {
     const adapter = adapters.get(capability);
-    if (!adapter) continue;
+    if (!adapter) {
+      adapterHealth.push(adapterHealthReport(capability, "not-installed", checkedAt));
+      continue;
+    }
+    let ready = false;
     try {
-      if (await adapter.readinessProbe(context)) available.push(capability);
+      ready = await adapter.readinessProbe(context) === true;
     } catch {
-      // A failed readiness check removes the capability until the next probe.
+      // Raw probe errors remain local and are reduced to a bounded status code.
+    }
+    if (ready) {
+      capabilities.push(capability);
+      adapterManifests.push(adapter.manifest);
+      adapterHealth.push(adapterHealthReport(capability, "ready", checkedAt));
+    } else {
+      adapterHealth.push(adapterHealthReport(capability, "unavailable", checkedAt));
     }
   }
-  return available;
+  return Object.freeze({ capabilities, adapterManifests, adapterHealth });
 }
 
 export function listAdapterManifests(capabilities) {

@@ -65,11 +65,13 @@ Foundation delivered in the current development branch:
 - Backward-compatible database migration for existing workers
 - Shared shell-free bounded-process launcher with absolute executable paths
 - Combined output bounds, timeout, cancellation, and process-group cleanup
+- Bounded per-adapter health states with sanitized machine-readable codes
+- Durable health inventory with capability/manifest consistency checks
+- Backward-compatible health-column migration for existing workers
 
 Remaining work:
 
 - Adapter-specific Parakeet process/container definition
-- Per-adapter health and readiness
 - Worker-side cancellation and cleanup
 - Local model cache inventory
 - Hashed, revocable, scoped worker credentials
