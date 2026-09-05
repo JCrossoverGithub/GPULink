@@ -33,6 +33,40 @@ A workload adapter owns:
 - model-level health and metrics;
 - graceful cancellation and cleanup.
 
+## Adapter manifests
+
+Each installed worker adapter has a repository-owned manifest with schema
+version, workload type, semantic adapter version, and one allowlisted execution
+mode. The current execution modes are `in-process`, `bounded-process`, and
+`streaming-gateway`. A manifest is metadata, not executable configuration: it
+cannot contain commands, arguments, environment variables, container images,
+or paths.
+
+Workers advertise manifests only for configured adapters whose readiness checks
+pass. The control plane validates that every manifest matches an advertised
+capability, then persists the manifest list with the worker heartbeat. Existing
+databases gain the new manifest column through an additive migration, and older
+workers remain compatible by reporting an empty list.
+
+The built-in diagnostic adapters are versioned in-process adapters. The GPU
+benchmark is a versioned bounded-process adapter. `speech.streaming` has a
+shared session contract but deliberately has no manifest until a real Parakeet
+adapter and readiness check are installed.
+
+## Bounded process launcher
+
+Process-backed adapters share one worker-owned launcher. It requires an
+absolute executable path and a bounded string-only argument list, never invokes
+a shell, ignores stdin, captures stdout and stderr under one combined byte
+limit, and enforces a finite timeout. Cancellation or timeout terminates the
+child process group, followed by a bounded forced-kill grace period.
+
+The launcher is an internal primitive rather than a client-facing workload.
+Only repository-owned adapter code can choose its executable and arguments.
+Adapters retain responsibility for validating remote payloads and constructing
+their fixed invocation. The benchmark maps generic process failures back to its
+existing public error contract.
+
 ## Bounded GPU benchmark adapter
 
 `benchmark.gpu` is the first real CUDA execution path. It is not a generic
@@ -52,6 +86,20 @@ Workers advertise `benchmark.gpu` only when the capability is configured and a
 bounded health probe confirms the isolated PyTorch CUDA runtime can see exactly
 one selected GPU. The probe is refreshed periodically rather than on every
 heartbeat. CI injects a fake process runner and does not require NVIDIA hardware.
+
+## Transcription session contract
+
+The first Parakeet foundation slice defines a versioned `speech.streaming`
+session request without pretending the streaming data plane is a normal durable
+job payload. The persisted request contains only the `transgo-v1` protocol
+version, the fixed 16 kHz mono signed-16-bit PCM/100 ms frame contract, and
+whether interim results are requested. Unknown fields are rejected by the
+control plane.
+
+No audio bytes, audio URLs, client credentials, executable commands, or process
+configuration enter the scheduler database. A worker does not advertise
+`speech.streaming` merely because this shared contract exists. Advertisement
+will begin only after the Parakeet adapter and its readiness probe are installed.
 
 TransGo continues to own audio capture, the 16 kHz mono PCM contract,
 interim/final caption rendering, and client reconnection behavior. Its existing

@@ -54,8 +54,21 @@ storage, and administrative actions remain in Milestone 4.
 
 ## Milestone 2 — Parakeet and adapter hardening
 
-- Adapter manifest and version contract
-- Allowlisted process/container launcher
+Foundation delivered in the current development branch:
+
+- Versioned, strictly validated `speech.streaming` session metadata
+- Fixed `transgo-v1` 16 kHz mono PCM/100 ms audio contract
+- Explicit exclusion of audio data and transport controls from durable jobs
+- Central workload-contract registry for model-specific validation
+- Versioned adapter manifests with fixed execution-mode metadata
+- Readiness-filtered manifest advertisement and durable worker inventory
+- Backward-compatible database migration for existing workers
+- Shared shell-free bounded-process launcher with absolute executable paths
+- Combined output bounds, timeout, cancellation, and process-group cleanup
+
+Remaining work:
+
+- Adapter-specific Parakeet process/container definition
 - Per-adapter health and readiness
 - Worker-side cancellation and cleanup
 - Local model cache inventory

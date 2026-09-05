@@ -45,6 +45,12 @@ test("worker agent discovers a GPU and completes an allowlisted diagnostic job",
 
   try {
     await agent.start();
+    assert.deepEqual(app.database.listWorkers()[0].adapterManifests, [{
+      schemaVersion: 1,
+      type: "diagnostic.echo",
+      version: "1.0.0",
+      executionMode: "in-process",
+    }]);
     const submitted = app.service.submitJob({
       projectId: "test",
       type: "diagnostic.echo",
@@ -135,6 +141,12 @@ test("worker agent completes a scheduled benchmark through an injected GPU-free 
 
   try {
     await agent.start();
+    assert.deepEqual(app.database.listWorkers()[0].adapterManifests, [{
+      schemaVersion: 1,
+      type: "benchmark.gpu",
+      version: "1.0.0",
+      executionMode: "bounded-process",
+    }]);
     const submitted = app.service.submitJob({
       projectId: "test",
       type: "benchmark.gpu",

@@ -15,11 +15,6 @@ export const BENCHMARK_DEFAULTS = Object.freeze({
   measuredIterations: 10,
 });
 
-export function validateWorkloadPayload(type, payload) {
-  if (type === BENCHMARK_TYPE) return validateBenchmarkPayload(payload);
-  return payload;
-}
-
 export function validateBenchmarkPayload(value) {
   const payload = requireObject(value, "payload");
   rejectUnknownFields(payload, "payload", [

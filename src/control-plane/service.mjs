@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createId } from "../shared/ids.mjs";
-import { validateWorkloadPayload } from "../shared/benchmark-contract.mjs";
+import { validateAdapterManifests } from "../shared/adapter-manifest.mjs";
+import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
 import {
   boundedInteger,
   optionalObject,
@@ -174,13 +175,15 @@ export class ControlPlaneService {
 
 function validateWorker(input, now) {
   const object = requireObject(input, "worker");
+  const capabilities = stringArray(object.capabilities ?? [], "capabilities");
   return {
     id: optionalString(object.id, "id", createId("worker"), { maximum: 100 }),
     name: requireString(object.name, "name", { maximum: 100 }),
     version: requireString(object.version, "version", { maximum: 50 }),
     baseUrl: optionalString(object.baseUrl, "baseUrl", null, { maximum: 500 }),
     labels: validateLabels(optionalObject(object.labels, "labels")),
-    capabilities: stringArray(object.capabilities ?? [], "capabilities"),
+    capabilities,
+    adapterManifests: validatedAdvertisedManifests(object.adapterManifests, capabilities),
     warmModels: stringArray(object.warmModels ?? [], "warmModels"),
     gpus: validateGpus(object.gpus),
     now,
@@ -189,12 +192,26 @@ function validateWorker(input, now) {
 
 function validateHeartbeat(input, now) {
   const object = requireObject(input, "heartbeat");
+  const capabilities = stringArray(object.capabilities ?? [], "capabilities");
   return {
-    capabilities: stringArray(object.capabilities ?? [], "capabilities"),
+    capabilities,
+    adapterManifests: validatedAdvertisedManifests(object.adapterManifests, capabilities),
     warmModels: stringArray(object.warmModels ?? [], "warmModels"),
     gpus: validateGpus(object.gpus),
     now,
   };
+}
+
+function validatedAdvertisedManifests(value, capabilities) {
+  const manifests = validateAdapterManifests(value ?? []);
+  for (const manifest of manifests) {
+    if (!capabilities.includes(manifest.type)) {
+      throw new ValidationError(
+        `adapter manifest ${manifest.type} must match an advertised capability`,
+      );
+    }
+  }
+  return manifests;
 }
 
 function validateLabels(labels) {

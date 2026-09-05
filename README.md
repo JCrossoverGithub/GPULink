@@ -34,6 +34,13 @@ benchmark is the first real CUDA workload and remains fixed to validated matrix
 sizes and iteration limits. Model adapters such as Parakeet and local LLM
 serving follow after the benchmark is accepted on physical hardware.
 
+Milestone 2 development has started with a strict `speech.streaming` session
+metadata contract for TransGo compatibility. It intentionally does not carry
+audio through the durable scheduler or advertise a Parakeet capability before a
+real adapter and readiness probe exist. Workers also report versioned,
+non-executable manifests for ready installed adapters so operators can identify
+the implementation behind each capability claim.
+
 The repository also contains a read-only [operations console](dashboard/README.md)
 with an Angular frontend and a loopback Flask gateway. It visualizes the live
 fleet and scheduler without placing administrator or client credentials in the
