@@ -53,6 +53,20 @@ benchmark is a versioned bounded-process adapter. `speech.streaming` has a
 shared session contract but deliberately has no manifest until a real Parakeet
 adapter and readiness check are installed.
 
+## Bounded process launcher
+
+Process-backed adapters share one worker-owned launcher. It requires an
+absolute executable path and a bounded string-only argument list, never invokes
+a shell, ignores stdin, captures stdout and stderr under one combined byte
+limit, and enforces a finite timeout. Cancellation or timeout terminates the
+child process group, followed by a bounded forced-kill grace period.
+
+The launcher is an internal primitive rather than a client-facing workload.
+Only repository-owned adapter code can choose its executable and arguments.
+Adapters retain responsibility for validating remote payloads and constructing
+their fixed invocation. The benchmark maps generic process failures back to its
+existing public error contract.
+
 ## Bounded GPU benchmark adapter
 
 `benchmark.gpu` is the first real CUDA execution path. It is not a generic

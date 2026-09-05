@@ -1,8 +1,8 @@
 import { constants as fsConstants } from "node:fs";
 import { access } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { validateBenchmarkPayload } from "../shared/benchmark-contract.mjs";
+import { runBoundedProcess } from "./bounded-process.mjs";
 
 const benchmarkScriptPath = fileURLToPath(new URL("./runners/gpu-benchmark.py", import.meta.url));
 const maximumOutputBytes = 65_536;
@@ -104,7 +104,7 @@ export async function runGpuBenchmark(job, {
       },
     );
   } catch (error) {
-    if (!error.code?.startsWith("benchmark_")) error.code = "benchmark_runner_failed";
+    normalizeProcessError(error);
     throw error;
   }
   const completedAt = now();
@@ -169,84 +169,6 @@ export function parseBenchmarkResult(stdout, { payload, gpu, startedAt, complete
   }
 }
 
-export function runBoundedProcess(command, arguments_, {
-  signal,
-  timeoutMs = 60_000,
-  env,
-  maxOutputBytes = maximumOutputBytes,
-} = {}) {
-  return new Promise((resolve, reject) => {
-    const detached = process.platform !== "win32";
-    const child = spawn(command, arguments_, {
-      detached,
-      env,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const stdout = [];
-    const stderr = [];
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    let failure = null;
-    let killTimer = null;
-
-    const terminate = (code, message) => {
-      if (failure) return;
-      failure = benchmarkError(code, message);
-      killChild(child, detached, "SIGTERM");
-      killTimer = setTimeout(() => killChild(child, detached, "SIGKILL"), 2_000);
-      killTimer.unref?.();
-    };
-
-    const collect = (chunks, chunk, stream) => {
-      const bytes = stream === "stdout" ? stdoutBytes + chunk.length : stderrBytes + chunk.length;
-      if (stream === "stdout") stdoutBytes = bytes;
-      else stderrBytes = bytes;
-      if (bytes > maxOutputBytes) {
-        terminate("benchmark_output_limit", "Benchmark runner exceeded its output limit");
-        return;
-      }
-      chunks.push(chunk);
-    };
-    child.stdout.on("data", (chunk) => collect(stdout, chunk, "stdout"));
-    child.stderr.on("data", (chunk) => collect(stderr, chunk, "stderr"));
-
-    const timeout = setTimeout(
-      () => terminate("benchmark_timeout", "Benchmark runner exceeded its time limit"),
-      timeoutMs,
-    );
-    timeout.unref?.();
-    const abort = () => terminate("job_aborted", "Benchmark job was aborted");
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
-
-    child.on("error", (error) => {
-      if (!failure) failure = benchmarkError("benchmark_runner_failed", error.message);
-    });
-    child.on("close", (exitCode, exitSignal) => {
-      clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
-      signal?.removeEventListener("abort", abort);
-      if (failure) {
-        reject(failure);
-        return;
-      }
-      const stdoutText = Buffer.concat(stdout).toString("utf8");
-      const stderrText = Buffer.concat(stderr).toString("utf8");
-      if (exitCode !== 0) {
-        const detail = stderrText.trim().slice(0, 2_000);
-        reject(benchmarkError(
-          "benchmark_runner_failed",
-          detail || `Benchmark runner exited with ${exitSignal || exitCode}`,
-        ));
-        return;
-      }
-      resolve({ stdout: stdoutText, stderr: stderrText });
-    });
-  });
-}
-
 function benchmarkEnvironment(gpuUuid) {
   return {
     PATH: "/opt/gpulink/runtime:/usr/lib/wsl/lib:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin",
@@ -285,17 +207,30 @@ function requireFiniteNumber(value, name, { minimum }) {
   }
 }
 
-function killChild(child, detached, signal) {
-  try {
-    if (detached && child.pid) process.kill(-child.pid, signal);
-    else child.kill(signal);
-  } catch {
-    // The process may already have exited.
-  }
-}
-
 function benchmarkError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function normalizeProcessError(error) {
+  switch (error.code) {
+    case "process_timeout":
+      error.code = "benchmark_timeout";
+      error.message = "Benchmark runner exceeded its time limit";
+      break;
+    case "process_output_limit":
+      error.code = "benchmark_output_limit";
+      error.message = "Benchmark runner exceeded its output limit";
+      break;
+    case "job_aborted":
+      error.message = "Benchmark job was aborted";
+      break;
+    case "benchmark_timeout":
+    case "benchmark_output_limit":
+    case "benchmark_runner_failed":
+      break;
+    default:
+      error.code = "benchmark_runner_failed";
+  }
 }

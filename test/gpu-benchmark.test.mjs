@@ -7,7 +7,6 @@ import {
 import { resolveAvailableCapabilities } from "../src/worker/adapters.mjs";
 import {
   parseBenchmarkResult,
-  runBoundedProcess,
   runGpuBenchmark,
 } from "../src/worker/gpu-benchmark.mjs";
 import { createTestContext } from "./helpers.mjs";
@@ -155,50 +154,27 @@ test("rejects malformed, mismatched, and oversized runner results", () => {
   );
 });
 
-test("bounded process runner handles success, nonzero exit, timeout, cancellation, and output limits", async () => {
-  const environment = { ...process.env };
-  const success = await runBoundedProcess(
-    process.execPath,
-    ["-e", "process.stdout.write('ok')"],
-    { timeoutMs: 2_000, env: environment },
-  );
-  assert.equal(success.stdout, "ok");
-
-  await assert.rejects(
-    runBoundedProcess(
-      process.execPath,
-      ["-e", "process.stderr.write('bounded failure'); process.exit(7)"],
-      { timeoutMs: 2_000, env: environment },
-    ),
-    (error) => error.code === "benchmark_runner_failed" && /bounded failure/u.test(error.message),
-  );
-
-  await assert.rejects(
-    runBoundedProcess(
-      process.execPath,
-      ["-e", "setInterval(() => {}, 1000)"],
-      { timeoutMs: 20, env: environment },
-    ),
-    (error) => error.code === "benchmark_timeout",
-  );
-
-  const controller = new AbortController();
-  const cancelled = runBoundedProcess(
-    process.execPath,
-    ["-e", "setInterval(() => {}, 1000)"],
-    { timeoutMs: 2_000, env: environment, signal: controller.signal },
-  );
-  setTimeout(() => controller.abort(), 20);
-  await assert.rejects(cancelled, (error) => error.code === "job_aborted");
-
-  await assert.rejects(
-    runBoundedProcess(
-      process.execPath,
-      ["-e", "process.stdout.write('x'.repeat(1000))"],
-      { timeoutMs: 2_000, env: environment, maxOutputBytes: 100 },
-    ),
-    (error) => error.code === "benchmark_output_limit",
-  );
+test("preserves benchmark error codes across the shared process boundary", async () => {
+  for (const [processCode, benchmarkCode] of [
+    ["process_timeout", "benchmark_timeout"],
+    ["process_output_limit", "benchmark_output_limit"],
+    ["process_runner_failed", "benchmark_runner_failed"],
+    ["job_aborted", "job_aborted"],
+  ]) {
+    await assert.rejects(
+      runGpuBenchmark({ assignedGpuUuid: gpu.uuid, payload }, {
+        gpu,
+        benchmark: { pythonPath: "/fixed/python", timeoutMs: 60_000 },
+        fileAccess: async () => {},
+        runProcess: async () => {
+          const error = new Error("process failed");
+          error.code = processCode;
+          throw error;
+        },
+      }),
+      (error) => error.code === benchmarkCode,
+    );
+  }
 });
 
 function runnerResult(overrides = {}) {

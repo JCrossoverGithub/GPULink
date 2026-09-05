@@ -77,6 +77,7 @@ npm run cli -- wait <job-id>
 
 - one repository-owned Python script and one configured interpreter path;
 - argument-array launch with no shell;
+- shared bounded-process lifecycle controls with benchmark-specific errors;
 - exact numeric validation at control-plane and worker boundaries;
 - leased GPU selected through `CUDA_VISIBLE_DEVICES` by UUID;
 - minimal child environment with no GPUlink credentials;
