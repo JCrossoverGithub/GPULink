@@ -42,6 +42,7 @@ export class ControlPlaneDatabase {
         drain_mode INTEGER NOT NULL DEFAULT 0 CHECK(drain_mode IN (0, 1)),
         labels_json TEXT NOT NULL,
         capabilities_json TEXT NOT NULL,
+        adapter_manifests_json TEXT NOT NULL DEFAULT '[]',
         warm_models_json TEXT NOT NULL,
         gpu_inventory_json TEXT NOT NULL,
         last_seen_at INTEGER NOT NULL,
@@ -88,21 +89,31 @@ export class ControlPlaneDatabase {
         created_at INTEGER NOT NULL
       );
     `);
+    const workerColumns = new Set(
+      this.database.prepare("PRAGMA table_info(workers)").all().map((column) => column.name),
+    );
+    if (!workerColumns.has("adapter_manifests_json")) {
+      this.database.exec(`
+        ALTER TABLE workers
+        ADD COLUMN adapter_manifests_json TEXT NOT NULL DEFAULT '[]';
+      `);
+    }
   }
 
   upsertWorker(worker) {
     const statement = this.database.prepare(`
       INSERT INTO workers (
         id, name, version, base_url, status, drain_mode, labels_json,
-        capabilities_json, warm_models_json, gpu_inventory_json,
+        capabilities_json, adapter_manifests_json, warm_models_json, gpu_inventory_json,
         last_seen_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'online', 0, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'online', 0, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         version = excluded.version,
         base_url = excluded.base_url,
         status = 'online',
         labels_json = excluded.labels_json,
         capabilities_json = excluded.capabilities_json,
+        adapter_manifests_json = excluded.adapter_manifests_json,
         warm_models_json = excluded.warm_models_json,
         gpu_inventory_json = excluded.gpu_inventory_json,
         last_seen_at = excluded.last_seen_at,
@@ -116,6 +127,7 @@ export class ControlPlaneDatabase {
       worker.baseUrl,
       stringifyJson(worker.labels),
       stringifyJson(worker.capabilities),
+      stringifyJson(worker.adapterManifests),
       stringifyJson(worker.warmModels),
       stringifyJson(worker.gpus),
       worker.now,
@@ -129,6 +141,7 @@ export class ControlPlaneDatabase {
       UPDATE workers SET
         status = 'online',
         capabilities_json = ?,
+        adapter_manifests_json = ?,
         warm_models_json = ?,
         gpu_inventory_json = ?,
         last_seen_at = ?,
@@ -138,6 +151,7 @@ export class ControlPlaneDatabase {
     `);
     const row = statement.get(
       stringifyJson(heartbeat.capabilities),
+      stringifyJson(heartbeat.adapterManifests),
       stringifyJson(heartbeat.warmModels),
       stringifyJson(heartbeat.gpus),
       heartbeat.now,
@@ -380,6 +394,7 @@ function mapWorker(row) {
     drainMode: Boolean(row.drain_mode),
     labels: parseJson(row.labels_json, {}),
     capabilities: parseJson(row.capabilities_json, []),
+    adapterManifests: parseJson(row.adapter_manifests_json, []),
     warmModels: parseJson(row.warm_models_json, []),
     gpus: parseJson(row.gpu_inventory_json, []),
     lastSeenAt: row.last_seen_at,

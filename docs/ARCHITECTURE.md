@@ -33,6 +33,26 @@ A workload adapter owns:
 - model-level health and metrics;
 - graceful cancellation and cleanup.
 
+## Adapter manifests
+
+Each installed worker adapter has a repository-owned manifest with schema
+version, workload type, semantic adapter version, and one allowlisted execution
+mode. The current execution modes are `in-process`, `bounded-process`, and
+`streaming-gateway`. A manifest is metadata, not executable configuration: it
+cannot contain commands, arguments, environment variables, container images,
+or paths.
+
+Workers advertise manifests only for configured adapters whose readiness checks
+pass. The control plane validates that every manifest matches an advertised
+capability, then persists the manifest list with the worker heartbeat. Existing
+databases gain the new manifest column through an additive migration, and older
+workers remain compatible by reporting an empty list.
+
+The built-in diagnostic adapters are versioned in-process adapters. The GPU
+benchmark is a versioned bounded-process adapter. `speech.streaming` has a
+shared session contract but deliberately has no manifest until a real Parakeet
+adapter and readiness check are installed.
+
 ## Bounded GPU benchmark adapter
 
 `benchmark.gpu` is the first real CUDA execution path. It is not a generic

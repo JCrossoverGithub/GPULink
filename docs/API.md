@@ -28,10 +28,29 @@ reverse-proxy health checks.
 Registers a worker by stable name. Re-registering the same name restores its
 existing control-plane identity.
 
+Ready installed adapters are described separately from the capability names:
+
+```json
+{
+  "capabilities": ["benchmark.gpu"],
+  "adapterManifests": [{
+    "schemaVersion": 1,
+    "type": "benchmark.gpu",
+    "version": "1.0.0",
+    "executionMode": "bounded-process"
+  }]
+}
+```
+
+Each manifest type must match an advertised capability. Older workers may omit
+`adapterManifests`; the control plane stores an empty list for them. Manifests
+contain descriptive metadata only and cannot provide commands, arguments,
+environment variables, images, or executable paths.
+
 ### `POST /v1/workers/{workerId}/heartbeat`
 
 Refreshes liveness, capabilities, warm-model inventory, and bounded GPU
-telemetry.
+telemetry. It also refreshes the versioned manifest for each ready adapter.
 
 ### `GET /v1/workers` (administrator)
 

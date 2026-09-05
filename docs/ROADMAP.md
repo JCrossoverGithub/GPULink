@@ -60,10 +60,12 @@ Foundation delivered in the current development branch:
 - Fixed `transgo-v1` 16 kHz mono PCM/100 ms audio contract
 - Explicit exclusion of audio data and transport controls from durable jobs
 - Central workload-contract registry for model-specific validation
+- Versioned adapter manifests with fixed execution-mode metadata
+- Readiness-filtered manifest advertisement and durable worker inventory
+- Backward-compatible database migration for existing workers
 
 Remaining work:
 
-- Adapter manifest and version contract
 - Allowlisted process/container launcher
 - Per-adapter health and readiness
 - Worker-side cancellation and cleanup

@@ -1,11 +1,37 @@
 import { execFile } from "node:child_process";
+import {
+  ADAPTER_MANIFEST_SCHEMA_VERSION,
+  validateAdapterManifest,
+} from "../shared/adapter-manifest.mjs";
 import { BENCHMARK_TYPE } from "../shared/benchmark-contract.mjs";
 import { probeBenchmarkRuntime, runGpuBenchmark } from "./gpu-benchmark.mjs";
 
 const adapters = new Map([
-  ["diagnostic.echo", runDiagnosticEcho],
-  ["diagnostic.gpu-status", runGpuStatus],
-  [BENCHMARK_TYPE, runGpuBenchmark],
+  defineAdapter({
+    type: "diagnostic.echo",
+    version: "1.0.0",
+    executionMode: "in-process",
+    execute: runDiagnosticEcho,
+  }),
+  defineAdapter({
+    type: "diagnostic.gpu-status",
+    version: "1.0.0",
+    executionMode: "in-process",
+    execute: runGpuStatus,
+  }),
+  defineAdapter({
+    type: BENCHMARK_TYPE,
+    version: "1.0.0",
+    executionMode: "bounded-process",
+    execute: runGpuBenchmark,
+    readinessProbe: ({ benchmark, gpus, runProcess, fileAccess }) =>
+      probeBenchmarkRuntime({
+        benchmark,
+        gpu: gpus?.[0],
+        runProcess,
+        fileAccess,
+      }),
+  }),
 ]);
 
 const gpuStatusFields = [
@@ -32,19 +58,45 @@ export async function executeJob(job, context) {
     error.code = "adapter_not_installed";
     throw error;
   }
-  return adapter(job, context);
+  return adapter.execute(job, context);
 }
 
 export async function resolveAvailableCapabilities(capabilities, context = {}) {
-  const available = capabilities.filter((capability) => hasAdapter(capability));
-  if (!available.includes(BENCHMARK_TYPE)) return available;
-  const ready = await probeBenchmarkRuntime({
-    benchmark: context.benchmark,
-    gpu: context.gpus?.[0],
-    runProcess: context.runProcess,
-    fileAccess: context.fileAccess,
+  const available = [];
+  for (const capability of capabilities) {
+    const adapter = adapters.get(capability);
+    if (!adapter) continue;
+    try {
+      if (await adapter.readinessProbe(context)) available.push(capability);
+    } catch {
+      // A failed readiness check removes the capability until the next probe.
+    }
+  }
+  return available;
+}
+
+export function listAdapterManifests(capabilities) {
+  return capabilities
+    .map((capability) => adapters.get(capability)?.manifest)
+    .filter((manifest) => manifest !== undefined);
+}
+
+function defineAdapter({ type, version, executionMode, execute, readinessProbe }) {
+  const manifest = validateAdapterManifest({
+    schemaVersion: ADAPTER_MANIFEST_SCHEMA_VERSION,
+    type,
+    version,
+    executionMode,
   });
-  return ready ? available : available.filter((capability) => capability !== BENCHMARK_TYPE);
+  if (typeof execute !== "function") throw new TypeError(`${type} execute must be a function`);
+  if (readinessProbe !== undefined && typeof readinessProbe !== "function") {
+    throw new TypeError(`${type} readinessProbe must be a function`);
+  }
+  return [type, Object.freeze({
+    manifest,
+    execute,
+    readinessProbe: readinessProbe ?? (() => true),
+  })];
 }
 
 async function runDiagnosticEcho(job, { signal }) {

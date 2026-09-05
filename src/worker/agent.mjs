@@ -1,6 +1,11 @@
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
-import { executeJob, hasAdapter, resolveAvailableCapabilities } from "./adapters.mjs";
+import {
+  executeJob,
+  hasAdapter,
+  listAdapterManifests,
+  resolveAvailableCapabilities,
+} from "./adapters.mjs";
 
 export class WorkerAgent {
   constructor(config, options = {}) {
@@ -13,6 +18,7 @@ export class WorkerAgent {
     this.workerId = null;
     this.gpus = [];
     this.capabilities = [];
+    this.adapterManifests = [];
     this.capabilitiesCheckedAt = 0;
     this.running = false;
     this.heartbeatTimer = null;
@@ -31,6 +37,7 @@ export class WorkerAgent {
       version: this.config.version,
       labels: this.config.labels,
       capabilities: this.capabilities,
+      adapterManifests: this.adapterManifests,
       warmModels: this.config.warmModels,
       gpus,
     });
@@ -67,6 +74,7 @@ export class WorkerAgent {
           await this.#refreshCapabilities(false);
           await this.client.heartbeat(this.workerId, {
             capabilities: this.capabilities,
+            adapterManifests: this.adapterManifests,
             warmModels: this.config.warmModels,
             gpus,
           });
@@ -121,6 +129,7 @@ export class WorkerAgent {
       benchmark: this.config.benchmark,
       gpus: this.gpus,
     });
+    this.adapterManifests = listAdapterManifests(this.capabilities);
     this.capabilitiesCheckedAt = now;
   }
 
