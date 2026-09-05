@@ -117,6 +117,7 @@ test("database migration backfills empty manifests for existing workers", () => 
 
     const migrated = new ControlPlaneDatabase(filename);
     assert.deepEqual(migrated.getWorker("worker-legacy").adapterManifests, []);
+    assert.deepEqual(migrated.getWorker("worker-legacy").adapterHealth, []);
     migrated.close();
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });

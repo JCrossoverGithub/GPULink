@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createId } from "../shared/ids.mjs";
+import { validateAdapterHealth } from "../shared/adapter-health.mjs";
 import { validateAdapterManifests } from "../shared/adapter-manifest.mjs";
 import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
 import {
@@ -176,6 +177,7 @@ export class ControlPlaneService {
 function validateWorker(input, now) {
   const object = requireObject(input, "worker");
   const capabilities = stringArray(object.capabilities ?? [], "capabilities");
+  const adapterState = validateAdvertisedAdapterState(object, capabilities);
   return {
     id: optionalString(object.id, "id", createId("worker"), { maximum: 100 }),
     name: requireString(object.name, "name", { maximum: 100 }),
@@ -183,7 +185,8 @@ function validateWorker(input, now) {
     baseUrl: optionalString(object.baseUrl, "baseUrl", null, { maximum: 500 }),
     labels: validateLabels(optionalObject(object.labels, "labels")),
     capabilities,
-    adapterManifests: validatedAdvertisedManifests(object.adapterManifests, capabilities),
+    adapterManifests: adapterState.manifests,
+    adapterHealth: adapterState.health,
     warmModels: stringArray(object.warmModels ?? [], "warmModels"),
     gpus: validateGpus(object.gpus),
     now,
@@ -193,17 +196,20 @@ function validateWorker(input, now) {
 function validateHeartbeat(input, now) {
   const object = requireObject(input, "heartbeat");
   const capabilities = stringArray(object.capabilities ?? [], "capabilities");
+  const adapterState = validateAdvertisedAdapterState(object, capabilities);
   return {
     capabilities,
-    adapterManifests: validatedAdvertisedManifests(object.adapterManifests, capabilities),
+    adapterManifests: adapterState.manifests,
+    adapterHealth: adapterState.health,
     warmModels: stringArray(object.warmModels ?? [], "warmModels"),
     gpus: validateGpus(object.gpus),
     now,
   };
 }
 
-function validatedAdvertisedManifests(value, capabilities) {
-  const manifests = validateAdapterManifests(value ?? []);
+function validateAdvertisedAdapterState(object, capabilities) {
+  const manifests = validateAdapterManifests(object.adapterManifests ?? []);
+  const health = validateAdapterHealth(object.adapterHealth ?? []);
   for (const manifest of manifests) {
     if (!capabilities.includes(manifest.type)) {
       throw new ValidationError(
@@ -211,7 +217,23 @@ function validatedAdvertisedManifests(value, capabilities) {
       );
     }
   }
-  return manifests;
+  if (health.length === 0) return { manifests, health };
+
+  const manifestTypes = new Set(manifests.map((manifest) => manifest.type));
+  const readyTypes = new Set(
+    health.filter((report) => report.state === "ready").map((report) => report.type),
+  );
+  if (!sameStringSet(new Set(capabilities), readyTypes)
+    || !sameStringSet(manifestTypes, readyTypes)) {
+    throw new ValidationError(
+      "ready adapter health, manifests, and advertised capabilities must match",
+    );
+  }
+  return { manifests, health };
+}
+
+function sameStringSet(left, right) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
 function validateLabels(labels) {

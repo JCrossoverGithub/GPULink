@@ -39,7 +39,9 @@ metadata contract for TransGo compatibility. It intentionally does not carry
 audio through the durable scheduler or advertise a Parakeet capability before a
 real adapter and readiness probe exist. Workers also report versioned,
 non-executable manifests for ready installed adapters so operators can identify
-the implementation behind each capability claim.
+the implementation behind each capability claim. Bounded health reports explain
+whether every configured adapter is ready, unavailable, or not installed
+without sending raw probe errors to the control plane.
 
 The repository also contains a read-only [operations console](dashboard/README.md)
 with an Angular frontend and a loopback Flask gateway. It visualizes the live

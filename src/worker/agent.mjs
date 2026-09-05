@@ -3,8 +3,7 @@ import { discoverGpus } from "./gpu-inventory.mjs";
 import {
   executeJob,
   hasAdapter,
-  listAdapterManifests,
-  resolveAvailableCapabilities,
+  resolveAdapterHealth,
 } from "./adapters.mjs";
 
 export class WorkerAgent {
@@ -13,12 +12,13 @@ export class WorkerAgent {
     this.client = options.client ?? new ControlPlaneClient(config.controlPlaneUrl, config.token);
     this.discoverGpus = options.discoverGpus ?? (() => discoverGpus({ fakeGpus: config.fakeGpus }));
     this.executeJob = options.executeJob ?? executeJob;
-    this.resolveCapabilities = options.resolveCapabilities ?? resolveAvailableCapabilities;
+    this.resolveAdapterHealth = options.resolveAdapterHealth ?? resolveAdapterHealth;
     this.adapterContext = options.adapterContext ?? {};
     this.workerId = null;
     this.gpus = [];
     this.capabilities = [];
     this.adapterManifests = [];
+    this.adapterHealth = [];
     this.capabilitiesCheckedAt = 0;
     this.running = false;
     this.heartbeatTimer = null;
@@ -38,6 +38,7 @@ export class WorkerAgent {
       labels: this.config.labels,
       capabilities: this.capabilities,
       adapterManifests: this.adapterManifests,
+      adapterHealth: this.adapterHealth,
       warmModels: this.config.warmModels,
       gpus,
     });
@@ -75,6 +76,7 @@ export class WorkerAgent {
           await this.client.heartbeat(this.workerId, {
             capabilities: this.capabilities,
             adapterManifests: this.adapterManifests,
+            adapterHealth: this.adapterHealth,
             warmModels: this.config.warmModels,
             gpus,
           });
@@ -124,12 +126,14 @@ export class WorkerAgent {
     const now = Date.now();
     const intervalMs = this.config.capabilityProbeIntervalMs ?? 300_000;
     if (!force && now - this.capabilitiesCheckedAt < intervalMs) return;
-    this.capabilities = await this.resolveCapabilities(this.config.capabilities, {
+    const report = await this.resolveAdapterHealth(this.config.capabilities, {
       ...this.adapterContext,
       benchmark: this.config.benchmark,
       gpus: this.gpus,
-    });
-    this.adapterManifests = listAdapterManifests(this.capabilities);
+    }, now);
+    this.capabilities = report.capabilities;
+    this.adapterManifests = report.adapterManifests;
+    this.adapterHealth = report.adapterHealth;
     this.capabilitiesCheckedAt = now;
   }
 

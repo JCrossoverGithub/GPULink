@@ -48,6 +48,14 @@ capability, then persists the manifest list with the worker heartbeat. Existing
 databases gain the new manifest column through an additive migration, and older
 workers remain compatible by reporting an empty list.
 
+The same probe produces a bounded health report for every configured adapter:
+`ready`, `unavailable`, or `not-installed`. Each state has one fixed code and a
+worker-owned check timestamp. Probe exceptions are deliberately collapsed into
+`readiness_probe_failed`; raw messages, paths, environment values, and stack
+traces never cross the worker boundary. When a new worker supplies health, the
+control plane requires the ready health set, manifest set, and advertised
+capability set to match exactly. Older workers may omit the report.
+
 The built-in diagnostic adapters are versioned in-process adapters. The GPU
 benchmark is a versioned bounded-process adapter. `speech.streaming` has a
 shared session contract but deliberately has no manifest until a real Parakeet
