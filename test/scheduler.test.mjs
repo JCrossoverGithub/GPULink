@@ -77,6 +77,37 @@ test("warm model locality is preferred before utilization and VRAM headroom", ()
   }
 });
 
+test("cached model locality is preferred after warm locality and before utilization", () => {
+  const context = createTestContext();
+  try {
+    const cached = registerWorker(context, {
+      name: "cached-worker",
+      modelInventory: [{
+        schemaVersion: 1,
+        modelId: "example/model",
+        revision: "main",
+        adapterType: "speech.streaming",
+      }],
+      gpus: [gpu({ uuid: "GPU-CACHED", memoryTotalMiB: 8192, utilizationPercent: 60 })],
+    });
+    registerWorker(context, {
+      name: "cold-worker",
+      gpus: [gpu({ uuid: "GPU-COLD-CACHE", memoryTotalMiB: 8192, utilizationPercent: 0 })],
+    });
+
+    const job = submitJob(context, {
+      constraints: {
+        minVramMiB: 1000,
+        capabilities: ["diagnostic.echo"],
+        model: "example/model",
+      },
+    });
+    assert.equal(job.assignedWorkerId, cached.id);
+  } finally {
+    context.close();
+  }
+});
+
 test("expired leases are requeued and fail after bounded attempts", () => {
   const context = createTestContext({ leaseDurationMs: 1000, heartbeatTimeoutMs: 100_000 });
   try {

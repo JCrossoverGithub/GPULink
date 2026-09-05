@@ -45,6 +45,12 @@ Ready installed adapters are described separately from the capability names:
     "state": "ready",
     "code": "ready",
     "checkedAt": 1788566400000
+  }],
+  "modelInventory": [{
+    "schemaVersion": 1,
+    "modelId": "nvidia/parakeet-tdt-0.6b-v2",
+    "revision": "main",
+    "adapterType": "speech.streaming"
   }]
 }
 ```
@@ -60,11 +66,18 @@ environment variables, images, or executable paths.
 plane. When health is present, its ready entries must exactly match the worker's
 advertised capabilities and manifests. Older workers may omit health.
 
+`modelInventory` contains at most 64 models whose configured local targets the
+worker has verified inside its cache root. It contains only model identity,
+revision, and intended adapter type; local paths never leave the worker. This
+inventory is distinct from `warmModels`, which identifies models already
+resident in a running adapter. Older workers may omit model inventory.
+
 ### `POST /v1/workers/{workerId}/heartbeat`
 
-Refreshes liveness, capabilities, warm-model inventory, and bounded GPU
-telemetry. It also refreshes the versioned manifest for each ready adapter.
-It refreshes bounded adapter health from the same periodic readiness probe.
+Refreshes liveness, capabilities, warm models, verified cached-model inventory,
+and bounded GPU telemetry. It also refreshes the versioned manifest for each
+ready adapter and bounded adapter health from the same periodic readiness
+probe. Cached-model discovery runs on its own bounded interval.
 
 ### `GET /v1/workers` (administrator)
 

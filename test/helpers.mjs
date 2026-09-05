@@ -69,6 +69,7 @@ export function registerWorker(context, {
   gpus,
   capabilities = ["diagnostic.echo"],
   warmModels = [],
+  modelInventory = [],
 } = {}) {
   return context.service.registerWorker({
     name,
@@ -76,6 +77,7 @@ export function registerWorker(context, {
     labels: {},
     capabilities,
     warmModels,
+    modelInventory,
     gpus,
   });
 }

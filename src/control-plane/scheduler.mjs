@@ -99,10 +99,13 @@ export function choosePlacement(job, workers, occupiedGpus, {
 
       const warmModel = job.constraints.model !== null &&
         worker.warmModels.includes(job.constraints.model);
+      const cachedModel = job.constraints.model !== null &&
+        (worker.modelInventory ?? []).some((entry) => entry.modelId === job.constraints.model);
       candidates.push({
         workerId: worker.id,
         gpuUuid: gpu.uuid,
         warmModel,
+        cachedModel,
         utilizationPercent: gpu.utilizationPercent,
         headroomMiB: freeVramMiB - job.constraints.minVramMiB,
       });
@@ -111,6 +114,7 @@ export function choosePlacement(job, workers, occupiedGpus, {
 
   candidates.sort((left, right) =>
     Number(right.warmModel) - Number(left.warmModel) ||
+    Number(right.cachedModel) - Number(left.cachedModel) ||
     left.utilizationPercent - right.utilizationPercent ||
     left.headroomMiB - right.headroomMiB ||
     left.workerId.localeCompare(right.workerId) ||

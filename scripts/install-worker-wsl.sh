@@ -54,6 +54,7 @@ getent group render >/dev/null 2>&1 && usermod -aG render gpulink
 install -d -o root -g root -m 0755 /opt/gpulink
 install -d -o root -g root -m 0755 /opt/gpulink/runtime
 install -d -o gpulink -g gpulink -m 0750 /var/lib/gpulink/cache
+install -d -o gpulink -g gpulink -m 0750 /var/lib/gpulink/models
 install -d -o root -g gpulink -m 0750 /etc/gpulink
 
 cp -a "${repository_root}/package.json" "${repository_root}/src" /opt/gpulink/
@@ -89,7 +90,10 @@ umask 0077
   echo "GPULINK_WORKER_HEARTBEAT_INTERVAL_MS=5000"
   echo "GPULINK_WORKER_ASSIGNMENT_INTERVAL_MS=1000"
   echo "GPULINK_WORKER_CAPABILITY_PROBE_INTERVAL_MS=300000"
+  echo "GPULINK_WORKER_MODEL_INVENTORY_INTERVAL_MS=300000"
   echo "GPULINK_WORKER_CAPABILITIES=${worker_capabilities}"
+  echo "GPULINK_MODEL_CACHE_ROOT=/var/lib/gpulink/models"
+  echo "GPULINK_MODEL_CACHE_MANIFEST=/var/lib/gpulink/models/manifest.json"
   echo "GPULINK_BENCHMARK_PYTHON=${benchmark_python}"
   echo "GPULINK_BENCHMARK_TIMEOUT_MS=60000"
   printf 'GPULINK_WORKER_LABELS_JSON={"hostType":"%s","operatingSystem":"windows-wsl","availabilityProfile":"shared"}\n' "${host_type}"
