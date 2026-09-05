@@ -41,7 +41,10 @@ real adapter and readiness probe exist. Workers also report versioned,
 non-executable manifests for ready installed adapters so operators can identify
 the implementation behind each capability claim. Bounded health reports explain
 whether every configured adapter is ready, unavailable, or not installed
-without sending raw probe errors to the control plane.
+without sending raw probe errors to the control plane. A bounded local model
+cache manifest lets workers report verified cached models without disclosing
+filesystem paths. This remains separate from `warmModels`, which means a model
+is already resident in a running adapter.
 
 The repository also contains a read-only [operations console](dashboard/README.md)
 with an Angular frontend and a loopback Flask gateway. It visualizes the live
@@ -129,6 +132,7 @@ npm run cli -- resume <worker-id>
 - [Roadmap](docs/ROADMAP.md)
 - [First Operational Target](docs/FIRST_OPERATIONAL_TARGET.md)
 - [GPU Benchmark Workload](docs/GPU_BENCHMARK.md)
+- [Model Cache Inventory](docs/MODEL_CACHE.md)
 - [Operations Console](dashboard/README.md)
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)

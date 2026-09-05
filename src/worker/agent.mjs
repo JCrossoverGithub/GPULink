@@ -1,5 +1,6 @@
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
+import { discoverModelInventory } from "./model-cache.mjs";
 import {
   executeJob,
   hasAdapter,
@@ -13,13 +14,20 @@ export class WorkerAgent {
     this.discoverGpus = options.discoverGpus ?? (() => discoverGpus({ fakeGpus: config.fakeGpus }));
     this.executeJob = options.executeJob ?? executeJob;
     this.resolveAdapterHealth = options.resolveAdapterHealth ?? resolveAdapterHealth;
+    this.discoverModelInventory = options.discoverModelInventory ?? (() =>
+      discoverModelInventory({
+        manifestPath: config.modelCache?.manifestPath ?? "/var/lib/gpulink/models/manifest.json",
+        cacheRoot: config.modelCache?.rootPath ?? "/var/lib/gpulink/models",
+      }));
     this.adapterContext = options.adapterContext ?? {};
     this.workerId = null;
     this.gpus = [];
     this.capabilities = [];
     this.adapterManifests = [];
     this.adapterHealth = [];
+    this.modelInventory = [];
     this.capabilitiesCheckedAt = 0;
+    this.modelInventoryCheckedAt = 0;
     this.running = false;
     this.heartbeatTimer = null;
     this.assignmentTimer = null;
@@ -32,6 +40,7 @@ export class WorkerAgent {
     const gpus = await this.discoverGpus();
     this.gpus = gpus;
     await this.#refreshCapabilities(true);
+    await this.#refreshModelInventory(true);
     const response = await this.client.registerWorker({
       name: this.config.name,
       version: this.config.version,
@@ -40,6 +49,7 @@ export class WorkerAgent {
       adapterManifests: this.adapterManifests,
       adapterHealth: this.adapterHealth,
       warmModels: this.config.warmModels,
+      modelInventory: this.modelInventory,
       gpus,
     });
     this.workerId = response.worker.id;
@@ -73,11 +83,13 @@ export class WorkerAgent {
           const gpus = await this.discoverGpus();
           this.gpus = gpus;
           await this.#refreshCapabilities(false);
+          await this.#refreshModelInventory(false);
           await this.client.heartbeat(this.workerId, {
             capabilities: this.capabilities,
             adapterManifests: this.adapterManifests,
             adapterHealth: this.adapterHealth,
             warmModels: this.config.warmModels,
+            modelInventory: this.modelInventory,
             gpus,
           });
         } catch (error) {
@@ -135,6 +147,23 @@ export class WorkerAgent {
     this.adapterManifests = report.adapterManifests;
     this.adapterHealth = report.adapterHealth;
     this.capabilitiesCheckedAt = now;
+  }
+
+  async #refreshModelInventory(force) {
+    const now = Date.now();
+    const intervalMs = this.config.modelInventoryIntervalMs ?? 300_000;
+    if (!force && now - this.modelInventoryCheckedAt < intervalMs) return;
+    try {
+      this.modelInventory = await this.discoverModelInventory();
+    } catch (error) {
+      this.modelInventory = [];
+      console.error(JSON.stringify({
+        event: "model_inventory_failed",
+        code: error.code ?? "model_cache_manifest_invalid",
+      }));
+    } finally {
+      this.modelInventoryCheckedAt = now;
+    }
   }
 
   #runJob(job) {

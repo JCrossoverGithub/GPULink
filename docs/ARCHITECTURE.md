@@ -113,6 +113,19 @@ TransGo continues to own audio capture, the 16 kHz mono PCM contract,
 interim/final caption rendering, and client reconnection behavior. Its existing
 `/v1/transcription` WebSocket protocol will be preserved by a TransGo adapter.
 
+## Model cache inventory
+
+Each worker may maintain a root-local JSON manifest for models already present
+on that host. Discovery accepts at most 64 entries, bounds the manifest to 64
+KiB, requires every target to exist under the configured cache root, and checks
+resolved paths so symlinks cannot escape that root. An invalid or unreadable
+manifest fails closed to an empty report.
+
+The control plane receives only the schema version, model ID, revision, and
+adapter type. Absolute paths and manifest-relative paths remain private to the
+worker. Cached inventory is intentionally separate from `warmModels`: cached
+means the model can be loaded locally, while warm means it is already resident.
+
 ## Control and data planes
 
 Scheduling and lifecycle operations go through the control plane. Large or
@@ -201,9 +214,10 @@ safety margin, satisfies `minVramMiB`.
 Eligible placements are ordered by:
 
 1. warm-model match;
-2. lowest current GPU utilization;
-3. smallest sufficient VRAM headroom;
-4. stable worker/GPU identity for deterministic ties.
+2. cached-model match;
+3. lowest current GPU utilization;
+4. smallest sufficient VRAM headroom;
+5. stable worker/GPU identity for deterministic ties.
 
 The smallest-sufficient preference prevents small jobs from consuming the
 largest GPU unnecessarily.

@@ -68,12 +68,14 @@ Foundation delivered in the current development branch:
 - Bounded per-adapter health states with sanitized machine-readable codes
 - Durable health inventory with capability/manifest consistency checks
 - Backward-compatible health-column migration for existing workers
+- Validated worker-local model cache inventory without path disclosure
+- Cached-model-aware scheduling below resident-model preference
+- Backward-compatible model-inventory-column migration for existing workers
 
 Remaining work:
 
 - Adapter-specific Parakeet process/container definition
 - Worker-side cancellation and cleanup
-- Local model cache inventory
 - Hashed, revocable, scoped worker credentials
 - Per-worker availability and resource-reserve policies
 - Priority preemption rules for interactive desktop use

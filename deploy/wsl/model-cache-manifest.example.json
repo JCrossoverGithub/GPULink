@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "modelId": "nvidia/parakeet-tdt-0.6b-v2",
+      "revision": "main",
+      "adapterType": "speech.streaming",
+      "relativePath": "parakeet-tdt-0.6b-v2"
+    }
+  ]
+}

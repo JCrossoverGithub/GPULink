@@ -45,6 +45,7 @@ export class ControlPlaneDatabase {
         adapter_manifests_json TEXT NOT NULL DEFAULT '[]',
         adapter_health_json TEXT NOT NULL DEFAULT '[]',
         warm_models_json TEXT NOT NULL,
+        model_inventory_json TEXT NOT NULL DEFAULT '[]',
         gpu_inventory_json TEXT NOT NULL,
         last_seen_at INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
@@ -105,6 +106,12 @@ export class ControlPlaneDatabase {
         ADD COLUMN adapter_health_json TEXT NOT NULL DEFAULT '[]';
       `);
     }
+    if (!workerColumns.has("model_inventory_json")) {
+      this.database.exec(`
+        ALTER TABLE workers
+        ADD COLUMN model_inventory_json TEXT NOT NULL DEFAULT '[]';
+      `);
+    }
   }
 
   upsertWorker(worker) {
@@ -112,9 +119,9 @@ export class ControlPlaneDatabase {
       INSERT INTO workers (
         id, name, version, base_url, status, drain_mode, labels_json,
         capabilities_json, adapter_manifests_json, adapter_health_json,
-        warm_models_json, gpu_inventory_json,
+        warm_models_json, model_inventory_json, gpu_inventory_json,
         last_seen_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'online', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'online', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         version = excluded.version,
         base_url = excluded.base_url,
@@ -124,6 +131,7 @@ export class ControlPlaneDatabase {
         adapter_manifests_json = excluded.adapter_manifests_json,
         adapter_health_json = excluded.adapter_health_json,
         warm_models_json = excluded.warm_models_json,
+        model_inventory_json = excluded.model_inventory_json,
         gpu_inventory_json = excluded.gpu_inventory_json,
         last_seen_at = excluded.last_seen_at,
         updated_at = excluded.updated_at
@@ -139,6 +147,7 @@ export class ControlPlaneDatabase {
       stringifyJson(worker.adapterManifests),
       stringifyJson(worker.adapterHealth),
       stringifyJson(worker.warmModels),
+      stringifyJson(worker.modelInventory),
       stringifyJson(worker.gpus),
       worker.now,
       worker.now,
@@ -154,6 +163,7 @@ export class ControlPlaneDatabase {
         adapter_manifests_json = ?,
         adapter_health_json = ?,
         warm_models_json = ?,
+        model_inventory_json = ?,
         gpu_inventory_json = ?,
         last_seen_at = ?,
         updated_at = ?
@@ -165,6 +175,7 @@ export class ControlPlaneDatabase {
       stringifyJson(heartbeat.adapterManifests),
       stringifyJson(heartbeat.adapterHealth),
       stringifyJson(heartbeat.warmModels),
+      stringifyJson(heartbeat.modelInventory),
       stringifyJson(heartbeat.gpus),
       heartbeat.now,
       heartbeat.now,
@@ -409,6 +420,7 @@ function mapWorker(row) {
     adapterManifests: parseJson(row.adapter_manifests_json, []),
     adapterHealth: parseJson(row.adapter_health_json, []),
     warmModels: parseJson(row.warm_models_json, []),
+    modelInventory: parseJson(row.model_inventory_json, []),
     gpus: parseJson(row.gpu_inventory_json, []),
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,

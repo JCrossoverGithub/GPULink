@@ -44,6 +44,12 @@ export function loadWorkerConfig(environment = process.env) {
       "GPULINK_WORKER_CAPABILITY_PROBE_INTERVAL_MS",
       3_600_000,
     ),
+    modelInventoryIntervalMs: boundedPositiveInteger(
+      environment.GPULINK_WORKER_MODEL_INVENTORY_INTERVAL_MS,
+      300_000,
+      "GPULINK_WORKER_MODEL_INVENTORY_INTERVAL_MS",
+      3_600_000,
+    ),
     capabilities: [...new Set(
       (environment.GPULINK_WORKER_CAPABILITIES?.trim() || "diagnostic.echo,diagnostic.gpu-status")
         .split(",")
@@ -53,6 +59,18 @@ export function loadWorkerConfig(environment = process.env) {
     labels: parseObject(environment.GPULINK_WORKER_LABELS_JSON, "GPULINK_WORKER_LABELS_JSON", {}),
     warmModels: parseArray(environment.GPULINK_WORKER_WARM_MODELS_JSON, "GPULINK_WORKER_WARM_MODELS_JSON", []),
     fakeGpus: parseArray(environment.GPULINK_WORKER_FAKE_GPU_JSON, "GPULINK_WORKER_FAKE_GPU_JSON", null),
+    modelCache: Object.freeze({
+      rootPath: absolutePath(
+        environment.GPULINK_MODEL_CACHE_ROOT,
+        "GPULINK_MODEL_CACHE_ROOT",
+        "/var/lib/gpulink/models",
+      ),
+      manifestPath: absolutePath(
+        environment.GPULINK_MODEL_CACHE_MANIFEST,
+        "GPULINK_MODEL_CACHE_MANIFEST",
+        "/var/lib/gpulink/models/manifest.json",
+      ),
+    }),
     benchmark: Object.freeze({
       pythonPath: absolutePath(
         environment.GPULINK_BENCHMARK_PYTHON,

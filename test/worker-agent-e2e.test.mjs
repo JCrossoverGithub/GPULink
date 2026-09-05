@@ -41,6 +41,13 @@ test("worker agent discovers a GPU and completes an allowlisted diagnostic job",
       temperatureC: 35,
       powerDrawWatts: 25,
     }],
+  }, {
+    discoverModelInventory: async () => [{
+      schemaVersion: 1,
+      modelId: "nvidia/parakeet-tdt-0.6b-v2",
+      revision: "main",
+      adapterType: "speech.streaming",
+    }],
   });
 
   try {
@@ -64,6 +71,12 @@ test("worker agent discovers a GPU and completes an allowlisted diagnostic job",
         checkedAtValid: true,
       }],
     );
+    assert.deepEqual(app.database.listWorkers()[0].modelInventory, [{
+      schemaVersion: 1,
+      modelId: "nvidia/parakeet-tdt-0.6b-v2",
+      revision: "main",
+      adapterType: "speech.streaming",
+    }]);
     const submitted = app.service.submitJob({
       projectId: "test",
       type: "diagnostic.echo",

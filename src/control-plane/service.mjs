@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createId } from "../shared/ids.mjs";
 import { validateAdapterHealth } from "../shared/adapter-health.mjs";
 import { validateAdapterManifests } from "../shared/adapter-manifest.mjs";
+import { validateModelInventory } from "../shared/model-inventory.mjs";
 import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
 import {
   boundedInteger,
@@ -188,6 +189,7 @@ function validateWorker(input, now) {
     adapterManifests: adapterState.manifests,
     adapterHealth: adapterState.health,
     warmModels: stringArray(object.warmModels ?? [], "warmModels"),
+    modelInventory: validateModelInventory(object.modelInventory ?? []),
     gpus: validateGpus(object.gpus),
     now,
   };
@@ -202,6 +204,7 @@ function validateHeartbeat(input, now) {
     adapterManifests: adapterState.manifests,
     adapterHealth: adapterState.health,
     warmModels: stringArray(object.warmModels ?? [], "warmModels"),
+    modelInventory: validateModelInventory(object.modelInventory ?? []),
     gpus: validateGpus(object.gpus),
     now,
   };
