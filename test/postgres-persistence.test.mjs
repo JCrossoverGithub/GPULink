@@ -143,10 +143,6 @@ test(
         /^[0-9a-f]{64}$/u,
       );
 
-      await assert.rejects(
-        database.counts(),
-        /counts is not implemented/u,
-      );
     } finally {
       await inspector.end();
       await database.close();
@@ -1300,6 +1296,534 @@ test(
           cancelledAt + 1,
         ),
         null,
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await postgres.close();
+        await sqlite.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL job recovery matches SQLite semantics",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const postgres =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 2,
+        },
+      );
+
+    const sqlite =
+      new SqlitePersistence(
+        ":memory:",
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    const normalizeRecoveries =
+      (recoveries) =>
+        [...recoveries].sort(
+          (left, right) =>
+            left.job.id.localeCompare(
+              right.job.id,
+            ),
+        );
+
+    try {
+      await postgres.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const initialNow =
+        1_700_000_000_000;
+
+      const createWorker =
+        (id, name) => ({
+          id,
+          name,
+          version: "1.0.0",
+          baseUrl: null,
+          labels: {},
+          capabilities: [
+            "diagnostic.echo",
+          ],
+          adapterManifests: [],
+          adapterHealth: [],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid: `GPU-${id}`,
+              index: 0,
+              name: "Recovery Test GPU",
+              memoryTotalMiB: 8192,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 50,
+            },
+          ],
+          now: initialNow,
+        });
+
+      const liveWorker =
+        createWorker(
+          "worker-recovery-live",
+          "recovery-live",
+        );
+
+      const offlineWorker =
+        createWorker(
+          "worker-recovery-offline",
+          "recovery-offline",
+        );
+
+      for (
+        const database of
+        [postgres, sqlite]
+      ) {
+        await database.upsertWorker(
+          liveWorker,
+        );
+
+        await database.upsertWorker(
+          offlineWorker,
+        );
+      }
+
+      const createJob =
+        (
+          id,
+          maxAttempts,
+          now,
+        ) => ({
+          id,
+          projectId:
+            "recovery-test",
+          type:
+            "diagnostic.echo",
+          priority: 0,
+          minVramMiB: 1024,
+          requiredCapabilities: [
+            "diagnostic.echo",
+          ],
+          requestedModel: null,
+          payload: {
+            job: id,
+          },
+          maxAttempts,
+          idempotencyKey: null,
+          now,
+        });
+
+      const expiredJob =
+        createJob(
+          "job-expired-requeue",
+          3,
+          initialNow,
+        );
+
+      const offlineJob =
+        createJob(
+          "job-offline-requeue",
+          3,
+          initialNow + 1,
+        );
+
+      const exhaustedJob =
+        createJob(
+          "job-expired-exhausted",
+          1,
+          initialNow + 2,
+        );
+
+      for (
+        const database of
+        [postgres, sqlite]
+      ) {
+        await database.insertJob(
+          expiredJob,
+        );
+
+        await database.insertJob(
+          offlineJob,
+        );
+
+        await database.insertJob(
+          exhaustedJob,
+        );
+      }
+
+      const recoveryNow =
+        initialNow + 20_000;
+
+      for (
+        const database of
+        [postgres, sqlite]
+      ) {
+        await database.assignJob(
+          expiredJob.id,
+          {
+            workerId:
+              liveWorker.id,
+            gpuUuid:
+              `GPU-${liveWorker.id}`,
+          },
+          "lease-expired",
+          initialNow + 10_000,
+          initialNow + 100,
+        );
+
+        await database.assignJob(
+          offlineJob.id,
+          {
+            workerId:
+              offlineWorker.id,
+            gpuUuid:
+              `GPU-${offlineWorker.id}`,
+          },
+          "lease-offline-worker",
+          recoveryNow + 100_000,
+          initialNow + 101,
+        );
+
+        await database.assignJob(
+          exhaustedJob.id,
+          {
+            workerId:
+              liveWorker.id,
+            gpuUuid:
+              `GPU-${liveWorker.id}`,
+          },
+          "lease-exhausted",
+          initialNow + 10_000,
+          initialNow + 102,
+        );
+      }
+
+      const postgresRecovered =
+        await postgres
+          .recoverExpiredJobs(
+            recoveryNow,
+            [offlineWorker.id],
+          );
+
+      const sqliteRecovered =
+        await sqlite
+          .recoverExpiredJobs(
+            recoveryNow,
+            [offlineWorker.id],
+          );
+
+      assert.deepEqual(
+        normalizeRecoveries(
+          postgresRecovered,
+        ),
+        normalizeRecoveries(
+          sqliteRecovered,
+        ),
+      );
+
+      assert.equal(
+        postgresRecovered.length,
+        3,
+      );
+
+      const byId =
+        Object.fromEntries(
+          postgresRecovered.map(
+            (recovery) => [
+              recovery.job.id,
+              recovery,
+            ],
+          ),
+        );
+
+      assert.equal(
+        byId[
+          expiredJob.id
+        ].reason,
+        "lease_expired",
+      );
+
+      assert.equal(
+        byId[
+          expiredJob.id
+        ].job.status,
+        "queued",
+      );
+
+      assert.equal(
+        byId[
+          offlineJob.id
+        ].reason,
+        "heartbeat_timeout",
+      );
+
+      assert.equal(
+        byId[
+          offlineJob.id
+        ].job.status,
+        "queued",
+      );
+
+      assert.equal(
+        byId[
+          exhaustedJob.id
+        ].reason,
+        "lease_expired",
+      );
+
+      assert.equal(
+        byId[
+          exhaustedJob.id
+        ].job.status,
+        "failed",
+      );
+
+      assert.deepEqual(
+        byId[
+          exhaustedJob.id
+        ].job.error,
+        {
+          code:
+            "lease_exhausted",
+          message:
+            "Job exhausted its execution attempts",
+        },
+      );
+
+      for (
+        const recovery of
+        postgresRecovered
+      ) {
+        assert.equal(
+          recovery.job
+            .assignedWorkerId,
+          null,
+        );
+
+        assert.equal(
+          recovery.job
+            .assignedGpuUuid,
+          null,
+        );
+
+        assert.equal(
+          recovery.job.leaseId,
+          null,
+        );
+
+        assert.equal(
+          recovery.job
+            .leaseExpiresAt,
+          null,
+        );
+      }
+
+      assert.deepEqual(
+        await postgres
+          .listActiveJobs(),
+        await sqlite
+          .listActiveJobs(),
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await postgres.close();
+        await sqlite.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL counts match SQLite semantics",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const postgres =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 2,
+        },
+      );
+
+    const sqlite =
+      new SqlitePersistence(
+        ":memory:",
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    try {
+      await postgres.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      assert.deepEqual(
+        await postgres.counts(),
+        await sqlite.counts(),
+      );
+
+      const initialNow =
+        1_700_000_000_000;
+
+      const worker = {
+        id: "worker-counts",
+        name: "counts-worker",
+        version: "1.0.0",
+        baseUrl: null,
+        labels: {},
+        capabilities: [
+          "diagnostic.echo",
+        ],
+        adapterManifests: [],
+        adapterHealth: [],
+        warmModels: [],
+        modelInventory: [],
+        gpus: [
+          {
+            uuid:
+              "GPU-COUNTS",
+            index: 0,
+            name:
+              "Counts Test GPU",
+            memoryTotalMiB:
+              8192,
+            memoryUsedMiB: 0,
+            utilizationPercent: 0,
+            temperatureC: 40,
+            powerDrawWatts: 50,
+          },
+        ],
+        now: initialNow,
+      };
+
+      for (
+        const database of
+        [postgres, sqlite]
+      ) {
+        await database.upsertWorker(
+          worker,
+        );
+      }
+
+      const queuedJob = {
+        id: "job-counts-queued",
+        projectId: "counts",
+        type: "diagnostic.echo",
+        priority: 0,
+        minVramMiB: 1,
+        requiredCapabilities: [
+          "diagnostic.echo",
+        ],
+        requestedModel: null,
+        payload: {},
+        maxAttempts: 3,
+        idempotencyKey: null,
+        now: initialNow,
+      };
+
+      const cancelledJob = {
+        ...queuedJob,
+        id:
+          "job-counts-cancelled",
+        now:
+          initialNow + 1,
+      };
+
+      for (
+        const database of
+        [postgres, sqlite]
+      ) {
+        await database.insertJob(
+          queuedJob,
+        );
+
+        await database.insertJob(
+          cancelledJob,
+        );
+
+        await database.cancelJob(
+          cancelledJob.id,
+          initialNow + 100,
+        );
+      }
+
+      assert.deepEqual(
+        await postgres.counts(),
+        await sqlite.counts(),
+      );
+
+      const counts =
+        await postgres.counts();
+
+      assert.deepEqual(
+        counts.workerCounts,
+        {
+          online: 1,
+        },
+      );
+
+      assert.deepEqual(
+        counts.jobCounts,
+        {
+          cancelled: 1,
+          queued: 1,
+        },
       );
     } finally {
       try {

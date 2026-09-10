@@ -573,6 +573,12 @@ export class PostgresPersistence {
           ...args,
         );
 
+      case "recoverExpiredJobs":
+        return postgresRecoverExpiredJobs(
+          queryable,
+          ...args,
+        );
+
       case "appendEvent":
         return postgresAppendEvent(
           queryable,
@@ -581,6 +587,12 @@ export class PostgresPersistence {
 
       case "listEventsAfter":
         return postgresListEventsAfter(
+          queryable,
+          ...args,
+        );
+
+      case "counts":
+        return postgresCounts(
           queryable,
           ...args,
         );
@@ -1481,4 +1493,146 @@ async function postgresCancelJob(
         result.rows[0],
       )
     : null;
+}
+
+
+async function postgresRecoverExpiredJobs(
+  queryable,
+  now,
+  offlineWorkerIds = [],
+) {
+  const exhaustedError =
+    JSON.stringify({
+      code: "lease_exhausted",
+      message:
+        "Job exhausted its execution attempts",
+    });
+
+  const result =
+    await queryable.query(
+      `
+        WITH candidates AS (
+          SELECT
+            id,
+            CASE
+              WHEN assigned_worker_id =
+                ANY($2::text[])
+              THEN 'heartbeat_timeout'
+              ELSE 'lease_expired'
+            END AS recovery_reason
+          FROM jobs
+          WHERE
+            status IN (
+              'leased',
+              'running'
+            )
+            AND (
+              (
+                lease_expires_at
+                  IS NOT NULL
+                AND lease_expires_at <= $1
+              )
+              OR assigned_worker_id =
+                ANY($2::text[])
+            )
+          FOR UPDATE
+        )
+        UPDATE jobs AS job
+        SET
+          status =
+            CASE
+              WHEN
+                job.attempt >=
+                job.max_attempts
+              THEN 'failed'
+              ELSE 'queued'
+            END,
+          assigned_worker_id = NULL,
+          assigned_gpu_uuid = NULL,
+          lease_id = NULL,
+          lease_expires_at = NULL,
+          error_json =
+            CASE
+              WHEN
+                job.attempt >=
+                job.max_attempts
+              THEN $3::jsonb
+              ELSE NULL
+            END,
+          updated_at = $1
+        FROM candidates
+        WHERE
+          job.id = candidates.id
+          AND job.status IN (
+            'leased',
+            'running'
+          )
+        RETURNING
+          job.*,
+          candidates.recovery_reason
+      `,
+      [
+        now,
+        offlineWorkerIds,
+        exhaustedError,
+      ],
+    );
+
+  return result.rows.map(
+    (row) => ({
+      job:
+        mapPostgresJob(row),
+      reason:
+        row.recovery_reason,
+    }),
+  );
+}
+
+async function postgresCounts(
+  queryable,
+) {
+  const [
+    workers,
+    jobs,
+  ] = await Promise.all([
+    queryable.query(`
+      SELECT
+        status,
+        COUNT(*) AS count
+      FROM workers
+      GROUP BY status
+    `),
+    queryable.query(`
+      SELECT
+        status,
+        COUNT(*) AS count
+      FROM jobs
+      GROUP BY status
+    `),
+  ]);
+
+  const workerCounts =
+    Object.fromEntries(
+      workers.rows.map(
+        (row) => [
+          row.status,
+          Number(row.count),
+        ],
+      ),
+    );
+
+  const jobCounts =
+    Object.fromEntries(
+      jobs.rows.map(
+        (row) => [
+          row.status,
+          Number(row.count),
+        ],
+      ),
+    );
+
+  return {
+    workerCounts,
+    jobCounts,
+  };
 }
