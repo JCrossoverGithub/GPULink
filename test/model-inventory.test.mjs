@@ -91,10 +91,10 @@ test("rejects traversal and symlink escapes from the model cache", async () => {
   }
 });
 
-test("control plane persists validated model inventory reports", () => {
+test("control plane persists validated model inventory reports", async () => {
   const context = createTestContext();
   try {
-    const worker = context.service.registerWorker({
+    const worker = await context.service.registerWorker({
       name: "model-cache-worker",
       version: "test",
       labels: {},
@@ -105,7 +105,7 @@ test("control plane persists validated model inventory reports", () => {
     });
     assert.deepEqual(worker.modelInventory, [cachedModel]);
 
-    const heartbeat = context.service.heartbeatWorker(worker.id, {
+    const heartbeat = await context.service.heartbeatWorker(worker.id, {
       capabilities: worker.capabilities,
       warmModels: [],
       modelInventory: [],
@@ -113,7 +113,7 @@ test("control plane persists validated model inventory reports", () => {
     });
     assert.deepEqual(heartbeat.modelInventory, []);
   } finally {
-    context.close();
+    await context.close();
   }
 });
 

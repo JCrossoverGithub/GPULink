@@ -26,151 +26,351 @@ export class ControlPlaneService {
     if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) {
       return false;
     }
-    const supplied = Buffer.from(authorization.slice(7), "utf8");
-    return [...new Set([...allowedScopes, "admin"])].some((scope) => {
-      const token = this.config.tokens[scope];
-      if (!token) return false;
-      const expected = Buffer.from(token, "utf8");
-      return supplied.length === expected.length && timingSafeEqual(supplied, expected);
-    });
+
+    const supplied = Buffer.from(
+      authorization.slice(7),
+      "utf8",
+    );
+
+    return [...new Set([...allowedScopes, "admin"])]
+      .some((scope) => {
+        const token = this.config.tokens[scope];
+        if (!token) return false;
+
+        const expected = Buffer.from(
+          token,
+          "utf8",
+        );
+
+        return supplied.length === expected.length &&
+          timingSafeEqual(supplied, expected);
+      });
   }
 
-  registerWorker(input) {
-    const worker = validateWorker(input, this.clock());
-    const stored = this.database.transaction(() => {
-      const result = this.database.upsertWorker(worker);
-      this.database.appendEvent("worker.online", result.id, {
-        name: result.name,
-        gpuCount: result.gpus.length,
-      }, worker.now);
-      return result;
-    });
-    this.scheduler.runOnce();
+  async registerWorker(input) {
+    const worker =
+      validateWorker(input, this.clock());
+
+    const stored =
+      await this.database.transaction(
+        async (transaction) => {
+          const result =
+            await transaction.upsertWorker(
+              worker,
+            );
+
+          await transaction.appendEvent(
+            "worker.online",
+            result.id,
+            {
+              name: result.name,
+              gpuCount: result.gpus.length,
+            },
+            worker.now,
+          );
+
+          return result;
+        },
+      );
+
+    await this.scheduler.runOnce();
+
     return stored;
   }
 
-  heartbeatWorker(workerId, input) {
-    const heartbeat = validateHeartbeat(input, this.clock());
-    const worker = this.database.updateWorkerHeartbeat(workerId, heartbeat);
-    if (!worker) throw new NotFoundError("worker not found");
-    this.scheduler.runOnce();
+  async heartbeatWorker(workerId, input) {
+    const heartbeat =
+      validateHeartbeat(input, this.clock());
+
+    const worker =
+      await this.database
+        .updateWorkerHeartbeat(
+          workerId,
+          heartbeat,
+        );
+
+    if (!worker) {
+      throw new NotFoundError(
+        "worker not found",
+      );
+    }
+
+    await this.scheduler.runOnce();
+
     return worker;
   }
 
-  setWorkerDrain(workerId, input) {
-    const object = requireObject(input, "request");
+  async setWorkerDrain(workerId, input) {
+    const object =
+      requireObject(input, "request");
+
     if (typeof object.drain !== "boolean") {
-      throw new ValidationError("drain must be a boolean");
+      throw new ValidationError(
+        "drain must be a boolean",
+      );
     }
+
     const now = this.clock();
-    return this.database.transaction(() => {
-      const worker = this.database.setWorkerDrain(workerId, object.drain, now);
-      if (!worker) throw new NotFoundError("worker not found");
-      this.database.appendEvent(
-        object.drain ? "worker.draining" : "worker.resumed",
-        worker.id,
-        {},
-        now,
+
+    return this.database.transaction(
+      async (transaction) => {
+        const worker =
+          await transaction.setWorkerDrain(
+            workerId,
+            object.drain,
+            now,
+          );
+
+        if (!worker) {
+          throw new NotFoundError(
+            "worker not found",
+          );
+        }
+
+        await transaction.appendEvent(
+          object.drain
+            ? "worker.draining"
+            : "worker.resumed",
+          worker.id,
+          {},
+          now,
+        );
+
+        return worker;
+      },
+    );
+  }
+
+  async submitJob(
+    input,
+    idempotencyHeader = null,
+  ) {
+    const job = validateJob(
+      input,
+      idempotencyHeader,
+      this.clock(),
+    );
+
+    const inserted =
+      await this.database.transaction(
+        async (transaction) => {
+          const result =
+            await transaction.insertJob(job);
+
+          if (!result.duplicate) {
+            await transaction.appendEvent(
+              "job.queued",
+              result.job.id,
+              {
+                projectId:
+                  result.job.projectId,
+                type: result.job.type,
+                priority:
+                  result.job.priority,
+              },
+              job.now,
+            );
+          }
+
+          return result;
+        },
       );
-      return worker;
-    });
+
+    await this.scheduler.runOnce();
+
+    const storedJob =
+      await this.database.getJob(
+        inserted.job.id,
+      );
+
+    return {
+      ...inserted,
+      job: storedJob,
+    };
   }
 
-  submitJob(input, idempotencyHeader = null) {
-    const job = validateJob(input, idempotencyHeader, this.clock());
-    const inserted = this.database.transaction(() => {
-      const result = this.database.insertJob(job);
-      if (!result.duplicate) {
-        this.database.appendEvent("job.queued", result.job.id, {
-          projectId: result.job.projectId,
-          type: result.job.type,
-          priority: result.job.priority,
-        }, job.now);
-      }
-      return result;
-    });
-    this.scheduler.runOnce();
-    return { ...inserted, job: this.database.getJob(inserted.job.id) };
-  }
+  async startJob(jobId, input) {
+    const lease =
+      validateLeaseAction(input);
 
-  startJob(jobId, input) {
-    const lease = validateLeaseAction(input);
     const now = this.clock();
-    return this.database.transaction(() => {
-      const job = this.database.startJob(
-        jobId,
-        lease.workerId,
-        lease.leaseId,
-        now + this.config.leaseDurationMs,
-        now,
-      );
-      if (!job) throw new ConflictError("job lease is not valid for this worker");
-      this.database.appendEvent("job.started", job.id, {
-        workerId: lease.workerId,
-        attempt: job.attempt,
-      }, now);
-      return job;
-    });
+
+    return this.database.transaction(
+      async (transaction) => {
+        const job =
+          await transaction.startJob(
+            jobId,
+            lease.workerId,
+            lease.leaseId,
+            now + this.config.leaseDurationMs,
+            now,
+          );
+
+        if (!job) {
+          throw new ConflictError(
+            "job lease is not valid for this worker",
+          );
+        }
+
+        await transaction.appendEvent(
+          "job.started",
+          job.id,
+          {
+            workerId: lease.workerId,
+            attempt: job.attempt,
+          },
+          now,
+        );
+
+        return job;
+      },
+    );
   }
 
-  renewJob(jobId, input) {
-    const lease = validateLeaseAction(input);
+  async renewJob(jobId, input) {
+    const lease =
+      validateLeaseAction(input);
+
     const now = this.clock();
-    return this.database.transaction(() => {
-      const job = this.database.renewJob(
-        jobId,
-        lease.workerId,
-        lease.leaseId,
-        now + this.config.leaseDurationMs,
-        now,
-      );
-      if (!job) throw new ConflictError("running job lease is not valid for this worker");
-      return job;
-    });
+
+    return this.database.transaction(
+      async (transaction) => {
+        const job =
+          await transaction.renewJob(
+            jobId,
+            lease.workerId,
+            lease.leaseId,
+            now + this.config.leaseDurationMs,
+            now,
+          );
+
+        if (!job) {
+          throw new ConflictError(
+            "running job lease is not valid for this worker",
+          );
+        }
+
+        return job;
+      },
+    );
   }
 
-  finishJob(jobId, input) {
-    const object = requireObject(input, "request");
-    const lease = validateLeaseAction(object);
-    const outcome = requireString(object.outcome, "outcome", { maximum: 20 });
-    if (!new Set(["succeeded", "failed"]).has(outcome)) {
-      throw new ValidationError("outcome must be succeeded or failed");
+  async finishJob(jobId, input) {
+    const object =
+      requireObject(input, "request");
+
+    const lease =
+      validateLeaseAction(object);
+
+    const outcome =
+      requireString(
+        object.outcome,
+        "outcome",
+        { maximum: 20 },
+      );
+
+    if (
+      !new Set(["succeeded", "failed"])
+        .has(outcome)
+    ) {
+      throw new ValidationError(
+        "outcome must be succeeded or failed",
+      );
     }
-    const result = object.result === undefined ? null : object.result;
-    const error = object.error === undefined ? null : object.error;
+
+    const result =
+      object.result === undefined
+        ? null
+        : object.result;
+
+    const error =
+      object.error === undefined
+        ? null
+        : object.error;
+
     const now = this.clock();
-    const job = this.database.transaction(() => {
-      const stored = this.database.finishJob(
-        jobId,
-        lease.workerId,
-        lease.leaseId,
-        outcome,
-        result,
-        error,
-        now,
+
+    const job =
+      await this.database.transaction(
+        async (transaction) => {
+          const stored =
+            await transaction.finishJob(
+              jobId,
+              lease.workerId,
+              lease.leaseId,
+              outcome,
+              result,
+              error,
+              now,
+            );
+
+          if (!stored) {
+            throw new ConflictError(
+              "job lease is not valid for this worker",
+            );
+          }
+
+          await transaction.appendEvent(
+            `job.${outcome}`,
+            stored.id,
+            {
+              workerId: lease.workerId,
+              attempt: stored.attempt,
+            },
+            now,
+          );
+
+          return stored;
+        },
       );
-      if (!stored) throw new ConflictError("job lease is not valid for this worker");
-      this.database.appendEvent(`job.${outcome}`, stored.id, {
-        workerId: lease.workerId,
-        attempt: stored.attempt,
-      }, now);
-      return stored;
-    });
-    this.scheduler.runOnce();
+
+    await this.scheduler.runOnce();
+
     return job;
   }
 
-  cancelJob(jobId) {
+  async cancelJob(jobId) {
     const now = this.clock();
-    const job = this.database.transaction(() => {
-      const existing = this.database.getJob(jobId);
-      if (!existing) throw new NotFoundError("job not found");
-      const cancelled = this.database.cancelJob(jobId, now);
-      if (!cancelled) throw new ConflictError(`job is already ${existing.status}`);
-      this.database.appendEvent("job.cancelled", jobId, {}, now);
-      return cancelled;
-    });
-    this.scheduler.runOnce();
+
+    const job =
+      await this.database.transaction(
+        async (transaction) => {
+          const existing =
+            await transaction.getJob(
+              jobId,
+            );
+
+          if (!existing) {
+            throw new NotFoundError(
+              "job not found",
+            );
+          }
+
+          const cancelled =
+            await transaction.cancelJob(
+              jobId,
+              now,
+            );
+
+          if (!cancelled) {
+            throw new ConflictError(
+              `job is already ${existing.status}`,
+            );
+          }
+
+          await transaction.appendEvent(
+            "job.cancelled",
+            jobId,
+            {},
+            now,
+          );
+
+          return cancelled;
+        },
+      );
+
+    await this.scheduler.runOnce();
+
     return job;
   }
 }

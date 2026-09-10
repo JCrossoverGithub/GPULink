@@ -59,10 +59,10 @@ test("worker adapter catalog describes only installed requested adapters", () =>
   ]);
 });
 
-test("control plane persists manifests that match advertised capabilities", () => {
+test("control plane persists manifests that match advertised capabilities", async () => {
   const context = createTestContext();
   try {
-    const worker = context.service.registerWorker({
+    const worker = await context.service.registerWorker({
       name: "manifest-worker",
       version: "test",
       labels: {},
@@ -73,7 +73,7 @@ test("control plane persists manifests that match advertised capabilities", () =
     });
     assert.deepEqual(worker.adapterManifests, [echoManifest]);
 
-    assert.throws(
+    await assert.rejects(
       () => context.service.heartbeatWorker(worker.id, {
         capabilities: [],
         adapterManifests: [echoManifest],
@@ -83,7 +83,7 @@ test("control plane persists manifests that match advertised capabilities", () =
       /must match an advertised capability/u,
     );
   } finally {
-    context.close();
+    await context.close();
   }
 });
 

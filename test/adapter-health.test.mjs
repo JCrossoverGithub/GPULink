@@ -68,7 +68,7 @@ test("resolves ready, unavailable, and uninstalled configured adapters", async (
   assert.equal(JSON.stringify(report).includes("private readiness detail"), false);
 });
 
-test("control plane persists consistent adapter health and rejects contradictions", () => {
+test("control plane persists consistent adapter health and rejects contradictions", async () => {
   const context = createTestContext();
   try {
     const adapterHealth = [adapterHealthReport(
@@ -76,7 +76,7 @@ test("control plane persists consistent adapter health and rejects contradiction
       "ready",
       context.clock(),
     )];
-    const worker = context.service.registerWorker({
+    const worker = await context.service.registerWorker({
       name: "healthy-worker",
       version: "test",
       labels: {},
@@ -88,7 +88,7 @@ test("control plane persists consistent adapter health and rejects contradiction
     });
     assert.deepEqual(worker.adapterHealth, adapterHealth);
 
-    assert.throws(
+    await assert.rejects(
       () => context.service.heartbeatWorker(worker.id, {
         capabilities: ["diagnostic.echo"],
         adapterManifests: [echoManifest],
@@ -103,6 +103,6 @@ test("control plane persists consistent adapter health and rejects contradiction
       /ready adapter health, manifests, and advertised capabilities must match/u,
     );
   } finally {
-    context.close();
+    await context.close();
   }
 });

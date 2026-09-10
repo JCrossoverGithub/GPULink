@@ -52,18 +52,18 @@ test("rejects unsupported benchmark values and unexpected fields", () => {
   );
 });
 
-test("control plane normalizes benchmark payloads before persistence", () => {
+test("control plane normalizes benchmark payloads before persistence", async () => {
   const context = createTestContext();
   try {
-    const submitted = context.service.submitJob({
+    const submitted = (await context.service.submitJob({
       projectId: "benchmark-test",
       type: "benchmark.gpu",
       constraints: { minVramMiB: 4096 },
       payload: {},
-    }).job;
+    })).job;
     assert.deepEqual(submitted.payload, BENCHMARK_DEFAULTS);
 
-    assert.throws(
+    await assert.rejects(
       () => context.service.submitJob({
         projectId: "benchmark-test",
         type: "benchmark.gpu",
@@ -72,7 +72,7 @@ test("control plane normalizes benchmark payloads before persistence", () => {
       /unexpected field module/u,
     );
   } finally {
-    context.close();
+    await context.close();
   }
 });
 

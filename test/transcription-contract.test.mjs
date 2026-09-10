@@ -61,10 +61,10 @@ test("rejects audio content and transport controls in the durable payload", () =
   );
 });
 
-test("control plane normalizes transcription metadata before persistence", () => {
+test("control plane normalizes transcription metadata before persistence", async () => {
   const context = createTestContext();
   try {
-    const submitted = context.service.submitJob({
+    const submitted = (await context.service.submitJob({
       projectId: "transgo",
       type: "speech.streaming",
       constraints: {
@@ -73,12 +73,12 @@ test("control plane normalizes transcription metadata before persistence", () =>
         model: "nvidia/parakeet-unified-en-0.6b",
       },
       payload: {},
-    }).job;
+    })).job;
 
     assert.deepEqual(submitted.payload, TRANSCRIPTION_DEFAULTS);
     assert.equal(submitted.status, "queued");
     assert.equal(submitted.constraints.model, "nvidia/parakeet-unified-en-0.6b");
   } finally {
-    context.close();
+    await context.close();
   }
 });

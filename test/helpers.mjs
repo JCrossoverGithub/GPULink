@@ -1,4 +1,4 @@
-import { ControlPlaneDatabase } from "../src/control-plane/database.mjs";
+import { SqlitePersistence } from "../src/control-plane/persistence/sqlite.mjs";
 import { Scheduler } from "../src/control-plane/scheduler.mjs";
 import { ControlPlaneService } from "../src/control-plane/service.mjs";
 
@@ -10,36 +10,54 @@ export function createTestContext({
 } = {}) {
   let now = initialNow;
   const clock = () => now;
+
   const config = {
     tokens: {
-      client: "test-client-token-that-is-at-least-32-characters",
-      worker: "test-worker-token-that-is-at-least-32-characters",
-      admin: "test-admin-token-that-is-at-least-32-characters",
+      client:
+        "test-client-token-that-is-at-least-32-characters",
+      worker:
+        "test-worker-token-that-is-at-least-32-characters",
+      admin:
+        "test-admin-token-that-is-at-least-32-characters",
     },
     heartbeatTimeoutMs,
     leaseDurationMs,
     vramSafetyMiB,
   };
-  const database = new ControlPlaneDatabase(":memory:");
-  const scheduler = new Scheduler(database, {
-    heartbeatTimeoutMs,
-    leaseDurationMs,
-    vramSafetyMiB,
-    clock,
-  });
-  const service = new ControlPlaneService(database, scheduler, config, { clock });
+
+  const database =
+    new SqlitePersistence(":memory:");
+
+  const scheduler =
+    new Scheduler(database, {
+      heartbeatTimeoutMs,
+      leaseDurationMs,
+      vramSafetyMiB,
+      clock,
+    });
+
+  const service =
+    new ControlPlaneService(
+      database,
+      scheduler,
+      config,
+      { clock },
+    );
+
   return {
     config,
     database,
     scheduler,
     service,
     clock,
+
     advance(milliseconds) {
       now += milliseconds;
       return now;
     },
-    close() {
-      database.close();
+
+    async close() {
+      await database.close();
     },
   };
 }
@@ -64,13 +82,16 @@ export function gpu({
   };
 }
 
-export function registerWorker(context, {
-  name,
-  gpus,
-  capabilities = ["diagnostic.echo"],
-  warmModels = [],
-  modelInventory = [],
-} = {}) {
+export async function registerWorker(
+  context,
+  {
+    name,
+    gpus,
+    capabilities = ["diagnostic.echo"],
+    warmModels = [],
+    modelInventory = [],
+  } = {},
+) {
   return context.service.registerWorker({
     name,
     version: "test",
@@ -82,19 +103,27 @@ export function registerWorker(context, {
   });
 }
 
-export function submitJob(context, overrides = {}) {
-  return context.service.submitJob({
-    projectId: "test-project",
-    type: "diagnostic.echo",
-    priority: 0,
-    constraints: {
-      gpuCount: 1,
-      minVramMiB: 1,
-      capabilities: ["diagnostic.echo"],
-      ...overrides.constraints,
-    },
-    payload: {},
-    maxAttempts: 3,
-    ...overrides,
-  }).job;
+export async function submitJob(
+  context,
+  overrides = {},
+) {
+  const result =
+    await context.service.submitJob({
+      projectId: "test-project",
+      type: "diagnostic.echo",
+      priority: 0,
+      constraints: {
+        gpuCount: 1,
+        minVramMiB: 1,
+        capabilities: [
+          "diagnostic.echo",
+        ],
+        ...overrides.constraints,
+      },
+      payload: {},
+      maxAttempts: 3,
+      ...overrides,
+    });
+
+  return result.job;
 }

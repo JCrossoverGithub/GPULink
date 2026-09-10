@@ -52,14 +52,14 @@ test("worker agent discovers a GPU and completes an allowlisted diagnostic job",
 
   try {
     await agent.start();
-    assert.deepEqual(app.database.listWorkers()[0].adapterManifests, [{
+    assert.deepEqual((await app.database.listWorkers())[0].adapterManifests, [{
       schemaVersion: 1,
       type: "diagnostic.echo",
       version: "1.0.0",
       executionMode: "in-process",
     }]);
     assert.deepEqual(
-      app.database.listWorkers()[0].adapterHealth.map(({ checkedAt, ...report }) => ({
+      (await app.database.listWorkers())[0].adapterHealth.map(({ checkedAt, ...report }) => ({
         ...report,
         checkedAtValid: Number.isSafeInteger(checkedAt),
       })),
@@ -71,18 +71,18 @@ test("worker agent discovers a GPU and completes an allowlisted diagnostic job",
         checkedAtValid: true,
       }],
     );
-    assert.deepEqual(app.database.listWorkers()[0].modelInventory, [{
+    assert.deepEqual((await app.database.listWorkers())[0].modelInventory, [{
       schemaVersion: 1,
       modelId: "nvidia/parakeet-tdt-0.6b-v2",
       revision: "main",
       adapterType: "speech.streaming",
     }]);
-    const submitted = app.service.submitJob({
+    const submitted = (await app.service.submitJob({
       projectId: "test",
       type: "diagnostic.echo",
       constraints: { minVramMiB: 1000 },
       payload: { echo: "verified", durationMs: 10 },
-    }).job;
+    })).job;
 
     const finished = await waitForJob(app.database, submitted.id, "succeeded", 2_000);
     assert.equal(finished.assignedGpuUuid, "GPU-AGENT-E2E");
@@ -167,15 +167,15 @@ test("worker agent completes a scheduled benchmark through an injected GPU-free 
 
   try {
     await agent.start();
-    assert.deepEqual(app.database.listWorkers()[0].adapterManifests, [{
+    assert.deepEqual((await app.database.listWorkers())[0].adapterManifests, [{
       schemaVersion: 1,
       type: "benchmark.gpu",
       version: "1.0.0",
       executionMode: "bounded-process",
     }]);
-    assert.equal(app.database.listWorkers()[0].adapterHealth[0].state, "ready");
-    assert.equal(app.database.listWorkers()[0].adapterHealth[0].type, "benchmark.gpu");
-    const submitted = app.service.submitJob({
+    assert.equal((await app.database.listWorkers())[0].adapterHealth[0].state, "ready");
+    assert.equal((await app.database.listWorkers())[0].adapterHealth[0].type, "benchmark.gpu");
+    const submitted = (await app.service.submitJob({
       projectId: "test",
       type: "benchmark.gpu",
       constraints: { minVramMiB: 4096 },
@@ -185,7 +185,7 @@ test("worker agent completes a scheduled benchmark through an injected GPU-free 
         warmupIterations: 1,
         measuredIterations: 2,
       },
-    }).job;
+    })).job;
 
     const finished = await waitForJob(app.database, submitted.id, "succeeded", 2_000);
     assert.equal(finished.result.backend, "pytorch-cuda");
@@ -200,10 +200,10 @@ test("worker agent completes a scheduled benchmark through an injected GPU-free 
 async function waitForJob(database, jobId, status, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const job = database.getJob(jobId);
+    const job = await database.getJob(jobId);
     if (job.status === status) return job;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  const job = database.getJob(jobId);
+  const job = await database.getJob(jobId);
   throw new Error(`Timed out waiting for ${jobId} to become ${status}; current state is ${job.status}`);
 }
