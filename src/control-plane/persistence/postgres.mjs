@@ -473,19 +473,62 @@ export class PostgresPersistence {
   #call(method, args, client = null) {
     this.#assertReady();
 
-    return Promise.reject(
-      new Error(
-        `PostgreSQL persistence method ${method} is not implemented`,
-        {
-          cause: {
-            method,
-            argumentCount: args.length,
-            transactional:
-              client !== null,
-          },
-        },
-      ),
-    );
+    const queryable =
+      client ?? this.#pool;
+
+    switch (method) {
+      case "upsertWorker":
+        return postgresUpsertWorker(
+          queryable,
+          ...args,
+        );
+
+      case "updateWorkerHeartbeat":
+        return postgresUpdateWorkerHeartbeat(
+          queryable,
+          ...args,
+        );
+
+      case "setWorkerDrain":
+        return postgresSetWorkerDrain(
+          queryable,
+          ...args,
+        );
+
+      case "listWorkers":
+        return postgresListWorkers(
+          queryable,
+          ...args,
+        );
+
+      case "getWorker":
+        return postgresGetWorker(
+          queryable,
+          ...args,
+        );
+
+      case "markStaleWorkersOffline":
+        return postgresMarkStaleWorkersOffline(
+          queryable,
+          ...args,
+        );
+
+      default:
+        return Promise.reject(
+          new Error(
+            `PostgreSQL persistence method ${method} is not implemented`,
+            {
+              cause: {
+                method,
+                argumentCount:
+                  args.length,
+                transactional:
+                  client !== null,
+              },
+            },
+          ),
+        );
+    }
   }
 
   #assertReady() {
@@ -501,4 +544,299 @@ export class PostgresPersistence {
       );
     }
   }
+}
+
+
+async function postgresUpsertWorker(
+  queryable,
+  worker,
+) {
+  const result =
+    await queryable.query(
+      `
+        INSERT INTO workers (
+          id,
+          name,
+          version,
+          base_url,
+          status,
+          drain_mode,
+          labels_json,
+          capabilities_json,
+          adapter_manifests_json,
+          adapter_health_json,
+          warm_models_json,
+          model_inventory_json,
+          gpu_inventory_json,
+          last_seen_at,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          'online',
+          FALSE,
+          $5::jsonb,
+          $6::jsonb,
+          $7::jsonb,
+          $8::jsonb,
+          $9::jsonb,
+          $10::jsonb,
+          $11::jsonb,
+          $12,
+          $13,
+          $14
+        )
+        ON CONFLICT (name)
+        DO UPDATE SET
+          version =
+            EXCLUDED.version,
+          base_url =
+            EXCLUDED.base_url,
+          status =
+            'online',
+          labels_json =
+            EXCLUDED.labels_json,
+          capabilities_json =
+            EXCLUDED.capabilities_json,
+          adapter_manifests_json =
+            EXCLUDED.adapter_manifests_json,
+          adapter_health_json =
+            EXCLUDED.adapter_health_json,
+          warm_models_json =
+            EXCLUDED.warm_models_json,
+          model_inventory_json =
+            EXCLUDED.model_inventory_json,
+          gpu_inventory_json =
+            EXCLUDED.gpu_inventory_json,
+          last_seen_at =
+            EXCLUDED.last_seen_at,
+          updated_at =
+            EXCLUDED.updated_at
+        RETURNING *
+      `,
+      [
+        worker.id,
+        worker.name,
+        worker.version,
+        worker.baseUrl,
+        JSON.stringify(
+          worker.labels,
+        ),
+        JSON.stringify(
+          worker.capabilities,
+        ),
+        JSON.stringify(
+          worker.adapterManifests,
+        ),
+        JSON.stringify(
+          worker.adapterHealth,
+        ),
+        JSON.stringify(
+          worker.warmModels,
+        ),
+        JSON.stringify(
+          worker.modelInventory,
+        ),
+        JSON.stringify(
+          worker.gpus,
+        ),
+        worker.now,
+        worker.now,
+        worker.now,
+      ],
+    );
+
+  return mapPostgresWorker(
+    result.rows[0],
+  );
+}
+
+async function postgresUpdateWorkerHeartbeat(
+  queryable,
+  workerId,
+  heartbeat,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE workers
+        SET
+          status = 'online',
+          capabilities_json =
+            $1::jsonb,
+          adapter_manifests_json =
+            $2::jsonb,
+          adapter_health_json =
+            $3::jsonb,
+          warm_models_json =
+            $4::jsonb,
+          model_inventory_json =
+            $5::jsonb,
+          gpu_inventory_json =
+            $6::jsonb,
+          last_seen_at = $7,
+          updated_at = $8
+        WHERE id = $9
+        RETURNING *
+      `,
+      [
+        JSON.stringify(
+          heartbeat.capabilities,
+        ),
+        JSON.stringify(
+          heartbeat.adapterManifests,
+        ),
+        JSON.stringify(
+          heartbeat.adapterHealth,
+        ),
+        JSON.stringify(
+          heartbeat.warmModels,
+        ),
+        JSON.stringify(
+          heartbeat.modelInventory,
+        ),
+        JSON.stringify(
+          heartbeat.gpus,
+        ),
+        heartbeat.now,
+        heartbeat.now,
+        workerId,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresWorker(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresSetWorkerDrain(
+  queryable,
+  workerId,
+  drainMode,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE workers
+        SET
+          drain_mode = $1,
+          updated_at = $2
+        WHERE id = $3
+        RETURNING *
+      `,
+      [
+        Boolean(drainMode),
+        now,
+        workerId,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresWorker(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresListWorkers(
+  queryable,
+) {
+  const result =
+    await queryable.query(`
+      SELECT *
+      FROM workers
+      ORDER BY name
+    `);
+
+  return result.rows.map(
+    mapPostgresWorker,
+  );
+}
+
+async function postgresGetWorker(
+  queryable,
+  workerId,
+) {
+  const result =
+    await queryable.query(
+      `
+        SELECT *
+        FROM workers
+        WHERE id = $1
+      `,
+      [workerId],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresWorker(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresMarkStaleWorkersOffline(
+  queryable,
+  staleBefore,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE workers
+        SET
+          status = 'offline',
+          updated_at = $1
+        WHERE
+          status = 'online'
+          AND last_seen_at < $2
+        RETURNING id
+      `,
+      [
+        now,
+        staleBefore,
+      ],
+    );
+
+  return result.rows.map(
+    (row) => row.id,
+  );
+}
+
+function mapPostgresWorker(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    version: row.version,
+    baseUrl: row.base_url,
+    status: row.status,
+    drainMode:
+      Boolean(row.drain_mode),
+    labels:
+      row.labels_json ?? {},
+    capabilities:
+      row.capabilities_json ?? [],
+    adapterManifests:
+      row.adapter_manifests_json ?? [],
+    adapterHealth:
+      row.adapter_health_json ?? [],
+    warmModels:
+      row.warm_models_json ?? [],
+    modelInventory:
+      row.model_inventory_json ?? [],
+    gpus:
+      row.gpu_inventory_json ?? [],
+    lastSeenAt:
+      Number(row.last_seen_at),
+    createdAt:
+      Number(row.created_at),
+    updatedAt:
+      Number(row.updated_at),
+  };
 }
