@@ -38,8 +38,19 @@ def load_torch():
     return torch
 
 
+def initialize_cuda_device(torch):
+    """Select and prove the one visible CUDA device before memory-stat calls."""
+    device = torch.device("cuda:0")
+    torch.cuda.set_device(device)
+    probe = torch.empty((1,), device=device)
+    torch.cuda.synchronize(device)
+    del probe
+    return device
+
+
 def health() -> dict[str, object]:
     torch = load_torch()
+    initialize_cuda_device(torch)
     return {
         "schemaVersion": SCHEMA_VERSION,
         "status": "ok",
@@ -58,11 +69,11 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     measured_iterations = require_range(args.measured_iterations, "measured-iterations", 1, 25)
 
     torch = load_torch()
+    device = initialize_cuda_device(torch)
     torch.manual_seed(0)
     torch.cuda.manual_seed_all(0)
     torch.set_float32_matmul_precision("highest")
     torch.backends.cuda.matmul.allow_tf32 = False
-    device = torch.device("cuda:0")
 
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)

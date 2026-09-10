@@ -41,11 +41,21 @@ fi
 
 install -d -o root -g root -m 0755 /opt/gpulink/runtime
 install -d -o gpulink -g gpulink -m 0750 /var/lib/gpulink/cache
+if [[ -e ${runtime_root} ]] \
+  && { [[ ! -x ${runtime_python} ]] \
+    || ! "${runtime_python}" -m pip --version >/dev/null 2>&1; }; then
+  echo "Existing benchmark virtual environment is incomplete; recreating it." >&2
+  rm -rf "${runtime_root}"
+fi
 if [[ ! -x ${runtime_python} ]]; then
   if ! "${python_binary}" -m venv "${runtime_root}"; then
     echo "Python venv support is required. On Ubuntu, install python3-venv." >&2
     exit 1
   fi
+fi
+if ! "${runtime_python}" -m pip --version >/dev/null 2>&1; then
+  echo "Benchmark virtual environment is missing pip. On Ubuntu, install python3-venv." >&2
+  exit 1
 fi
 
 "${runtime_python}" -m pip install \
