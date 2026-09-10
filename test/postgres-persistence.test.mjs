@@ -942,3 +942,379 @@ test(
     }
   },
 );
+
+test(
+  "PostgreSQL job lease lifecycle matches SQLite semantics",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const postgres =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 2,
+        },
+      );
+
+    const sqlite =
+      new SqlitePersistence(
+        ":memory:",
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    try {
+      await postgres.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const initialNow =
+        1_700_000_000_000;
+
+      const worker = {
+        id: "worker-lease-parity",
+        name: "lease-parity-worker",
+        version: "1.0.0",
+        baseUrl: null,
+        labels: {},
+        capabilities: [
+          "diagnostic.echo",
+        ],
+        adapterManifests: [],
+        adapterHealth: [],
+        warmModels: [],
+        modelInventory: [],
+        gpus: [
+          {
+            uuid: "GPU-LEASE-PARITY",
+            index: 0,
+            name: "Lease Test GPU",
+            memoryTotalMiB: 8192,
+            memoryUsedMiB: 0,
+            utilizationPercent: 0,
+            temperatureC: 40,
+            powerDrawWatts: 50,
+          },
+        ],
+        now: initialNow,
+      };
+
+      await postgres.upsertWorker(worker);
+      await sqlite.upsertWorker(worker);
+
+      const job = {
+        id: "job-lease-parity",
+        projectId: "lease-test",
+        type: "diagnostic.echo",
+        priority: 0,
+        minVramMiB: 1024,
+        requiredCapabilities: [
+          "diagnostic.echo",
+        ],
+        requestedModel: null,
+        payload: {
+          echo: "lease-test",
+        },
+        maxAttempts: 3,
+        idempotencyKey: null,
+        now: initialNow,
+      };
+
+      await postgres.insertJob(job);
+      await sqlite.insertJob(job);
+
+      const placement = {
+        workerId: worker.id,
+        gpuUuid:
+          "GPU-LEASE-PARITY",
+      };
+
+      const leaseId =
+        "lease-postgres-parity-1";
+
+      const assignedAt =
+        initialNow + 100;
+
+      const assignedExpiresAt =
+        initialNow + 10_100;
+
+      const postgresAssigned =
+        await postgres.assignJob(
+          job.id,
+          placement,
+          leaseId,
+          assignedExpiresAt,
+          assignedAt,
+        );
+
+      const sqliteAssigned =
+        await sqlite.assignJob(
+          job.id,
+          placement,
+          leaseId,
+          assignedExpiresAt,
+          assignedAt,
+        );
+
+      assert.deepEqual(
+        postgresAssigned,
+        sqliteAssigned,
+      );
+
+      assert.equal(
+        postgresAssigned.status,
+        "leased",
+      );
+
+      assert.equal(
+        postgresAssigned.attempt,
+        1,
+      );
+
+      assert.equal(
+        postgresAssigned.assignedWorkerId,
+        worker.id,
+      );
+
+      assert.equal(
+        postgresAssigned.assignedGpuUuid,
+        placement.gpuUuid,
+      );
+
+      assert.equal(
+        await postgres.assignJob(
+          job.id,
+          placement,
+          "lease-second-attempt",
+          assignedExpiresAt,
+          assignedAt,
+        ),
+        null,
+      );
+
+      const startedAt =
+        initialNow + 200;
+
+      const runningExpiresAt =
+        initialNow + 20_200;
+
+      assert.equal(
+        await postgres.startJob(
+          job.id,
+          "wrong-worker",
+          leaseId,
+          runningExpiresAt,
+          startedAt,
+        ),
+        null,
+      );
+
+      const postgresStarted =
+        await postgres.startJob(
+          job.id,
+          worker.id,
+          leaseId,
+          runningExpiresAt,
+          startedAt,
+        );
+
+      const sqliteStarted =
+        await sqlite.startJob(
+          job.id,
+          worker.id,
+          leaseId,
+          runningExpiresAt,
+          startedAt,
+        );
+
+      assert.deepEqual(
+        postgresStarted,
+        sqliteStarted,
+      );
+
+      assert.equal(
+        postgresStarted.status,
+        "running",
+      );
+
+      const renewedAt =
+        initialNow + 300;
+
+      const renewedExpiresAt =
+        initialNow + 30_300;
+
+      assert.equal(
+        await postgres.renewJob(
+          job.id,
+          worker.id,
+          "wrong-lease",
+          renewedExpiresAt,
+          renewedAt,
+        ),
+        null,
+      );
+
+      const postgresRenewed =
+        await postgres.renewJob(
+          job.id,
+          worker.id,
+          leaseId,
+          renewedExpiresAt,
+          renewedAt,
+        );
+
+      const sqliteRenewed =
+        await sqlite.renewJob(
+          job.id,
+          worker.id,
+          leaseId,
+          renewedExpiresAt,
+          renewedAt,
+        );
+
+      assert.deepEqual(
+        postgresRenewed,
+        sqliteRenewed,
+      );
+
+      const finishedAt =
+        initialNow + 400;
+
+      const finishResult = {
+        echo: "completed",
+      };
+
+      const postgresFinished =
+        await postgres.finishJob(
+          job.id,
+          worker.id,
+          leaseId,
+          "succeeded",
+          finishResult,
+          null,
+          finishedAt,
+        );
+
+      const sqliteFinished =
+        await sqlite.finishJob(
+          job.id,
+          worker.id,
+          leaseId,
+          "succeeded",
+          finishResult,
+          null,
+          finishedAt,
+        );
+
+      assert.deepEqual(
+        postgresFinished,
+        sqliteFinished,
+      );
+
+      assert.equal(
+        postgresFinished.status,
+        "succeeded",
+      );
+
+      assert.deepEqual(
+        postgresFinished.result,
+        finishResult,
+      );
+
+      assert.equal(
+        postgresFinished.leaseExpiresAt,
+        null,
+      );
+
+      assert.equal(
+        await postgres.finishJob(
+          job.id,
+          worker.id,
+          leaseId,
+          "succeeded",
+          finishResult,
+          null,
+          finishedAt + 1,
+        ),
+        null,
+      );
+
+      const cancellableJob = {
+        ...job,
+        id:
+          "job-cancel-parity",
+        now:
+          initialNow + 500,
+      };
+
+      await postgres.insertJob(
+        cancellableJob,
+      );
+
+      await sqlite.insertJob(
+        cancellableJob,
+      );
+
+      const cancelledAt =
+        initialNow + 600;
+
+      const postgresCancelled =
+        await postgres.cancelJob(
+          cancellableJob.id,
+          cancelledAt,
+        );
+
+      const sqliteCancelled =
+        await sqlite.cancelJob(
+          cancellableJob.id,
+          cancelledAt,
+        );
+
+      assert.deepEqual(
+        postgresCancelled,
+        sqliteCancelled,
+      );
+
+      assert.equal(
+        postgresCancelled.status,
+        "cancelled",
+      );
+
+      assert.equal(
+        await postgres.cancelJob(
+          cancellableJob.id,
+          cancelledAt + 1,
+        ),
+        null,
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await postgres.close();
+        await sqlite.close();
+      }
+    }
+  },
+);

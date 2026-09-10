@@ -543,6 +543,36 @@ export class PostgresPersistence {
           ...args,
         );
 
+      case "assignJob":
+        return postgresAssignJob(
+          queryable,
+          ...args,
+        );
+
+      case "startJob":
+        return postgresStartJob(
+          queryable,
+          ...args,
+        );
+
+      case "renewJob":
+        return postgresRenewJob(
+          queryable,
+          ...args,
+        );
+
+      case "finishJob":
+        return postgresFinishJob(
+          queryable,
+          ...args,
+        );
+
+      case "cancelJob":
+        return postgresCancelJob(
+          queryable,
+          ...args,
+        );
+
       case "appendEvent":
         return postgresAppendEvent(
           queryable,
@@ -1238,4 +1268,217 @@ function mapPostgresJob(row) {
     updatedAt:
       Number(row.updated_at),
   };
+}
+
+
+async function postgresAssignJob(
+  queryable,
+  jobId,
+  placement,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE jobs
+        SET
+          status = 'leased',
+          assigned_worker_id = $1,
+          assigned_gpu_uuid = $2,
+          lease_id = $3,
+          lease_expires_at = $4,
+          attempt = attempt + 1,
+          updated_at = $5
+        WHERE
+          id = $6
+          AND status = 'queued'
+        RETURNING *
+      `,
+      [
+        placement.workerId,
+        placement.gpuUuid,
+        leaseId,
+        leaseExpiresAt,
+        now,
+        jobId,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresJob(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresStartJob(
+  queryable,
+  jobId,
+  workerId,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE jobs
+        SET
+          status = 'running',
+          lease_expires_at = $1,
+          updated_at = $2
+        WHERE
+          id = $3
+          AND status = 'leased'
+          AND assigned_worker_id = $4
+          AND lease_id = $5
+          AND lease_expires_at > $6
+        RETURNING *
+      `,
+      [
+        leaseExpiresAt,
+        now,
+        jobId,
+        workerId,
+        leaseId,
+        now,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresJob(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresRenewJob(
+  queryable,
+  jobId,
+  workerId,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE jobs
+        SET
+          lease_expires_at = $1,
+          updated_at = $2
+        WHERE
+          id = $3
+          AND status = 'running'
+          AND assigned_worker_id = $4
+          AND lease_id = $5
+          AND lease_expires_at > $6
+        RETURNING *
+      `,
+      [
+        leaseExpiresAt,
+        now,
+        jobId,
+        workerId,
+        leaseId,
+        now,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresJob(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresFinishJob(
+  queryable,
+  jobId,
+  workerId,
+  leaseId,
+  status,
+  resultValue,
+  errorValue,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE jobs
+        SET
+          status = $1,
+          result_json = $2::jsonb,
+          error_json = $3::jsonb,
+          lease_expires_at = NULL,
+          updated_at = $4
+        WHERE
+          id = $5
+          AND status IN (
+            'leased',
+            'running'
+          )
+          AND assigned_worker_id = $6
+          AND lease_id = $7
+          AND lease_expires_at > $8
+        RETURNING *
+      `,
+      [
+        status,
+        resultValue === null
+          ? null
+          : JSON.stringify(resultValue),
+        errorValue === null
+          ? null
+          : JSON.stringify(errorValue),
+        now,
+        jobId,
+        workerId,
+        leaseId,
+        now,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresJob(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresCancelJob(
+  queryable,
+  jobId,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE jobs
+        SET
+          status = 'cancelled',
+          lease_expires_at = NULL,
+          updated_at = $1
+        WHERE
+          id = $2
+          AND status IN (
+            'queued',
+            'leased',
+            'running'
+          )
+        RETURNING *
+      `,
+      [
+        now,
+        jobId,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresJob(
+        result.rows[0],
+      )
+    : null;
 }
