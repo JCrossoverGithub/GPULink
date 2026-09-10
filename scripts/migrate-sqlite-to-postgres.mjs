@@ -753,30 +753,26 @@ async function initializePostgres(
 async function readPostgresData(
   client,
 ) {
-  const [
-    workers,
-    jobs,
-    events,
-  ] =
-    await Promise.all([
-      client.query(`
-        SELECT *
-        FROM workers
-        ORDER BY id
-      `),
+  const workers =
+    await client.query(`
+      SELECT *
+      FROM workers
+      ORDER BY id
+    `);
 
-      client.query(`
-        SELECT *
-        FROM jobs
-        ORDER BY id
-      `),
+  const jobs =
+    await client.query(`
+      SELECT *
+      FROM jobs
+      ORDER BY id
+    `);
 
-      client.query(`
-        SELECT *
-        FROM events
-        ORDER BY sequence
-      `),
-    ]);
+  const events =
+    await client.query(`
+      SELECT *
+      FROM events
+      ORDER BY sequence
+    `);
 
   return {
     workers:

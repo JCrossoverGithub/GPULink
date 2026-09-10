@@ -1591,25 +1591,23 @@ async function postgresRecoverExpiredJobs(
 async function postgresCounts(
   queryable,
 ) {
-  const [
-    workers,
-    jobs,
-  ] = await Promise.all([
-    queryable.query(`
+  const workers =
+    await queryable.query(`
       SELECT
         status,
         COUNT(*) AS count
       FROM workers
       GROUP BY status
-    `),
-    queryable.query(`
+    `);
+
+  const jobs =
+    await queryable.query(`
       SELECT
         status,
         COUNT(*) AS count
       FROM jobs
       GROUP BY status
-    `),
-  ]);
+    `);
 
   const workerCounts =
     Object.fromEntries(
