@@ -58,10 +58,11 @@ After the current worker source has been installed under `/opt/gpulink`, run:
 sudo ./scripts/install-benchmark-runtime-wsl.sh
 ```
 
-The installer is repeatable. It verifies CUDA as the restricted `gpulink` user,
-adds `benchmark.gpu` to the root-readable worker environment only after the
-health probe succeeds, and restarts the worker service. No GPUlink credential is
-required by the benchmark-runtime installer.
+The installer is repeatable. It recreates an incomplete virtual environment,
+verifies `pip`, and verifies a real CUDA allocation and synchronization as the
+restricted `gpulink` user. It adds `benchmark.gpu` to the root-readable worker
+environment only after that health probe succeeds, then restarts the worker
+service. No GPUlink credential is required by the benchmark-runtime installer.
 
 ## Submission
 
