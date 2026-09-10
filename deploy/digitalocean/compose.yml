@@ -1,4 +1,32 @@
 services:
+  postgres:
+    image: postgres:17-bookworm
+    profiles:
+      - postgres
+    env_file:
+      - /etc/gpulink/postgres.env
+    volumes:
+      - gpulink-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    init: true
+    shm_size: 128m
+    mem_limit: 384m
+    cpus: 0.40
+    stop_grace_period: 60s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"'
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
   control-plane:
     image: gpulink-control-plane:local
     build:
@@ -41,3 +69,6 @@ services:
 volumes:
   gpulink-data:
     name: gpulink-control-data
+
+  gpulink-postgres-data:
+    name: gpulink-postgres-data

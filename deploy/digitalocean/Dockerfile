@@ -3,8 +3,17 @@ FROM node:24.16.0-bookworm-slim@sha256:2c87ef9bd3c6a3bd4b472b4bec2ce9d16354b0c57
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY package.json ./
+COPY package.json package-lock.json ./
+
+RUN npm ci \
+      --omit=dev \
+      --ignore-scripts \
+      --no-audit \
+      --no-fund \
+    && npm cache clean --force
+
 COPY src ./src
+COPY scripts/migrate-sqlite-to-postgres.mjs ./scripts/migrate-sqlite-to-postgres.mjs
 
 RUN mkdir -p /var/lib/gpulink \
     && chown node:node /var/lib/gpulink

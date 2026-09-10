@@ -21,13 +21,17 @@ fi
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 install_root=/opt/gpulink
 environment_file=/etc/gpulink/control-plane.env
+postgres_environment_file=/etc/gpulink/postgres.env
 compose_file="${install_root}/deploy/digitalocean/compose.yml"
 
 install -d -o root -g root -m 0755 "${install_root}"
 install -d -o root -g root -m 0700 /etc/gpulink
 install -d -o root -g root -m 0755 "${install_root}/deploy/digitalocean"
+install -d -o root -g root -m 0755 "${install_root}/scripts"
 
-cp -a "${repository_root}/package.json" "${repository_root}/src" "${install_root}/"
+cp -a   "${repository_root}/package.json"   "${repository_root}/package-lock.json"   "${repository_root}/src"   "${install_root}/"
+
+cp -a   "${repository_root}/scripts/migrate-sqlite-to-postgres.mjs"   "${install_root}/scripts/"
 cp -a \
   "${repository_root}/deploy/digitalocean/Dockerfile" \
   "${repository_root}/deploy/digitalocean/compose.yml" \
@@ -59,8 +63,25 @@ else
   echo "Preserved existing credentials in ${environment_file}."
 fi
 
-docker compose -f "${compose_file}" up -d --build
-docker compose -f "${compose_file}" ps
+if [[ ! -e ${postgres_environment_file} ]]; then
+  umask 0077
+  postgres_password="$(openssl rand -hex 32)"
+  {
+    echo "POSTGRES_USER=gpulink"
+    echo "POSTGRES_PASSWORD=${postgres_password}"
+    echo "POSTGRES_DB=gpulink"
+  } > "${postgres_environment_file}"
+  chmod 0600 "${postgres_environment_file}"
+  echo "Created PostgreSQL credentials in ${postgres_environment_file}."
+else
+  echo "Preserved existing PostgreSQL credentials in ${postgres_environment_file}."
+fi
+
+docker compose   -f "${compose_file}"   up -d --build control-plane
+
+docker compose   -f "${compose_file}"   ps
+
+echo "PostgreSQL is staged behind the postgres Compose profile and was not started."
 
 echo "GPUlink is published only on 127.0.0.1:8088."
 echo "Configure and validate Nginx before allowing external clients."
