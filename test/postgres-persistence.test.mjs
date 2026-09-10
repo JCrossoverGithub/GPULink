@@ -12,6 +12,12 @@ import {
 import {
   SqlitePersistence,
 } from "../src/control-plane/persistence/sqlite.mjs";
+import {
+  Scheduler,
+} from "../src/control-plane/scheduler.mjs";
+import {
+  ControlPlaneService,
+} from "../src/control-plane/service.mjs";
 
 const { Pool } = pg;
 
@@ -1838,6 +1844,675 @@ test(
         await inspector.end();
         await postgres.close();
         await sqlite.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL service and scheduler complete a job lifecycle",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 4,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    let now =
+      1_700_000_000_000;
+
+    const clock = () => now;
+
+    const config = {
+      tokens: {
+        client:
+          "postgres-client-token-at-least-32-characters",
+        worker:
+          "postgres-worker-token-at-least-32-characters",
+        admin:
+          "postgres-admin-token-at-least-32-characters",
+      },
+      heartbeatTimeoutMs:
+        60_000,
+      leaseDurationMs:
+        10_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    const scheduler =
+      new Scheduler(
+        database,
+        {
+          heartbeatTimeoutMs:
+            config.heartbeatTimeoutMs,
+          leaseDurationMs:
+            config.leaseDurationMs,
+          vramSafetyMiB:
+            config.vramSafetyMiB,
+          clock,
+        },
+      );
+
+    const service =
+      new ControlPlaneService(
+        database,
+        scheduler,
+        config,
+        {
+          clock,
+        },
+      );
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const smallWorker =
+        await service.registerWorker({
+          name:
+            "postgres-control-small",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "diagnostic.echo",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-8GB",
+              index: 0,
+              name:
+                "PostgreSQL 8GB Test GPU",
+              memoryTotalMiB:
+                8192,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 50,
+            },
+          ],
+        });
+
+      const largeWorker =
+        await service.registerWorker({
+          name:
+            "postgres-control-large",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "diagnostic.echo",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-24GB",
+              index: 0,
+              name:
+                "PostgreSQL 24GB Test GPU",
+              memoryTotalMiB:
+                24576,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 75,
+            },
+          ],
+        });
+
+      assert.notEqual(
+        smallWorker.id,
+        largeWorker.id,
+      );
+
+      const submitted =
+        await service.submitJob({
+          projectId:
+            "postgres-control-test",
+          type:
+            "diagnostic.echo",
+          priority: 5,
+          constraints: {
+            gpuCount: 1,
+            minVramMiB:
+              10_000,
+            capabilities: [
+              "diagnostic.echo",
+            ],
+          },
+          payload: {
+            echo:
+              "postgres-control-plane",
+          },
+          maxAttempts: 3,
+        });
+
+      assert.equal(
+        submitted.duplicate,
+        false,
+      );
+
+      const leased =
+        submitted.job;
+
+      assert.equal(
+        leased.status,
+        "leased",
+      );
+
+      assert.equal(
+        leased.assignedWorkerId,
+        largeWorker.id,
+      );
+
+      assert.equal(
+        leased.assignedGpuUuid,
+        "GPU-POSTGRES-24GB",
+      );
+
+      assert.equal(
+        leased.attempt,
+        1,
+      );
+
+      assert.notEqual(
+        leased.leaseId,
+        null,
+      );
+
+      now += 100;
+
+      const started =
+        await service.startJob(
+          leased.id,
+          {
+            workerId:
+              largeWorker.id,
+            leaseId:
+              leased.leaseId,
+          },
+        );
+
+      assert.equal(
+        started.status,
+        "running",
+      );
+
+      assert.equal(
+        started.assignedWorkerId,
+        largeWorker.id,
+      );
+
+      now += 100;
+
+      const renewed =
+        await service.renewJob(
+          leased.id,
+          {
+            workerId:
+              largeWorker.id,
+            leaseId:
+              leased.leaseId,
+          },
+        );
+
+      assert.equal(
+        renewed.status,
+        "running",
+      );
+
+      assert.equal(
+        renewed.leaseExpiresAt,
+        now +
+          config.leaseDurationMs,
+      );
+
+      now += 100;
+
+      const finished =
+        await service.finishJob(
+          leased.id,
+          {
+            workerId:
+              largeWorker.id,
+            leaseId:
+              leased.leaseId,
+            outcome:
+              "succeeded",
+            result: {
+              echo:
+                "postgres-control-plane",
+            },
+          },
+        );
+
+      assert.equal(
+        finished.status,
+        "succeeded",
+      );
+
+      assert.deepEqual(
+        finished.result,
+        {
+          echo:
+            "postgres-control-plane",
+        },
+      );
+
+      assert.equal(
+        finished.leaseExpiresAt,
+        null,
+      );
+
+      const stored =
+        await database.getJob(
+          leased.id,
+        );
+
+      assert.deepEqual(
+        stored,
+        finished,
+      );
+
+      const counts =
+        await database.counts();
+
+      assert.deepEqual(
+        counts.workerCounts,
+        {
+          online: 2,
+        },
+      );
+
+      assert.deepEqual(
+        counts.jobCounts,
+        {
+          succeeded: 1,
+        },
+      );
+
+      const events =
+        await database
+          .listEventsAfter(0);
+
+      assert.deepEqual(
+        events.map(
+          (event) => event.type,
+        ),
+        [
+          "worker.online",
+          "worker.online",
+          "job.queued",
+          "job.leased",
+          "job.started",
+          "job.succeeded",
+        ],
+      );
+
+      const leasedEvent =
+        events.find(
+          (event) =>
+            event.type ===
+            "job.leased",
+        );
+
+      assert.equal(
+        leasedEvent.subjectId,
+        leased.id,
+      );
+
+      assert.deepEqual(
+        leasedEvent.payload,
+        {
+          workerId:
+            largeWorker.id,
+          gpuUuid:
+            "GPU-POSTGRES-24GB",
+          attempt: 1,
+        },
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await database.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL scheduler recovers a stale worker lease with heartbeat timeout semantics",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 4,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    let now =
+      1_700_000_000_000;
+
+    const clock = () => now;
+
+    const config = {
+      tokens: {
+        client:
+          "postgres-client-token-at-least-32-characters",
+        worker:
+          "postgres-worker-token-at-least-32-characters",
+        admin:
+          "postgres-admin-token-at-least-32-characters",
+      },
+      heartbeatTimeoutMs:
+        1_000,
+      leaseDurationMs:
+        10_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    const scheduler =
+      new Scheduler(
+        database,
+        {
+          heartbeatTimeoutMs:
+            config.heartbeatTimeoutMs,
+          leaseDurationMs:
+            config.leaseDurationMs,
+          vramSafetyMiB:
+            config.vramSafetyMiB,
+          clock,
+        },
+      );
+
+    const service =
+      new ControlPlaneService(
+        database,
+        scheduler,
+        config,
+        {
+          clock,
+        },
+      );
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const worker =
+        await service.registerWorker({
+          name:
+            "postgres-stale-worker",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "diagnostic.echo",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-STALE",
+              index: 0,
+              name:
+                "PostgreSQL Stale Test GPU",
+              memoryTotalMiB:
+                8192,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 50,
+            },
+          ],
+        });
+
+      const submitted =
+        await service.submitJob({
+          projectId:
+            "postgres-recovery-test",
+          type:
+            "diagnostic.echo",
+          constraints: {
+            gpuCount: 1,
+            minVramMiB: 1000,
+            capabilities: [
+              "diagnostic.echo",
+            ],
+          },
+          payload: {
+            echo:
+              "recover-me",
+          },
+          maxAttempts: 3,
+        });
+
+      assert.equal(
+        submitted.job.status,
+        "leased",
+      );
+
+      assert.equal(
+        submitted.job
+          .assignedWorkerId,
+        worker.id,
+      );
+
+      assert.equal(
+        submitted.job.attempt,
+        1,
+      );
+
+      /*
+       * The worker becomes stale before
+       * its lease expires. Recovery must
+       * therefore be attributed to the
+       * heartbeat timeout, not to lease
+       * expiration.
+       */
+      now +=
+        config.heartbeatTimeoutMs +
+        1;
+
+      assert.ok(
+        submitted.job
+          .leaseExpiresAt > now,
+      );
+
+      const recovery =
+        await scheduler.runOnce();
+
+      assert.deepEqual(
+        recovery.staleWorkerIds,
+        [worker.id],
+      );
+
+      assert.equal(
+        recovery.recoveredJobs.length,
+        1,
+      );
+
+      assert.equal(
+        recovery.recoveredJobs[0].id,
+        submitted.job.id,
+      );
+
+      assert.equal(
+        recovery.recoveredJobs[0].status,
+        "queued",
+      );
+
+      assert.equal(
+        recovery.assigned.length,
+        0,
+      );
+
+      const storedWorker =
+        await database.getWorker(
+          worker.id,
+        );
+
+      assert.equal(
+        storedWorker.status,
+        "offline",
+      );
+
+      const storedJob =
+        await database.getJob(
+          submitted.job.id,
+        );
+
+      assert.equal(
+        storedJob.status,
+        "queued",
+      );
+
+      assert.equal(
+        storedJob.attempt,
+        1,
+      );
+
+      assert.equal(
+        storedJob.assignedWorkerId,
+        null,
+      );
+
+      assert.equal(
+        storedJob.assignedGpuUuid,
+        null,
+      );
+
+      assert.equal(
+        storedJob.leaseId,
+        null,
+      );
+
+      assert.equal(
+        storedJob.leaseExpiresAt,
+        null,
+      );
+
+      const events =
+        await database
+          .listEventsAfter(0);
+
+      const offlineEvent =
+        events.find(
+          (event) =>
+            event.type ===
+              "worker.offline" &&
+            event.subjectId ===
+              worker.id,
+        );
+
+      assert.deepEqual(
+        offlineEvent?.payload,
+        {
+          reason:
+            "heartbeat_timeout",
+        },
+      );
+
+      const requeuedEvent =
+        events.find(
+          (event) =>
+            event.type ===
+              "job.requeued" &&
+            event.subjectId ===
+              submitted.job.id,
+        );
+
+      assert.deepEqual(
+        requeuedEvent?.payload,
+        {
+          reason:
+            "heartbeat_timeout",
+          attempt: 1,
+        },
+      );
+
+      const counts =
+        await database.counts();
+
+      assert.deepEqual(
+        counts.workerCounts,
+        {
+          offline: 1,
+        },
+      );
+
+      assert.deepEqual(
+        counts.jobCounts,
+        {
+          queued: 1,
+        },
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await database.close();
       }
     }
   },
