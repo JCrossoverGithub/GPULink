@@ -513,6 +513,18 @@ export class PostgresPersistence {
           ...args,
         );
 
+      case "appendEvent":
+        return postgresAppendEvent(
+          queryable,
+          ...args,
+        );
+
+      case "listEventsAfter":
+        return postgresListEventsAfter(
+          queryable,
+          ...args,
+        );
+
       default:
         return Promise.reject(
           new Error(
@@ -838,5 +850,94 @@ function mapPostgresWorker(row) {
       Number(row.created_at),
     updatedAt:
       Number(row.updated_at),
+  };
+}
+
+
+async function postgresAppendEvent(
+  queryable,
+  type,
+  subjectId,
+  payload,
+  now,
+) {
+  const inserted =
+    await queryable.query(
+      `
+        INSERT INTO events (
+          type,
+          subject_id,
+          payload_json,
+          created_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3::jsonb,
+          $4
+        )
+        RETURNING *
+      `,
+      [
+        type,
+        subjectId,
+        JSON.stringify(payload),
+        now,
+      ],
+    );
+
+  await queryable.query(`
+    DELETE FROM events
+    WHERE sequence <= COALESCE(
+      (
+        SELECT MAX(sequence) - 10000
+        FROM events
+      ),
+      0
+    )
+  `);
+
+  return mapPostgresEvent(
+    inserted.rows[0],
+  );
+}
+
+async function postgresListEventsAfter(
+  queryable,
+  sequence,
+  limit = 500,
+) {
+  const result =
+    await queryable.query(
+      `
+        SELECT *
+        FROM events
+        WHERE sequence > $1
+        ORDER BY sequence ASC
+        LIMIT $2
+      `,
+      [
+        sequence,
+        limit,
+      ],
+    );
+
+  return result.rows.map(
+    mapPostgresEvent,
+  );
+}
+
+function mapPostgresEvent(row) {
+  return {
+    sequence:
+      Number(row.sequence),
+    type:
+      row.type,
+    subjectId:
+      row.subject_id,
+    payload:
+      row.payload_json ?? {},
+    createdAt:
+      Number(row.created_at),
   };
 }

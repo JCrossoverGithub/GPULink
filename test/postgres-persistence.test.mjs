@@ -522,3 +522,182 @@ test(
     }
   },
 );
+
+test(
+  "PostgreSQL event persistence matches SQLite semantics and transaction rollback",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const postgres =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 2,
+        },
+      );
+
+    const sqlite =
+      new SqlitePersistence(
+        ":memory:",
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    try {
+      await postgres.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const firstNow =
+        1_700_000_000_000;
+
+      const postgresFirst =
+        await postgres.appendEvent(
+          "worker.online",
+          "worker-event-test",
+          {
+            name: "event-worker",
+            gpuCount: 1,
+          },
+          firstNow,
+        );
+
+      const sqliteFirst =
+        await sqlite.appendEvent(
+          "worker.online",
+          "worker-event-test",
+          {
+            name: "event-worker",
+            gpuCount: 1,
+          },
+          firstNow,
+        );
+
+      assert.deepEqual(
+        postgresFirst,
+        sqliteFirst,
+      );
+
+      const secondNow =
+        firstNow + 100;
+
+      const postgresSecond =
+        await postgres.appendEvent(
+          "job.queued",
+          "job-event-test",
+          {
+            projectId: "test",
+            priority: 10,
+          },
+          secondNow,
+        );
+
+      const sqliteSecond =
+        await sqlite.appendEvent(
+          "job.queued",
+          "job-event-test",
+          {
+            projectId: "test",
+            priority: 10,
+          },
+          secondNow,
+        );
+
+      assert.deepEqual(
+        postgresSecond,
+        sqliteSecond,
+      );
+
+      assert.deepEqual(
+        await postgres.listEventsAfter(0),
+        await sqlite.listEventsAfter(0),
+      );
+
+      assert.deepEqual(
+        await postgres.listEventsAfter(
+          postgresFirst.sequence,
+        ),
+        await sqlite.listEventsAfter(
+          sqliteFirst.sequence,
+        ),
+      );
+
+      assert.deepEqual(
+        await postgres.listEventsAfter(
+          0,
+          1,
+        ),
+        await sqlite.listEventsAfter(
+          0,
+          1,
+        ),
+      );
+
+      await assert.rejects(
+        postgres.transaction(
+          async (transaction) => {
+            await transaction.appendEvent(
+              "job.failed",
+              "job-rollback-test",
+              {
+                reason:
+                  "intentional_test",
+              },
+              secondNow + 100,
+            );
+
+            throw new Error(
+              "rollback event transaction",
+            );
+          },
+        ),
+        /rollback event transaction/u,
+      );
+
+      const afterRollback =
+        await postgres.listEventsAfter(0);
+
+      assert.deepEqual(
+        afterRollback,
+        await sqlite.listEventsAfter(0),
+      );
+
+      assert.equal(
+        afterRollback.some(
+          (event) =>
+            event.subjectId ===
+            "job-rollback-test",
+        ),
+        false,
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await postgres.close();
+        await sqlite.close();
+      }
+    }
+  },
+);
