@@ -701,3 +701,244 @@ test(
     }
   },
 );
+
+test(
+  "PostgreSQL basic job persistence matches SQLite semantics",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const postgres =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 2,
+        },
+      );
+
+    const sqlite =
+      new SqlitePersistence(
+        ":memory:",
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    try {
+      await postgres.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const firstJob = {
+        id: "job-postgres-basic-1",
+        projectId: "postgres-test",
+        type: "diagnostic.echo",
+        priority: 5,
+        minVramMiB: 4096,
+        requiredCapabilities: [
+          "diagnostic.echo",
+        ],
+        requestedModel: null,
+        payload: {
+          echo: "first",
+        },
+        maxAttempts: 3,
+        idempotencyKey:
+          "request-basic-1",
+        now:
+          1_700_000_000_000,
+      };
+
+      const secondJob = {
+        id: "job-postgres-basic-2",
+        projectId: "postgres-test",
+        type: "benchmark.gpu",
+        priority: 10,
+        minVramMiB: 8192,
+        requiredCapabilities: [
+          "benchmark.gpu",
+        ],
+        requestedModel:
+          "example/model",
+        payload: {
+          schemaVersion: 1,
+        },
+        maxAttempts: 2,
+        idempotencyKey: null,
+        now:
+          1_700_000_000_100,
+      };
+
+      const postgresFirst =
+        await postgres.insertJob(
+          firstJob,
+        );
+
+      const sqliteFirst =
+        await sqlite.insertJob(
+          firstJob,
+        );
+
+      assert.deepEqual(
+        postgresFirst,
+        sqliteFirst,
+      );
+
+      const postgresSecond =
+        await postgres.insertJob(
+          secondJob,
+        );
+
+      const sqliteSecond =
+        await sqlite.insertJob(
+          secondJob,
+        );
+
+      assert.deepEqual(
+        postgresSecond,
+        sqliteSecond,
+      );
+
+      assert.deepEqual(
+        await postgres.getJob(
+          firstJob.id,
+        ),
+        await sqlite.getJob(
+          firstJob.id,
+        ),
+      );
+
+      assert.equal(
+        await postgres.getJob(
+          "job-does-not-exist",
+        ),
+        null,
+      );
+
+      assert.deepEqual(
+        await postgres.listJobs(),
+        await sqlite.listJobs(),
+      );
+
+      assert.deepEqual(
+        await postgres.listJobs({
+          status: "queued",
+          limit: 1,
+        }),
+        await sqlite.listJobs({
+          status: "queued",
+          limit: 1,
+        }),
+      );
+
+      assert.deepEqual(
+        await postgres.listJobs({
+          workerId:
+            "worker-does-not-exist",
+        }),
+        await sqlite.listJobs({
+          workerId:
+            "worker-does-not-exist",
+        }),
+      );
+
+      assert.deepEqual(
+        await postgres
+          .listQueuedJobs(),
+        await sqlite
+          .listQueuedJobs(),
+      );
+
+      assert.deepEqual(
+        await postgres
+          .listActiveJobs(),
+        await sqlite
+          .listActiveJobs(),
+      );
+
+      const duplicateInput = {
+        ...firstJob,
+        id:
+          "job-postgres-duplicate",
+        payload: {
+          echo:
+            "should-not-replace-original",
+        },
+        now:
+          firstJob.now + 500,
+      };
+
+      const postgresDuplicate =
+        await postgres.insertJob(
+          duplicateInput,
+        );
+
+      const sqliteDuplicate =
+        await sqlite.insertJob(
+          duplicateInput,
+        );
+
+      assert.deepEqual(
+        postgresDuplicate,
+        sqliteDuplicate,
+      );
+
+      assert.equal(
+        postgresDuplicate.duplicate,
+        true,
+      );
+
+      assert.equal(
+        postgresDuplicate.job.id,
+        firstJob.id,
+      );
+
+      assert.deepEqual(
+        postgresDuplicate.job.payload,
+        firstJob.payload,
+      );
+
+      const postgresJobs =
+        await postgres.listJobs();
+
+      const sqliteJobs =
+        await sqlite.listJobs();
+
+      assert.deepEqual(
+        postgresJobs,
+        sqliteJobs,
+      );
+
+      assert.equal(
+        postgresJobs.length,
+        2,
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await postgres.close();
+        await sqlite.close();
+      }
+    }
+  },
+);

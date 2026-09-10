@@ -513,6 +513,36 @@ export class PostgresPersistence {
           ...args,
         );
 
+      case "insertJob":
+        return postgresInsertJob(
+          queryable,
+          ...args,
+        );
+
+      case "getJob":
+        return postgresGetJob(
+          queryable,
+          ...args,
+        );
+
+      case "listJobs":
+        return postgresListJobs(
+          queryable,
+          ...args,
+        );
+
+      case "listQueuedJobs":
+        return postgresListQueuedJobs(
+          queryable,
+          ...args,
+        );
+
+      case "listActiveJobs":
+        return postgresListActiveJobs(
+          queryable,
+          ...args,
+        );
+
       case "appendEvent":
         return postgresAppendEvent(
           queryable,
@@ -939,5 +969,273 @@ function mapPostgresEvent(row) {
       row.payload_json ?? {},
     createdAt:
       Number(row.created_at),
+  };
+}
+
+
+async function postgresInsertJob(
+  queryable,
+  job,
+) {
+  const result =
+    await queryable.query(
+      `
+        INSERT INTO jobs (
+          id,
+          project_id,
+          type,
+          priority,
+          status,
+          gpu_count,
+          min_vram_mib,
+          required_capabilities_json,
+          requested_model,
+          payload_json,
+          attempt,
+          max_attempts,
+          idempotency_key,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          'queued',
+          1,
+          $5,
+          $6::jsonb,
+          $7,
+          $8::jsonb,
+          0,
+          $9,
+          $10,
+          $11,
+          $12
+        )
+        ON CONFLICT (
+          project_id,
+          idempotency_key
+        )
+        DO NOTHING
+        RETURNING *
+      `,
+      [
+        job.id,
+        job.projectId,
+        job.type,
+        job.priority,
+        job.minVramMiB,
+        JSON.stringify(
+          job.requiredCapabilities,
+        ),
+        job.requestedModel,
+        JSON.stringify(job.payload),
+        job.maxAttempts,
+        job.idempotencyKey,
+        job.now,
+        job.now,
+      ],
+    );
+
+  if (result.rowCount > 0) {
+    return {
+      job: mapPostgresJob(
+        result.rows[0],
+      ),
+      duplicate: false,
+    };
+  }
+
+  if (job.idempotencyKey !== null) {
+    const existing =
+      await queryable.query(
+        `
+          SELECT *
+          FROM jobs
+          WHERE
+            project_id = $1
+            AND idempotency_key = $2
+        `,
+        [
+          job.projectId,
+          job.idempotencyKey,
+        ],
+      );
+
+    if (existing.rowCount > 0) {
+      return {
+        job: mapPostgresJob(
+          existing.rows[0],
+        ),
+        duplicate: true,
+      };
+    }
+  }
+
+  throw new Error(
+    "PostgreSQL job insert returned no row",
+  );
+}
+
+async function postgresGetJob(
+  queryable,
+  jobId,
+) {
+  const result =
+    await queryable.query(
+      `
+        SELECT *
+        FROM jobs
+        WHERE id = $1
+      `,
+      [jobId],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresJob(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresListJobs(
+  queryable,
+  {
+    status = null,
+    workerId = null,
+    limit = 100,
+  } = {},
+) {
+  const clauses = [];
+  const parameters = [];
+
+  if (status) {
+    parameters.push(status);
+    clauses.push(
+      `status = $${parameters.length}`,
+    );
+  }
+
+  if (workerId) {
+    parameters.push(workerId);
+    clauses.push(
+      `assigned_worker_id = $${parameters.length}`,
+    );
+  }
+
+  const where =
+    clauses.length > 0
+      ? `WHERE ${clauses.join(" AND ")}`
+      : "";
+
+  parameters.push(limit);
+
+  const result =
+    await queryable.query(
+      `
+        SELECT *
+        FROM jobs
+        ${where}
+        ORDER BY created_at DESC
+        LIMIT $${parameters.length}
+      `,
+      parameters,
+    );
+
+  return result.rows.map(
+    mapPostgresJob,
+  );
+}
+
+async function postgresListQueuedJobs(
+  queryable,
+) {
+  const result =
+    await queryable.query(`
+      SELECT *
+      FROM jobs
+      WHERE status = 'queued'
+      ORDER BY
+        priority DESC,
+        created_at ASC,
+        id ASC
+    `);
+
+  return result.rows.map(
+    mapPostgresJob,
+  );
+}
+
+async function postgresListActiveJobs(
+  queryable,
+) {
+  const result =
+    await queryable.query(`
+      SELECT *
+      FROM jobs
+      WHERE status IN (
+        'leased',
+        'running'
+      )
+    `);
+
+  return result.rows.map(
+    mapPostgresJob,
+  );
+}
+
+function mapPostgresJob(row) {
+  return {
+    id:
+      row.id,
+    projectId:
+      row.project_id,
+    type:
+      row.type,
+    priority:
+      Number(row.priority),
+    status:
+      row.status,
+    constraints: {
+      gpuCount:
+        Number(row.gpu_count),
+      minVramMiB:
+        Number(row.min_vram_mib),
+      capabilities:
+        row.required_capabilities_json ??
+        [],
+      model:
+        row.requested_model,
+    },
+    payload:
+      row.payload_json ?? {},
+    result:
+      row.result_json ?? null,
+    error:
+      row.error_json ?? null,
+    assignedWorkerId:
+      row.assigned_worker_id,
+    assignedGpuUuid:
+      row.assigned_gpu_uuid,
+    leaseId:
+      row.lease_id,
+    leaseExpiresAt:
+      row.lease_expires_at === null
+        ? null
+        : Number(
+            row.lease_expires_at,
+          ),
+    attempt:
+      Number(row.attempt),
+    maxAttempts:
+      Number(row.max_attempts),
+    idempotencyKey:
+      row.idempotency_key,
+    createdAt:
+      Number(row.created_at),
+    updatedAt:
+      Number(row.updated_at),
   };
 }
