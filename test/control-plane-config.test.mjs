@@ -34,3 +34,68 @@ test("rejects credential reuse across scopes", () => {
     /must be different/u,
   );
 });
+
+test("defaults the control plane to SQLite persistence", () => {
+  const config =
+    loadControlPlaneConfig(
+      validEnvironment,
+    );
+
+  assert.equal(
+    config.database,
+    "sqlite",
+  );
+
+  assert.equal(
+    config.databaseUrl,
+    null,
+  );
+});
+
+test("accepts explicit PostgreSQL persistence", () => {
+  const databaseUrl =
+    "postgresql://gpulink:test@127.0.0.1:5432/gpulink";
+
+  const config =
+    loadControlPlaneConfig({
+      ...validEnvironment,
+      GPULINK_CONTROL_DATABASE:
+        "postgres",
+      GPULINK_DATABASE_URL:
+        databaseUrl,
+    });
+
+  assert.equal(
+    config.database,
+    "postgres",
+  );
+
+  assert.equal(
+    config.databaseUrl,
+    databaseUrl,
+  );
+});
+
+test("requires a database URL for PostgreSQL persistence", () => {
+  assert.throws(
+    () =>
+      loadControlPlaneConfig({
+        ...validEnvironment,
+        GPULINK_CONTROL_DATABASE:
+          "postgres",
+      }),
+    /GPULINK_DATABASE_URL is required/u,
+  );
+});
+
+test("rejects an unsupported persistence backend", () => {
+  assert.throws(
+    () =>
+      loadControlPlaneConfig({
+        ...validEnvironment,
+        GPULINK_CONTROL_DATABASE:
+          "mysql",
+      }),
+    /must be sqlite or postgres/u,
+  );
+});

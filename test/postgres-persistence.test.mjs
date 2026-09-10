@@ -2937,3 +2937,145 @@ async function postgresHttpRequest(
       await response.json(),
   };
 }
+
+test(
+  "control plane selects and initializes PostgreSQL from configuration",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    const config = {
+      host: "127.0.0.1",
+      port: 0,
+      database: "postgres",
+      databaseUrl:
+        connectionString,
+      dataPath: ":memory:",
+      tokens: {
+        client:
+          "configured-client-token-at-least-32-characters",
+        worker:
+          "configured-worker-token-at-least-32-characters",
+        admin:
+          "configured-admin-token-at-least-32-characters",
+      },
+      heartbeatTimeoutMs:
+        60_000,
+      leaseDurationMs:
+        10_000,
+      schedulerIntervalMs:
+        60_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    const app =
+      createControlPlane(config);
+
+    try {
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const address =
+        await app.start();
+
+      assert.equal(
+        app.database.constructor.name,
+        "PostgresPersistence",
+      );
+
+      const baseUrl =
+        `http://127.0.0.1:${address.port}`;
+
+      const health =
+        await fetch(
+          `${baseUrl}/healthz`,
+        );
+
+      assert.equal(
+        health.status,
+        200,
+      );
+
+      const registration =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          "/v1/workers/register",
+          {
+            name:
+              "configured-postgres-worker",
+            version: "test",
+            labels: {},
+            capabilities: [
+              "diagnostic.echo",
+            ],
+            warmModels: [],
+            modelInventory: [],
+            gpus: [
+              {
+                uuid:
+                  "GPU-CONFIGURED-POSTGRES",
+                index: 0,
+                name:
+                  "Configured PostgreSQL GPU",
+                memoryTotalMiB:
+                  8192,
+                memoryUsedMiB: 0,
+                utilizationPercent: 0,
+                temperatureC: 40,
+                powerDrawWatts: 50,
+              },
+            ],
+          },
+          config.tokens.worker,
+        );
+
+      assert.equal(
+        registration.response.status,
+        200,
+      );
+
+      const count =
+        await inspector.query(`
+          SELECT COUNT(*) AS count
+          FROM workers
+        `);
+
+      assert.equal(
+        Number(
+          count.rows[0].count,
+        ),
+        1,
+      );
+    } finally {
+      await app.stop();
+
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+      }
+    }
+  },
+);

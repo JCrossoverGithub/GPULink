@@ -7,9 +7,18 @@ const address = await controlPlane.start();
 
 console.log(JSON.stringify({
   event: "control_plane_started",
-  address: typeof address === "object" ? address.address : config.host,
-  port: typeof address === "object" ? address.port : config.port,
-  dataPath: config.dataPath,
+  address:
+    typeof address === "object"
+      ? address.address
+      : config.host,
+  port:
+    typeof address === "object"
+      ? address.port
+      : config.port,
+  database: config.database,
+  ...(config.database === "sqlite"
+    ? { dataPath: config.dataPath }
+    : {}),
 }));
 
 let stopping = false;

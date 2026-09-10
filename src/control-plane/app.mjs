@@ -1,3 +1,4 @@
+import { PostgresPersistence } from "./persistence/postgres.mjs";
 import { SqlitePersistence } from "./persistence/sqlite.mjs";
 import { Scheduler } from "./scheduler.mjs";
 import { ControlPlaneService } from "./service.mjs";
@@ -9,7 +10,7 @@ export function createControlPlane(
 ) {
   const database =
     options.database ??
-    new SqlitePersistence(config.dataPath);
+    createPersistence(config);
 
   const scheduler =
     options.scheduler ??
@@ -82,6 +83,13 @@ export function createControlPlane(
     async start() {
       stopping = false;
 
+      if (
+        typeof database.initialize ===
+        "function"
+      ) {
+        await database.initialize();
+      }
+
       await scheduler.runOnce();
 
       await new Promise(
@@ -129,4 +137,25 @@ export function createControlPlane(
       await database.close();
     },
   };
+}
+
+
+function createPersistence(config) {
+  switch (config.database) {
+    case undefined:
+    case "sqlite":
+      return new SqlitePersistence(
+        config.dataPath,
+      );
+
+    case "postgres":
+      return new PostgresPersistence(
+        config.databaseUrl,
+      );
+
+    default:
+      throw new Error(
+        `Unsupported control-plane database ${config.database}`,
+      );
+  }
 }
