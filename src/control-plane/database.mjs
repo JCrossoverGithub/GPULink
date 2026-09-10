@@ -355,12 +355,16 @@ export class ControlPlaneDatabase {
   }
 
   recoverExpiredJobs(now, offlineWorkerIds = []) {
+    const offlineWorkerIdSet = new Set(offlineWorkerIds);
     const active = this.listActiveJobs().filter((job) =>
       (job.leaseExpiresAt !== null && job.leaseExpiresAt <= now) ||
-      offlineWorkerIds.includes(job.assignedWorkerId));
+      offlineWorkerIdSet.has(job.assignedWorkerId));
     const recovered = [];
 
     for (const job of active) {
+      const reason = offlineWorkerIdSet.has(job.assignedWorkerId)
+        ? "heartbeat_timeout"
+        : "lease_expired";
       const terminal = job.attempt >= job.maxAttempts;
       const status = terminal ? "failed" : "queued";
       const error = terminal
@@ -373,7 +377,7 @@ export class ControlPlaneDatabase {
         WHERE id = ? AND status IN ('leased', 'running')
         RETURNING *
       `).get(status, error, now, job.id);
-      if (row) recovered.push(mapJob(row));
+      if (row) recovered.push({ job: mapJob(row), reason });
     }
     return recovered;
   }

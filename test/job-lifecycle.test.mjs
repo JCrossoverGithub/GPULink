@@ -54,7 +54,7 @@ test("one GPU never receives two active jobs", () => {
 test("stale workers become offline and their jobs are recovered", () => {
   const context = createTestContext({ heartbeatTimeoutMs: 1000, leaseDurationMs: 100_000 });
   try {
-    registerWorker(context, {
+    const worker = registerWorker(context, {
       name: "stale-worker",
       gpus: [gpu({ uuid: "GPU-STALE", memoryTotalMiB: 8192 })],
     });
@@ -65,6 +65,19 @@ test("stale workers become offline and their jobs are recovered", () => {
     context.scheduler.runOnce();
     assert.equal(context.database.listWorkers()[0].status, "offline");
     assert.equal(context.database.getJob(submitted.id).status, "queued");
+
+    const events = context.database.listEventsAfter(0);
+    const offlineEvent = events.find(
+      (event) => event.type === "worker.offline" && event.subjectId === worker.id,
+    );
+    const requeuedEvent = events.find(
+      (event) => event.type === "job.requeued" && event.subjectId === submitted.id,
+    );
+    assert.deepEqual(offlineEvent?.payload, { reason: "heartbeat_timeout" });
+    assert.deepEqual(requeuedEvent?.payload, {
+      reason: "heartbeat_timeout",
+      attempt: 1,
+    });
   } finally {
     context.close();
   }
