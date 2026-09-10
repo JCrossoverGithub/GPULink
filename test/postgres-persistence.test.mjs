@@ -1,4 +1,12 @@
 import assert from "node:assert/strict";
+import {
+  mkdtemp,
+  rm,
+} from "node:fs/promises";
+import {
+  tmpdir,
+} from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import pg from "pg";
@@ -21,6 +29,12 @@ import {
 import {
   createControlPlane,
 } from "../src/control-plane/app.mjs";
+import {
+  ControlPlaneDatabase,
+} from "../src/control-plane/database.mjs";
+import {
+  migrateSqliteToPostgres,
+} from "../scripts/migrate-sqlite-to-postgres.mjs";
 
 const { Pool } = pg;
 
@@ -3075,6 +3089,494 @@ test(
         `);
       } finally {
         await inspector.end();
+      }
+    }
+  },
+);
+
+test(
+  "SQLite to PostgreSQL migration preserves authoritative state and event sequence",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const directory =
+      await mkdtemp(
+        path.join(
+          tmpdir(),
+          "gpulink-migration-",
+        ),
+      );
+
+    const sourcePath =
+      path.join(
+        directory,
+        "control-plane.snapshot.sqlite",
+      );
+
+    const source =
+      new ControlPlaneDatabase(
+        sourcePath,
+      );
+
+    const initialNow =
+      1_700_000_000_000;
+
+    try {
+      const worker =
+        source.upsertWorker({
+          id:
+            "worker-migration-test",
+          name:
+            "migration-worker",
+          version:
+            "1.0.0",
+          baseUrl:
+            "http://migration.test",
+          labels: {
+            site: "migration-lab",
+          },
+          capabilities: [
+            "diagnostic.echo",
+          ],
+          adapterManifests: [],
+          adapterHealth: [],
+          warmModels: [
+            "example/warm-model",
+          ],
+          modelInventory: [
+            {
+              schemaVersion: 1,
+              modelId:
+                "example/cached-model",
+              revision:
+                "main",
+              adapterType:
+                "diagnostic.echo",
+            },
+          ],
+          gpus: [
+            {
+              uuid:
+                "GPU-MIGRATION",
+              index: 0,
+              name:
+                "Migration Test GPU",
+              memoryTotalMiB:
+                24576,
+              memoryUsedMiB:
+                1024,
+              utilizationPercent:
+                20,
+              temperatureC:
+                45,
+              powerDrawWatts:
+                100.5,
+            },
+          ],
+          now:
+            initialNow,
+        });
+
+      source.setWorkerDrain(
+        worker.id,
+        true,
+        initialNow + 10,
+      );
+
+      const completed =
+        source.insertJob({
+          id:
+            "job-migration-completed",
+          projectId:
+            "migration-test",
+          type:
+            "diagnostic.echo",
+          priority: 5,
+          minVramMiB:
+            1024,
+          requiredCapabilities: [
+            "diagnostic.echo",
+          ],
+          requestedModel:
+            null,
+          payload: {
+            echo:
+              "migrate-me",
+          },
+          maxAttempts: 3,
+          idempotencyKey:
+            "migration-completed",
+          now:
+            initialNow + 20,
+        }).job;
+
+      const leaseId =
+        "lease-migration-test";
+
+      source.assignJob(
+        completed.id,
+        {
+          workerId:
+            worker.id,
+          gpuUuid:
+            "GPU-MIGRATION",
+        },
+        leaseId,
+        initialNow + 20_000,
+        initialNow + 30,
+      );
+
+      source.startJob(
+        completed.id,
+        worker.id,
+        leaseId,
+        initialNow + 30_000,
+        initialNow + 40,
+      );
+
+      source.finishJob(
+        completed.id,
+        worker.id,
+        leaseId,
+        "succeeded",
+        {
+          echo:
+            "migrated",
+        },
+        null,
+        initialNow + 50,
+      );
+
+      source.insertJob({
+        id:
+          "job-migration-queued",
+        projectId:
+          "migration-test",
+        type:
+          "diagnostic.echo",
+        priority: 1,
+        minVramMiB:
+          1,
+        requiredCapabilities: [
+          "diagnostic.echo",
+        ],
+        requestedModel:
+          null,
+        payload: {
+          echo:
+            "still-queued",
+        },
+        maxAttempts: 3,
+        idempotencyKey:
+          null,
+        now:
+          initialNow + 60,
+      });
+
+      source.appendEvent(
+        "worker.online",
+        worker.id,
+        {
+          name:
+            worker.name,
+        },
+        initialNow + 70,
+      );
+
+      source.appendEvent(
+        "event.deleted-for-gap",
+        null,
+        {},
+        initialNow + 80,
+      );
+
+      source.database
+        .prepare(`
+          DELETE FROM events
+          WHERE sequence = 2
+        `)
+        .run();
+
+      const lastEvent =
+        source.appendEvent(
+          "job.succeeded",
+          completed.id,
+          {
+            attempt: 1,
+          },
+          initialNow + 90,
+        );
+
+      assert.equal(
+        lastEvent.sequence,
+        3,
+      );
+
+      const stale =
+        source
+          .markStaleWorkersOffline(
+            initialNow + 1,
+            initialNow + 100,
+          );
+
+      assert.deepEqual(
+        stale,
+        [
+          worker.id,
+        ],
+      );
+    } finally {
+      source.close();
+    }
+
+    const bootstrap =
+      new PostgresPersistence(
+        connectionString,
+      );
+
+    await bootstrap.initialize();
+    await bootstrap.close();
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    try {
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const dryRun =
+        await migrateSqliteToPostgres({
+          sourcePath,
+          connectionString,
+        });
+
+      assert.equal(
+        dryRun.mode,
+        "dry-run",
+      );
+
+      assert.equal(
+        dryRun.readyToApply,
+        true,
+      );
+
+      assert.deepEqual(
+        dryRun.source.counts,
+        {
+          workers: 1,
+          jobs: 2,
+          events: 2,
+        },
+      );
+
+      assert.equal(
+        dryRun.source
+          .maxEventSequence,
+        3,
+      );
+
+      const applied =
+        await migrateSqliteToPostgres({
+          sourcePath,
+          connectionString,
+          apply: true,
+        });
+
+      assert.equal(
+        applied.mode,
+        "apply",
+      );
+
+      assert.equal(
+        applied.verified,
+        true,
+      );
+
+      assert.deepEqual(
+        applied.targetAfter.counts,
+        applied.source.counts,
+      );
+
+      assert.deepEqual(
+        applied.targetAfter
+          .fingerprints,
+        applied.source
+          .fingerprints,
+      );
+
+      const workers =
+        await inspector.query(`
+          SELECT
+            id,
+            status,
+            drain_mode
+          FROM workers
+        `);
+
+      assert.equal(
+        workers.rowCount,
+        1,
+      );
+
+      assert.equal(
+        workers.rows[0].status,
+        "offline",
+      );
+
+      assert.equal(
+        workers.rows[0]
+          .drain_mode,
+        true,
+      );
+
+      const jobs =
+        await inspector.query(`
+          SELECT
+            id,
+            status,
+            assigned_worker_id,
+            assigned_gpu_uuid,
+            lease_id,
+            lease_expires_at,
+            result_json
+          FROM jobs
+          ORDER BY id
+        `);
+
+      assert.equal(
+        jobs.rowCount,
+        2,
+      );
+
+      const completed =
+        jobs.rows.find(
+          (job) =>
+            job.id ===
+            "job-migration-completed",
+        );
+
+      assert.equal(
+        completed.status,
+        "succeeded",
+      );
+
+      assert.equal(
+        completed.assigned_worker_id,
+        "worker-migration-test",
+      );
+
+      assert.equal(
+        completed.assigned_gpu_uuid,
+        "GPU-MIGRATION",
+      );
+
+      assert.equal(
+        completed.lease_id,
+        "lease-migration-test",
+      );
+
+      assert.equal(
+        completed.lease_expires_at,
+        null,
+      );
+
+      assert.deepEqual(
+        completed.result_json,
+        {
+          echo:
+            "migrated",
+        },
+      );
+
+      const events =
+        await inspector.query(`
+          SELECT sequence
+          FROM events
+          ORDER BY sequence
+        `);
+
+      assert.deepEqual(
+        events.rows.map(
+          (row) =>
+            Number(
+              row.sequence,
+            ),
+        ),
+        [
+          1,
+          3,
+        ],
+      );
+
+      const nextEvent =
+        await inspector.query(
+          `
+            INSERT INTO events (
+              type,
+              subject_id,
+              payload_json,
+              created_at
+            )
+            VALUES (
+              'migration.sequence.check',
+              NULL,
+              '{}'::jsonb,
+              $1
+            )
+            RETURNING sequence
+          `,
+          [
+            initialNow + 200,
+          ],
+        );
+
+      assert.equal(
+        Number(
+          nextEvent.rows[0]
+            .sequence,
+        ),
+        4,
+      );
+
+      await assert.rejects(
+        migrateSqliteToPostgres({
+          sourcePath,
+          connectionString,
+          apply: true,
+        }),
+        /target is not empty/u,
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+
+        await rm(
+          directory,
+          {
+            recursive: true,
+            force: true,
+          },
+        );
       }
     }
   },
