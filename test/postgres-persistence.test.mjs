@@ -18,6 +18,9 @@ import {
 import {
   ControlPlaneService,
 } from "../src/control-plane/service.mjs";
+import {
+  createControlPlane,
+} from "../src/control-plane/app.mjs";
 
 const { Pool } = pg;
 
@@ -2517,3 +2520,420 @@ test(
     }
   },
 );
+
+test(
+  "HTTP control plane runs end-to-end on PostgreSQL",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 6,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    const now =
+      1_700_000_000_000;
+
+    const clock = () => now;
+
+    const tokens = {
+      client:
+        "postgres-http-client-token-at-least-32-characters",
+      worker:
+        "postgres-http-worker-token-at-least-32-characters",
+      admin:
+        "postgres-http-admin-token-at-least-32-characters",
+    };
+
+    const config = {
+      host: "127.0.0.1",
+      port: 0,
+      dataPath: ":memory:",
+      tokens,
+      heartbeatTimeoutMs:
+        60_000,
+      leaseDurationMs:
+        10_000,
+      schedulerIntervalMs:
+        60_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    let app = null;
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      app =
+        createControlPlane(
+          config,
+          {
+            database,
+            clock,
+          },
+        );
+
+      const address =
+        await app.start();
+
+      const baseUrl =
+        `http://127.0.0.1:${address.port}`;
+
+      const unauthorized =
+        await fetch(
+          `${baseUrl}/v1/workers`,
+        );
+
+      assert.equal(
+        unauthorized.status,
+        401,
+      );
+
+      const registration =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          "/v1/workers/register",
+          {
+            name:
+              "postgres-http-worker",
+            version:
+              "test",
+            labels: {},
+            capabilities: [
+              "diagnostic.echo",
+            ],
+            warmModels: [],
+            modelInventory: [],
+            gpus: [
+              {
+                uuid:
+                  "GPU-POSTGRES-HTTP",
+                index: 0,
+                name:
+                  "PostgreSQL HTTP Test GPU",
+                memoryTotalMiB:
+                  24576,
+                memoryUsedMiB: 0,
+                utilizationPercent: 0,
+                temperatureC: 40,
+                powerDrawWatts: 75,
+              },
+            ],
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        registration.response.status,
+        200,
+      );
+
+      const workerId =
+        registration.body.worker.id;
+
+      const submitted =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          "/v1/jobs",
+          {
+            projectId:
+              "postgres-http-test",
+            type:
+              "diagnostic.echo",
+            constraints: {
+              gpuCount: 1,
+              minVramMiB: 1000,
+              capabilities: [
+                "diagnostic.echo",
+              ],
+            },
+            payload: {
+              echo:
+                "hello-postgres",
+            },
+            maxAttempts: 3,
+          },
+          tokens.client,
+        );
+
+      assert.equal(
+        submitted.response.status,
+        201,
+      );
+
+      assert.equal(
+        submitted.body.job.status,
+        "leased",
+      );
+
+      assert.equal(
+        submitted.body.job
+          .assignedWorkerId,
+        workerId,
+      );
+
+      assert.equal(
+        submitted.body.job
+          .assignedGpuUuid,
+        "GPU-POSTGRES-HTTP",
+      );
+
+      const leases =
+        await postgresHttpRequest(
+          baseUrl,
+          "GET",
+          `/v1/workers/${workerId}/leases`,
+          undefined,
+          tokens.worker,
+        );
+
+      assert.equal(
+        leases.response.status,
+        200,
+      );
+
+      assert.equal(
+        leases.body.jobs.length,
+        1,
+      );
+
+      const leasedJob =
+        leases.body.jobs[0];
+
+      const started =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/jobs/${leasedJob.id}/start`,
+          {
+            workerId,
+            leaseId:
+              leasedJob.leaseId,
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        started.response.status,
+        200,
+      );
+
+      assert.equal(
+        started.body.job.status,
+        "running",
+      );
+
+      const renewed =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/jobs/${leasedJob.id}/renew`,
+          {
+            workerId,
+            leaseId:
+              leasedJob.leaseId,
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        renewed.response.status,
+        200,
+      );
+
+      assert.equal(
+        renewed.body.job.status,
+        "running",
+      );
+
+      const finished =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/jobs/${leasedJob.id}/finish`,
+          {
+            workerId,
+            leaseId:
+              leasedJob.leaseId,
+            outcome:
+              "succeeded",
+            result: {
+              echo:
+                "hello-postgres",
+            },
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        finished.response.status,
+        200,
+      );
+
+      assert.equal(
+        finished.body.job.status,
+        "succeeded",
+      );
+
+      assert.deepEqual(
+        finished.body.job.result,
+        {
+          echo:
+            "hello-postgres",
+        },
+      );
+
+      const listed =
+        await postgresHttpRequest(
+          baseUrl,
+          "GET",
+          "/v1/jobs",
+          undefined,
+          tokens.client,
+        );
+
+      assert.equal(
+        listed.response.status,
+        200,
+      );
+
+      const stored =
+        listed.body.jobs.find(
+          (job) =>
+            job.id ===
+            leasedJob.id,
+        );
+
+      assert.equal(
+        stored.status,
+        "succeeded",
+      );
+
+      const metrics =
+        await fetch(
+          `${baseUrl}/metrics`,
+          {
+            headers: {
+              Authorization:
+                `Bearer ${tokens.admin}`,
+            },
+          },
+        );
+
+      assert.equal(
+        metrics.status,
+        200,
+      );
+
+      const metricsText =
+        await metrics.text();
+
+      assert.match(
+        metricsText,
+        /gpulink_jobs\{status="succeeded"\} 1/u,
+      );
+
+      assert.match(
+        metricsText,
+        /gpulink_workers\{status="online"\} 1/u,
+      );
+
+      const events =
+        await database
+          .listEventsAfter(0);
+
+      assert.deepEqual(
+        events.map(
+          (event) => event.type,
+        ),
+        [
+          "worker.online",
+          "job.queued",
+          "job.leased",
+          "job.started",
+          "job.succeeded",
+        ],
+      );
+    } finally {
+      if (app) {
+        await app.stop();
+      } else {
+        await database.close();
+      }
+
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+      }
+    }
+  },
+);
+
+async function postgresHttpRequest(
+  baseUrl,
+  method,
+  path,
+  body = undefined,
+  token,
+) {
+  const response =
+    await fetch(
+      `${baseUrl}${path}`,
+      {
+        method,
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+          ...(
+            body === undefined
+              ? {}
+              : {
+                  "Content-Type":
+                    "application/json",
+                }
+          ),
+        },
+        body:
+          body === undefined
+            ? undefined
+            : JSON.stringify(body),
+      },
+    );
+
+  return {
+    response,
+    body:
+      await response.json(),
+  };
+}
