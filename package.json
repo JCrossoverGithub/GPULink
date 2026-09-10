@@ -13,6 +13,10 @@
     "cli": "node src/cli/main.mjs",
     "test": "node --test",
     "test:watch": "node --test --watch",
-    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --test"
+    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --test",
+    "test:postgres": "node --test test/postgres-persistence.test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
   }
 }
