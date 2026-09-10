@@ -25,12 +25,12 @@ export class Scheduler {
         this.database.appendEvent("worker.offline", workerId, { reason: "heartbeat_timeout" }, now);
       }
 
-      const recoveredJobs = this.database.recoverExpiredJobs(now, staleWorkerIds);
-      for (const job of recoveredJobs) {
+      const recoveries = this.database.recoverExpiredJobs(now, staleWorkerIds);
+      for (const { job, reason } of recoveries) {
         this.database.appendEvent(
           job.status === "queued" ? "job.requeued" : "job.failed",
           job.id,
-          { reason: "lease_expired", attempt: job.attempt },
+          { reason, attempt: job.attempt },
           now,
         );
       }
@@ -67,7 +67,11 @@ export class Scheduler {
         }, now);
       }
 
-      return { staleWorkerIds, recoveredJobs, assigned };
+      return {
+        staleWorkerIds,
+        recoveredJobs: recoveries.map(({ job }) => job),
+        assigned,
+      };
     });
   }
 }

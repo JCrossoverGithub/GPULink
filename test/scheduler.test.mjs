@@ -126,6 +126,14 @@ test("expired leases are requeued and fail after bounded attempts", () => {
     assert.equal(job.attempt, 2);
     assert.notEqual(job.leaseId, null);
 
+    const requeuedEvent = context.database.listEventsAfter(0).find(
+      (event) => event.type === "job.requeued" && event.subjectId === job.id,
+    );
+    assert.deepEqual(requeuedEvent?.payload, {
+      reason: "lease_expired",
+      attempt: 1,
+    });
+
     context.advance(1001);
     context.scheduler.runOnce();
     job = context.database.getJob(job.id);
