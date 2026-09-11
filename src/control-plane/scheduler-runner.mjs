@@ -45,6 +45,10 @@ export class SchedulerRunner {
     return this.#drainPromise;
   }
 
+  runOnce() {
+    return this.trigger();
+  }
+
   async stop() {
     this.#stopping = true;
 
@@ -63,6 +67,8 @@ export class SchedulerRunner {
   }
 
   async #drain() {
+    let result;
+
     try {
       while (
         this.#pending &&
@@ -70,8 +76,11 @@ export class SchedulerRunner {
       ) {
         this.#pending = false;
 
-        await this.#scheduler.runOnce();
+        result =
+          await this.#scheduler.runOnce();
       }
+
+      return result;
     } finally {
       this.#drainPromise = null;
     }

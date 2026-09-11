@@ -237,3 +237,59 @@ test(
     );
   },
 );
+
+test(
+  "scheduler runner returns the final scheduler result",
+  async () => {
+    const expected = {
+      staleWorkerIds: [],
+      recoveredJobs: [],
+      assigned: ["job-1"],
+    };
+
+    const runner =
+      new SchedulerRunner({
+        async runOnce() {
+          return expected;
+        },
+      });
+
+    const result =
+      await runner.trigger();
+
+    assert.deepEqual(
+      result,
+      expected,
+    );
+  },
+);
+
+test(
+  "scheduler runner runOnce uses the coalescing trigger path",
+  async () => {
+    let runs = 0;
+
+    const expected = {
+      staleWorkerIds: [],
+      recoveredJobs: [],
+      assigned: [],
+    };
+
+    const runner =
+      new SchedulerRunner({
+        async runOnce() {
+          runs += 1;
+          return expected;
+        },
+      });
+
+    const result =
+      await runner.runOnce();
+
+    assert.equal(runs, 1);
+    assert.deepEqual(
+      result,
+      expected,
+    );
+  },
+);

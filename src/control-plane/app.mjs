@@ -1,5 +1,6 @@
 import { PostgresPersistence } from "./persistence/postgres.mjs";
 import { SqlitePersistence } from "./persistence/sqlite.mjs";
+import { SchedulerRunner } from "./scheduler-runner.mjs";
 import { Scheduler } from "./scheduler.mjs";
 import { ControlPlaneService } from "./service.mjs";
 import { createHttpServer } from "./http-server.mjs";
@@ -24,10 +25,21 @@ export function createControlPlane(
       clock: options.clock,
     });
 
+  const schedulerRunner =
+    options.schedulerRunner ??
+    new SchedulerRunner(scheduler);
+
+  /*
+   * Service and HTTP scheduling triggers both use
+   * the same runner. SchedulerRunner exposes the
+   * existing runOnce() interface, so callers keep
+   * their current semantics while concurrent
+   * requests are coalesced.
+   */
   const service =
     new ControlPlaneService(
       database,
-      scheduler,
+      schedulerRunner,
       config,
       {
         clock: options.clock,
@@ -38,11 +50,10 @@ export function createControlPlane(
     createHttpServer({
       service,
       database,
-      scheduler,
+      scheduler: schedulerRunner,
     });
 
   let schedulerTimer = null;
-  let schedulerCycle = null;
   let stopping = false;
 
   function scheduleNextCycle() {
@@ -51,24 +62,17 @@ export function createControlPlane(
     schedulerTimer = setTimeout(() => {
       schedulerTimer = null;
 
-      const cycle =
-        scheduler.runOnce()
-          .catch((error) => {
-            console.error(
-              "scheduler cycle failed",
-              error,
-            );
-          });
-
-      schedulerCycle = cycle;
-
-      cycle.finally(() => {
-        if (schedulerCycle === cycle) {
-          schedulerCycle = null;
-        }
-
-        scheduleNextCycle();
-      });
+      schedulerRunner
+        .trigger()
+        .catch((error) => {
+          console.error(
+            "scheduler cycle failed",
+            error,
+          );
+        })
+        .finally(() => {
+          scheduleNextCycle();
+        });
     }, config.schedulerIntervalMs);
 
     schedulerTimer.unref();
@@ -77,6 +81,7 @@ export function createControlPlane(
   return {
     database,
     scheduler,
+    schedulerRunner,
     service,
     server,
 
@@ -90,7 +95,7 @@ export function createControlPlane(
         await database.initialize();
       }
 
-      await scheduler.runOnce();
+      await schedulerRunner.trigger();
 
       await new Promise(
         (resolve, reject) => {
@@ -100,7 +105,10 @@ export function createControlPlane(
             config.port,
             config.host,
             () => {
-              server.off("error", reject);
+              server.off(
+                "error",
+                reject,
+              );
               resolve();
             },
           );
@@ -116,7 +124,9 @@ export function createControlPlane(
       stopping = true;
 
       if (schedulerTimer) {
-        clearTimeout(schedulerTimer);
+        clearTimeout(
+          schedulerTimer,
+        );
         schedulerTimer = null;
       }
 
@@ -130,15 +140,12 @@ export function createControlPlane(
         );
       }
 
-      if (schedulerCycle) {
-        await schedulerCycle;
-      }
+      await schedulerRunner.stop();
 
       await database.close();
     },
   };
 }
-
 
 function createPersistence(config) {
   switch (config.database) {
