@@ -12,6 +12,9 @@ function createTransactionView(database) {
       Promise.resolve().then(() => database[method](...args));
   }
 
+  transaction.tryAcquireSchedulerLock =
+    async () => true;
+
   return Object.freeze(transaction);
 }
 

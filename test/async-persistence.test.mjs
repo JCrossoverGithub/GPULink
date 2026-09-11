@@ -177,3 +177,27 @@ test("SQLite persistence prevents operations from interleaving with a transactio
     await database.close();
   }
 });
+
+test(
+  "SQLite transaction always acquires the scheduler lock",
+  async () => {
+    const database =
+      new SqlitePersistence(":memory:");
+
+    try {
+      const acquired =
+        await database.transaction(
+          async (transaction) =>
+            transaction
+              .tryAcquireSchedulerLock(),
+        );
+
+      assert.equal(
+        acquired,
+        true,
+      );
+    } finally {
+      await database.close();
+    }
+  },
+);

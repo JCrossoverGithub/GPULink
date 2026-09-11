@@ -465,6 +465,26 @@ export class PostgresPersistence {
           );
     }
 
+    transaction.tryAcquireSchedulerLock =
+      async () => {
+        const result =
+          await client.query(
+            `
+              SELECT
+                pg_try_advisory_xact_lock(
+                  $1::integer,
+                  $2::integer
+                ) AS acquired
+            `,
+            [
+              0x4750554c,
+              0x494e4b31,
+            ],
+          );
+
+        return result.rows[0].acquired;
+      };
+
     return Object.freeze(
       transaction,
     );

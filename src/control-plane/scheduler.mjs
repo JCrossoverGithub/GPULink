@@ -32,6 +32,19 @@ export class Scheduler {
 
   async #runOnce() {
     return this.database.transaction(async (transaction) => {
+      const acquired =
+        await transaction
+          .tryAcquireSchedulerLock();
+
+      if (!acquired) {
+        return {
+          acquired: false,
+          staleWorkerIds: [],
+          recoveredJobs: [],
+          assigned: [],
+        };
+      }
+
       const now = this.clock();
 
       const staleWorkerIds =
@@ -131,6 +144,7 @@ export class Scheduler {
       }
 
       return {
+        acquired: true,
         staleWorkerIds,
         recoveredJobs:
           recoveries.map(({ job }) => job),
