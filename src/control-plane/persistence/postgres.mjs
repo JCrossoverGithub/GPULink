@@ -17,7 +17,10 @@ import {
   assertPersistenceContract,
 } from "./contract.mjs";
 
-const { Pool } = pg;
+const { Client, Pool } = pg;
+
+const EVENT_NOTIFICATION_CHANNEL =
+  "gpulink_events";
 
 const DEFAULT_MIGRATIONS_DIRECTORY =
   fileURLToPath(
@@ -32,7 +35,12 @@ const MIGRATION_LOCK_NAME =
 
 export class PostgresPersistence {
   #pool;
+  #connectionString;
+  #connectionTimeoutMs;
   #migrationsDirectory;
+  #eventSubscribers = new Set();
+  #eventListenerClient = null;
+  #eventListenerPromise = null;
   #initializePromise = null;
   #initialized = false;
   #closePromise = null;
@@ -65,6 +73,12 @@ export class PostgresPersistence {
         "maxConnections must be a positive integer",
       );
     }
+
+    this.#connectionString =
+      connectionString;
+
+    this.#connectionTimeoutMs =
+      connectionTimeoutMs;
 
     this.#migrationsDirectory =
       migrationsDirectory;
@@ -284,6 +298,176 @@ export class PostgresPersistence {
     }
   }
 
+  async subscribeToEvents(listener) {
+    this.#assertReady();
+
+    if (typeof listener !== "function") {
+      throw new TypeError(
+        "event listener must be a function",
+      );
+    }
+
+    this.#eventSubscribers.add(
+      listener,
+    );
+
+    try {
+      await this.#ensureEventListener();
+    } catch (error) {
+      this.#eventSubscribers.delete(
+        listener,
+      );
+
+      throw error;
+    }
+
+    let subscribed = true;
+
+    return async () => {
+      if (!subscribed) return;
+
+      subscribed = false;
+
+      this.#eventSubscribers.delete(
+        listener,
+      );
+
+      if (
+        this.#eventSubscribers.size === 0
+      ) {
+        await this.#stopEventListener();
+      }
+    };
+  }
+
+  async #ensureEventListener() {
+    if (this.#eventListenerClient) {
+      return;
+    }
+
+    if (this.#eventListenerPromise) {
+      return this.#eventListenerPromise;
+    }
+
+    this.#eventListenerPromise =
+      (async () => {
+        const client =
+          new Client({
+            connectionString:
+              this.#connectionString,
+            connectionTimeoutMillis:
+              this.#connectionTimeoutMs,
+          });
+
+        client.on(
+          "notification",
+          (message) => {
+            if (
+              message.channel !==
+              EVENT_NOTIFICATION_CHANNEL
+            ) {
+              return;
+            }
+
+            const sequence =
+              Number(message.payload);
+
+            this.#notifyEventSubscribers(
+              Number.isSafeInteger(sequence)
+                ? sequence
+                : null,
+            );
+          },
+        );
+
+        client.on(
+          "error",
+          (error) => {
+            console.error(
+              "PostgreSQL event listener error",
+              error,
+            );
+          },
+        );
+
+        try {
+          await client.connect();
+
+          await client.query(
+            `LISTEN ${EVENT_NOTIFICATION_CHANNEL}`,
+          );
+        } catch (error) {
+          try {
+            await client.end();
+          } catch {
+            // Preserve the original connection error.
+          }
+
+          throw error;
+        }
+
+        this.#eventListenerClient =
+          client;
+      })();
+
+    try {
+      await this.#eventListenerPromise;
+    } finally {
+      this.#eventListenerPromise = null;
+    }
+  }
+
+  async #stopEventListener() {
+    if (this.#eventListenerPromise) {
+      try {
+        await this.#eventListenerPromise;
+      } catch {
+        // A failed listener startup has nothing
+        // left to close.
+      }
+    }
+
+    const client =
+      this.#eventListenerClient;
+
+    this.#eventListenerClient = null;
+
+    if (!client) return;
+
+    try {
+      await client.query(
+        `UNLISTEN ${EVENT_NOTIFICATION_CHANNEL}`,
+      );
+    } finally {
+      await client.end();
+    }
+  }
+
+  #notifyEventSubscribers(sequence) {
+    for (
+      const listener of
+      this.#eventSubscribers
+    ) {
+      try {
+        Promise.resolve(
+          listener(sequence),
+        ).catch(
+          (error) => {
+            console.error(
+              "PostgreSQL event subscriber failed",
+              error,
+            );
+          },
+        );
+      } catch (error) {
+        console.error(
+          "PostgreSQL event subscriber failed",
+          error,
+        );
+      }
+    }
+  }
+
   close() {
     if (this.#closePromise) {
       return this.#closePromise;
@@ -301,6 +485,10 @@ export class PostgresPersistence {
             // prevent the pool from closing.
           }
         }
+
+        this.#eventSubscribers.clear();
+
+        await this.#stopEventListener();
 
         await this.#pool.end();
         this.#initialized = false;
@@ -988,6 +1176,21 @@ async function postgresAppendEvent(
       0
     )
   `);
+
+  await queryable.query(
+    `
+      SELECT pg_notify(
+        $1,
+        $2
+      )
+    `,
+    [
+      EVENT_NOTIFICATION_CHANNEL,
+      String(
+        inserted.rows[0].sequence,
+      ),
+    ],
+  );
 
   return mapPostgresEvent(
     inserted.rows[0],

@@ -11,9 +11,9 @@
     "control-plane": "node src/control-plane/main.mjs",
     "worker": "node src/worker/main.mjs",
     "cli": "node src/cli/main.mjs",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "test:watch": "node --test --watch",
-    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --check scripts/migrate-sqlite-to-postgres.mjs && node --test",
+    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --check scripts/migrate-sqlite-to-postgres.mjs && node --test --test-concurrency=1",
     "test:postgres": "node --test test/postgres-persistence.test.mjs",
     "migrate:sqlite-to-postgres": "node scripts/migrate-sqlite-to-postgres.mjs"
   },

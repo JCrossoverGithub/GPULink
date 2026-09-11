@@ -7,6 +7,9 @@ const MAX_BODY_BYTES = 1_048_576;
 export function createHttpServer({ service, database, scheduler }) {
   const eventClients = new Set();
 
+  let unsubscribeEventNotifications =
+    null;
+
   const server = http.createServer(async (request, response) => {
     const requestStartedAt = Date.now();
     try {
@@ -156,9 +159,51 @@ export function createHttpServer({ service, database, scheduler }) {
     }
   });
 
+  server.startEventNotifications =
+    async () => {
+      if (
+        unsubscribeEventNotifications
+      ) {
+        return;
+      }
+
+      unsubscribeEventNotifications =
+        await database
+          .subscribeToEvents(
+            () =>
+              broadcastNewEvents(
+                database,
+                eventClients,
+              ),
+          );
+    };
+
+  server.stopEventNotifications =
+    async () => {
+      const unsubscribe =
+        unsubscribeEventNotifications;
+
+      unsubscribeEventNotifications =
+        null;
+
+      if (unsubscribe) {
+        await unsubscribe();
+      }
+    };
+
+  server.closeEventStreams =
+    () => {
+      for (
+        const client of eventClients
+      ) {
+        client.response.end();
+      }
+
+      eventClients.clear();
+    };
+
   server.on("close", () => {
-    for (const client of eventClients) client.response.end();
-    eventClients.clear();
+    server.closeEventStreams();
   });
 
   return server;

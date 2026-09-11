@@ -95,6 +95,9 @@ export function createControlPlane(
         await database.initialize();
       }
 
+      await server
+        .startEventNotifications();
+
       await schedulerRunner.trigger();
 
       await new Promise(
@@ -130,6 +133,8 @@ export function createControlPlane(
         schedulerTimer = null;
       }
 
+      server.closeEventStreams();
+
       if (server.listening) {
         await new Promise(
           (resolve, reject) =>
@@ -141,6 +146,9 @@ export function createControlPlane(
       }
 
       await schedulerRunner.stop();
+
+      await server
+        .stopEventNotifications();
 
       await database.close();
     },

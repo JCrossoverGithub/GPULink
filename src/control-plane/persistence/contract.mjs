@@ -23,6 +23,7 @@ export const PERSISTENCE_METHODS = Object.freeze([
 
 export const PERSISTENCE_CONTROL_METHODS = Object.freeze([
   "transaction",
+  "subscribeToEvents",
   "close",
 ]);
 
