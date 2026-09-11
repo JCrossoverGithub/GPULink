@@ -29,6 +29,9 @@ services:
 
   control-plane:
     image: gpulink-control-plane:local
+    depends_on:
+      postgres:
+        condition: service_healthy
     build:
       context: ../..
       dockerfile: deploy/digitalocean/Dockerfile
