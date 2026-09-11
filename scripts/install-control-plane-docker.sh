@@ -10,7 +10,7 @@ if [[ ${EUID} -ne 0 ]]; then
   die "Run this installer with sudo."
 fi
 
-for command in docker openssl; do
+for command in docker openssl systemctl flock; do
   if ! command -v "${command}" >/dev/null 2>&1; then
     die "${command} is required before installing GPUlink."
   fi
@@ -333,11 +333,14 @@ cp -a \
 
 cp -a \
   "${repository_root}/scripts/migrate-sqlite-to-postgres.mjs" \
+  "${repository_root}/scripts/backup-postgres.sh" \
   "${install_root}/scripts/"
 
 cp -a \
   "${repository_root}/deploy/digitalocean/Dockerfile" \
   "${repository_root}/deploy/digitalocean/compose.yml" \
+  "${repository_root}/deploy/digitalocean/gpulink-postgres-backup.service" \
+  "${repository_root}/deploy/digitalocean/gpulink-postgres-backup.timer" \
   "${install_root}/deploy/digitalocean/"
 
 chown -R root:root \
@@ -350,6 +353,9 @@ find "${install_root}" \
 find "${install_root}" \
   -type f \
   -exec chmod 0644 {} +
+
+chmod 0755 \
+  "${install_root}/scripts/backup-postgres.sh"
 
 #
 # Validate the complete Compose model before changing containers.
@@ -392,6 +398,30 @@ docker compose \
   -f "${compose_file}" \
   --profile postgres \
   ps
+
+install \
+  -o root \
+  -g root \
+  -m 0644 \
+  "${repository_root}/deploy/digitalocean/gpulink-postgres-backup.service" \
+  /etc/systemd/system/gpulink-postgres-backup.service
+
+install \
+  -o root \
+  -g root \
+  -m 0644 \
+  "${repository_root}/deploy/digitalocean/gpulink-postgres-backup.timer" \
+  /etc/systemd/system/gpulink-postgres-backup.timer
+
+systemctl daemon-reload
+
+systemctl enable --now \
+  gpulink-postgres-backup.timer
+
+echo
+systemctl --no-pager --full status \
+  gpulink-postgres-backup.timer \
+  || true
 
 echo
 echo "GPUlink PostgreSQL deployment is healthy."
