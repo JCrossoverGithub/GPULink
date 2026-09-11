@@ -28,13 +28,16 @@ services:
         max-file: "3"
 
   control-plane:
-    image: gpulink-control-plane:local
+    image: "gpulink-control-plane:${GPULINK_RELEASE_TAG:-local}"
     depends_on:
       postgres:
         condition: service_healthy
     build:
       context: ../..
       dockerfile: deploy/digitalocean/Dockerfile
+      args:
+        GPULINK_RELEASE_REVISION: "${GPULINK_RELEASE_REVISION:-development}"
+        GPULINK_RELEASE_TAG: "${GPULINK_RELEASE_TAG:-local}"
     env_file:
       - /etc/gpulink/control-plane.env
     ports:

@@ -29,6 +29,47 @@ install_root=/opt/gpulink
 environment_file=/etc/gpulink/control-plane.env
 postgres_environment_file=/etc/gpulink/postgres.env
 compose_file="${install_root}/deploy/digitalocean/compose.yml"
+release_revision_file="${repository_root}/RELEASE_REVISION"
+
+resolve_release_revision() {
+  local revision
+
+  if [[ ! -r ${release_revision_file} ]]; then
+    die "Release revision file is missing: ${release_revision_file}"
+  fi
+
+  revision="$(
+    tr -d '\r\n'       < "${release_revision_file}"
+  )"
+
+  if [[ ${revision} == '$Format:%H$' ]]; then
+    if ! command -v git >/dev/null 2>&1; then
+      die "Release revision is unexpanded and git is unavailable."
+    fi
+
+    revision="$(
+      git -C "${repository_root}"         rev-parse HEAD
+    )"
+  fi
+
+  if [[ ! ${revision} =~ ^[0-9a-fA-F]{40}$ ]]; then
+    die "Invalid release revision: ${revision}"
+  fi
+
+  printf '%s'     "${revision,,}"
+}
+
+release_revision="$(
+  resolve_release_revision
+)"
+
+release_tag="${release_revision:0:12}"
+
+export GPULINK_RELEASE_REVISION="${release_revision}"
+export GPULINK_RELEASE_TAG="${release_tag}"
+
+echo "Deploying GPUlink revision ${release_revision}"
+echo "Control-plane image tag: gpulink-control-plane:${release_tag}"
 
 read_env_value() {
   local file="$1"
@@ -331,6 +372,10 @@ cp -a \
   "${repository_root}/src" \
   "${install_root}/"
 
+printf '%s\n' \
+  "${release_revision}" \
+  > "${install_root}/RELEASE_REVISION"
+
 cp -a \
   "${repository_root}/scripts/migrate-sqlite-to-postgres.mjs" \
   "${repository_root}/scripts/backup-postgres.sh" \
@@ -379,14 +424,63 @@ wait_for_healthy \
   postgres \
   120
 
-echo "Building and starting GPUlink control plane..."
+control_image="gpulink-control-plane:${release_tag}"
+
+if docker image inspect \
+  "${control_image}" \
+  >/dev/null 2>&1
+then
+  existing_revision="$(
+    docker image inspect \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+      "${control_image}"
+  )"
+
+  if [[ ${existing_revision} != "${release_revision}" ]]; then
+    die "Existing image ${control_image} has unexpected revision ${existing_revision}."
+  fi
+
+  echo "Reusing verified control-plane image ${control_image}."
+else
+  echo "Building control-plane image ${control_image}..."
+
+  docker compose \
+    -f "${compose_file}" \
+    --profile postgres \
+    build \
+    control-plane
+fi
+
+image_revision="$(
+  docker image inspect \
+    --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+    "${control_image}"
+)"
+
+image_version="$(
+  docker image inspect \
+    --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+    "${control_image}"
+)"
+
+if [[ ${image_revision} != "${release_revision}" ]]; then
+  die "Built image revision does not match release revision."
+fi
+
+if [[ ${image_version} != "${release_tag}" ]]; then
+  die "Built image version does not match release tag."
+fi
+
+echo "Image identity verified."
+
+echo "Starting GPUlink control plane..."
 
 docker compose \
   -f "${compose_file}" \
   --profile postgres \
   up \
   -d \
-  --build \
+  --no-build \
   control-plane
 
 wait_for_healthy \
