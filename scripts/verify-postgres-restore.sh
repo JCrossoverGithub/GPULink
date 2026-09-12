@@ -121,7 +121,7 @@ docker run \
   --network none \
   -e POSTGRES_USER="${restore_user}" \
   -e POSTGRES_PASSWORD="${restore_password}" \
-  -e POSTGRES_DB="${restore_db}" \
+  -e POSTGRES_DB=postgres \
   "${source_image_id}" \
   >/dev/null
 
@@ -145,7 +145,7 @@ for attempt in $(seq 1 60); do
     "${restore_container}" \
     pg_isready \
       -U "${restore_user}" \
-      -d "${restore_db}" \
+      -d postgres \
     >/dev/null 2>&1
   then
     ready=1
@@ -171,6 +171,28 @@ done
 
 [[ ${ready} == "1" ]] \
   || die "Disposable PostgreSQL did not become ready."
+
+echo "Creating disposable restore database..."
+
+docker exec \
+  "${restore_container}" \
+  createdb \
+    -U "${restore_user}" \
+    "${restore_db}"
+
+database_exists="$(
+  docker exec \
+    "${restore_container}" \
+    psql \
+      -U "${restore_user}" \
+      -d postgres \
+      -Atc "SELECT COUNT(*) FROM pg_database WHERE datname = '${restore_db}';"
+)"
+
+[[ ${database_exists} == "1" ]] \
+  || die "Disposable restore database was not created."
+
+echo "Restore database ready: ${restore_db}"
 
 echo "Restoring backup..."
 
