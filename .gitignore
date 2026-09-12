@@ -16,3 +16,11 @@ dist/
 .venv/
 __pycache__/
 *.pyc
+
+# Private keys and production/runtime artifacts
+*.key
+*.pem
+*.p12
+*.pfx
+*.dump
+*.backup
