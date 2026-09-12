@@ -141,17 +141,6 @@ fi
 ready=0
 
 for attempt in $(seq 1 60); do
-  if docker exec \
-    "${restore_container}" \
-    pg_isready \
-      -U "${restore_user}" \
-      -d postgres \
-    >/dev/null 2>&1
-  then
-    ready=1
-    break
-  fi
-
   running="$(
     docker inspect \
       "${restore_container}" \
@@ -166,11 +155,45 @@ for attempt in $(seq 1 60); do
     die "Disposable PostgreSQL exited unexpectedly."
   fi
 
+  #
+  # The official PostgreSQL image starts a temporary server while
+  # initializing a fresh data directory, shuts it down, and then execs
+  # the final postgres server as PID 1. pg_isready alone can observe the
+  # temporary server and race with that shutdown.
+  #
+  pid1_comm="$(
+    docker exec \
+      "${restore_container}" \
+      sh -c 'cat /proc/1/comm' \
+      2>/dev/null \
+      || true
+  )"
+
+  if [[ ${pid1_comm} == "postgres" ]] \
+    && docker exec \
+      "${restore_container}" \
+      pg_isready \
+        -U "${restore_user}" \
+        -d postgres \
+      >/dev/null 2>&1
+  then
+    ready=1
+    break
+  fi
+
   sleep 1
 done
 
 [[ ${ready} == "1" ]] \
-  || die "Disposable PostgreSQL did not become ready."
+  || {
+    docker logs \
+      "${restore_container}" \
+      >&2
+
+    die "Disposable PostgreSQL final server did not become ready."
+  }
+
+echo "Disposable PostgreSQL final server ready."
 
 echo "Creating disposable restore database..."
 
