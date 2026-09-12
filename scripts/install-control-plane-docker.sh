@@ -20,6 +20,12 @@ if ! docker compose version >/dev/null 2>&1; then
   die "Docker Compose v2 is required before installing GPUlink."
 fi
 
+exec 8>/run/lock/gpulink-control-plane-deploy.lock
+
+if ! flock -n 8; then
+  die "Another GPUlink deployment or rollback is already running."
+fi
+
 repository_root="$(
   cd "$(dirname "${BASH_SOURCE[0]}")/.."
   pwd
@@ -30,6 +36,7 @@ environment_file=/etc/gpulink/control-plane.env
 postgres_environment_file=/etc/gpulink/postgres.env
 compose_file="${install_root}/deploy/digitalocean/compose.yml"
 release_revision_file="${repository_root}/RELEASE_REVISION"
+deployed_revision_file="${install_root}/DEPLOYED_CONTROL_PLANE_REVISION"
 
 resolve_release_revision() {
   local revision
@@ -379,6 +386,8 @@ printf '%s\n' \
 cp -a \
   "${repository_root}/scripts/migrate-sqlite-to-postgres.mjs" \
   "${repository_root}/scripts/backup-postgres.sh" \
+  "${repository_root}/scripts/rollback-control-plane-docker.sh" \
+  "${repository_root}/scripts/prune-control-plane-releases.sh" \
   "${install_root}/scripts/"
 
 cp -a \
@@ -400,7 +409,9 @@ find "${install_root}" \
   -exec chmod 0644 {} +
 
 chmod 0755 \
-  "${install_root}/scripts/backup-postgres.sh"
+  "${install_root}/scripts/backup-postgres.sh" \
+  "${install_root}/scripts/rollback-control-plane-docker.sh" \
+  "${install_root}/scripts/prune-control-plane-releases.sh"
 
 #
 # Validate the complete Compose model before changing containers.
@@ -486,6 +497,23 @@ docker compose \
 wait_for_healthy \
   control-plane \
   120
+
+running_image="$(
+  docker inspect \
+    digitalocean-control-plane-1 \
+    --format '{{.Config.Image}}'
+)"
+
+if [[ ${running_image} != "${control_image}" ]]; then
+  die "Running control-plane image does not match release image."
+fi
+
+printf '%s\n' \
+  "${release_revision}" \
+  > "${deployed_revision_file}"
+
+chmod 0644 \
+  "${deployed_revision_file}"
 
 echo
 docker compose \
