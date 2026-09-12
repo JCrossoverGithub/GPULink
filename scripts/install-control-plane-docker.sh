@@ -386,6 +386,7 @@ printf '%s\n' \
 cp -a \
   "${repository_root}/scripts/migrate-sqlite-to-postgres.mjs" \
   "${repository_root}/scripts/backup-postgres.sh" \
+  "${repository_root}/scripts/verify-postgres-restore.sh" \
   "${repository_root}/scripts/rollback-control-plane-docker.sh" \
   "${repository_root}/scripts/prune-control-plane-releases.sh" \
   "${install_root}/scripts/"
@@ -410,6 +411,7 @@ find "${install_root}" \
 
 chmod 0755 \
   "${install_root}/scripts/backup-postgres.sh" \
+  "${install_root}/scripts/verify-postgres-restore.sh" \
   "${install_root}/scripts/rollback-control-plane-docker.sh" \
   "${install_root}/scripts/prune-control-plane-releases.sh"
 
@@ -535,10 +537,25 @@ install \
   "${repository_root}/deploy/digitalocean/gpulink-postgres-backup.timer" \
   /etc/systemd/system/gpulink-postgres-backup.timer
 
+install \
+  -o root \
+  -g root \
+  -m 0644 \
+  "${repository_root}/deploy/digitalocean/gpulink-postgres-restore-verification.service" \
+  /etc/systemd/system/gpulink-postgres-restore-verification.service
+
+install \
+  -o root \
+  -g root \
+  -m 0644 \
+  "${repository_root}/deploy/digitalocean/gpulink-postgres-restore-verification.timer" \
+  /etc/systemd/system/gpulink-postgres-restore-verification.timer
+
 systemctl daemon-reload
 
 systemctl enable --now \
-  gpulink-postgres-backup.timer
+  gpulink-postgres-backup.timer \
+  gpulink-postgres-restore-verification.timer
 
 echo
 systemctl --no-pager --full status \

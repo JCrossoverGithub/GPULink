@@ -1,0 +1,18 @@
+[Unit]
+Description=GPUlink PostgreSQL backup restore verification
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/var/backups/gpulink/postgres
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/opt/gpulink/scripts/verify-postgres-restore.sh
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true

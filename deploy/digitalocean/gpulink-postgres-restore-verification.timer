@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly GPUlink PostgreSQL restore verification
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=30m
+Unit=gpulink-postgres-restore-verification.service
+
+[Install]
+WantedBy=timers.target
