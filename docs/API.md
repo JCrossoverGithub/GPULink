@@ -1,12 +1,12 @@
-# GPUlink API
+# GPULink API
 
 Every protected route requires a bearer token:
 
 ```text
-Authorization: Bearer <scoped GPUlink token>
+Authorization: Bearer <scoped GPULink token>
 ```
 
-The first operational target uses three independently generated credentials:
+The current API uses three independently generated credential scopes:
 
 | Credential | Environment variable | Permitted operations |
 | --- | --- | --- |

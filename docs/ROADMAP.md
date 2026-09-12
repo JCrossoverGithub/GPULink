@@ -1,123 +1,271 @@
-# Roadmap
+# GPULink Roadmap
 
-## First operational target — Secure heterogeneous fleet
+This roadmap describes the current engineering sequence for GPULink.
 
-- Durable control-plane database
-- Worker enrollment and heartbeat
-- NVIDIA GPU discovery
-- Capability and minimum-VRAM constraints
-- Exclusive leases
-- Retry, expiry, cancellation, drain, and stale-worker behavior
-- Server-sent operational events
-- Prometheus-format platform metrics
-- Tested worker and job lifecycle contracts
-- Docker-isolated DigitalOcean control plane behind Nginx HTTPS
-- Outbound-only WSL2 worker services on Windows hosts
-- Separate client, worker, and administrator credentials
-- Allowlisted per-GPU `nvidia-smi` diagnostic workload
-- CLI enrollment verification, drain, resume, and job inspection
-- Linux and Windows continuous integration
+GPULink began as a way to reuse otherwise-idle GPUs across several personal
+computers. The longer-term goal is a reusable compute layer that allows
+applications to request supported GPU capabilities without needing to own,
+locate, or directly manage the physical accelerator.
 
-Exit criterion: the RTX 3070 Ti desktop and RTX 4060 laptop register through
-the public HTTPS gateway, each completes a diagnostic job on its assigned GPU,
-drain/resume works, and authoritative state survives a droplet service restart.
+The roadmap is intentionally incremental. Each phase establishes operational
+guarantees that the next phase depends on.
 
-## Real GPU benchmark workload
+## Phase 0 — Physical GPU acceptance
 
-- Versioned, strictly bounded `benchmark.gpu` request and result contracts
-- Fixed float32 PyTorch CUDA matrix multiplication
-- Isolated pinned Python runtime under `/opt/gpulink/runtime`
-- Runtime health-gated capability advertisement
-- Fixed executable and script launch without a shell
-- Output limits, timeout, cancellation, and process-group cleanup
-- GPU-independent CI through an injected process runner
-- CLI submission and two-worker comparison workflow
+**Status: complete**
 
-Exit criterion: both physical GPUs complete the benchmark independently and
-concurrently, failure paths remain bounded, one-job-per-GPU scheduling still
-holds, and neither worker gains an inbound listener or arbitrary execution path.
+Goal: prove that GPULink works on real heterogeneous personal-computer GPUs,
+not only test fixtures.
 
-## Operations console foundation — brought forward
+Completed:
 
-- Loopback Flask backend-for-frontend
-- Angular fleet and scheduler overview
-- Worker health and drain-state visibility
-- GPU memory, utilization, temperature, and power telemetry
-- Recent bounded job history without payload or result exposure
-- Five-second polling with last-valid-snapshot behavior
-- Server-side ownership of administrator and client credentials
-- Backend tests and a production Angular build check in CI
+- public HTTPS control plane;
+- outbound-only WSL workers;
+- RTX 3070 Ti desktop acceptance;
+- RTX 3090 Ti workstation acceptance;
+- RTX 4060 laptop acceptance;
+- NVIDIA inventory and telemetry;
+- worker registration and heartbeat;
+- drain and resume;
+- capability and minimum-VRAM scheduling;
+- exclusive one-job-per-GPU assignment;
+- lease/start/renew/finish lifecycle;
+- stale-worker recovery;
+- bounded retry behavior;
+- diagnostic workload;
+- real CUDA benchmark workload;
+- physical-fleet acceptance evidence.
 
-This read-only slice is intentionally delivered ahead of the full operations
-dashboard milestone. Authenticated public deployment, historical time-series
-storage, and administrative actions remain in Milestone 4.
+## Phase 1 — PostgreSQL persistence
 
-## Milestone 2 — Parakeet and adapter hardening
+**Status: complete**
 
-Foundation delivered in the current development branch:
+Goal: replace the single-process SQLite production boundary with persistence
+suitable for multiple control-plane processes and future Kubernetes deployment.
 
-- Versioned, strictly validated `speech.streaming` session metadata
-- Fixed `transgo-v1` 16 kHz mono PCM/100 ms audio contract
-- Explicit exclusion of audio data and transport controls from durable jobs
-- Central workload-contract registry for model-specific validation
-- Versioned adapter manifests with fixed execution-mode metadata
-- Readiness-filtered manifest advertisement and durable worker inventory
-- Backward-compatible database migration for existing workers
-- Shared shell-free bounded-process launcher with absolute executable paths
-- Combined output bounds, timeout, cancellation, and process-group cleanup
-- Bounded per-adapter health states with sanitized machine-readable codes
-- Durable health inventory with capability/manifest consistency checks
-- Backward-compatible health-column migration for existing workers
-- Validated worker-local model cache inventory without path disclosure
-- Cached-model-aware scheduling below resident-model preference
-- Backward-compatible model-inventory-column migration for existing workers
+Completed:
 
-Remaining work:
+- Promise-based persistence contract;
+- asynchronous control-plane persistence;
+- SQLite adapter retained for tests and migration fixtures;
+- PostgreSQL schema and migrations;
+- worker persistence;
+- job persistence;
+- event persistence;
+- job lease lifecycle;
+- recovery semantics;
+- counts and operational queries;
+- same-client PostgreSQL transactions;
+- PostgreSQL HTTP integration coverage;
+- configurable persistence backend;
+- SQLite-to-PostgreSQL migration utility;
+- production migration;
+- PostgreSQL made authoritative in production.
 
-- Adapter-specific Parakeet process/container definition
-- Worker-side cancellation and cleanup
-- Hashed, revocable, scoped worker credentials
-- Per-worker availability and resource-reserve policies
-- Priority preemption rules for interactive desktop use
-- Parakeet adapter and existing `/v1/transcription` compatibility gateway
-- Streaming session metrics and clean reconnect behavior
+## Phase 2 — Distributed scheduler and event correctness
 
-The existing TransGo contract remains stable while its GPU execution moves
-behind GPUlink.
+**Status: complete**
 
-## Milestone 3 — Local LLM service
+Goal: preserve scheduling and event-delivery correctness when more than one
+control-plane process can exist.
 
-- vLLM adapter on the 24 GB worker
-- Native GPUlink model-serving API
-- Optional OpenAI-format compatibility adapter for existing clients
-- Model registry and local cache placement
-- Resident-model-aware scheduling
-- Tokens/second, time-to-first-token, queue, and KV-cache metrics
-- Smaller llama.cpp/GGUF adapter for constrained workers
-- Project quotas and per-model concurrency
+Completed:
 
-The normal mode is one complete model or replica per worker. Cross-machine
-model splitting is not required for this milestone.
+- coalescing scheduler runner;
+- no overlapping scheduler passes;
+- graceful shutdown that waits for scheduler work;
+- PostgreSQL advisory scheduler locking;
+- cross-replica scheduler exclusion;
+- commit-aware event notifications;
+- PostgreSQL `LISTEN` / `NOTIFY`;
+- SQLite post-commit notification behavior;
+- SSE wake-up from scheduler-generated events;
+- SSE wake-up from events written by another persistence instance;
+- regression and concurrency coverage.
 
-## Milestone 4 — Operations dashboard
+## Phase 3 — Production hardening and recovery
 
-- Node/GPU health and availability
-- Memory, utilization, temperature, power, and throttling
-- Active leases and queued jobs
-- Model residency and cache status
-- P50/P95/P99 application latency
-- Drain/resume and safe administrative actions
-- Historical views through Prometheus and Grafana
+**Status: complete**
 
-## Milestone 5 — Advanced scheduling
+Goal: make the transitional DigitalOcean production deployment traceable,
+recoverable, and safe to operate.
 
-- Multi-GPU jobs on one computer
-- Reservation pools for latency-sensitive services
-- Batch backfilling
-- Maintenance windows
-- Per-project fairness
-- Optional Ray integration for supported distributed workloads
-- Experimental cross-machine pipeline parallelism
+Completed:
 
-Any distributed single-model mode must be separately benchmarked on the actual
-LAN and may not weaken the reliability of independent workload scheduling.
+- PostgreSQL-first production installation;
+- protected credential preservation;
+- loopback-only control-plane publication;
+- no host-published PostgreSQL port;
+- immutable Git-derived release images;
+- OCI release metadata;
+- exact archive/revision verification;
+- installed/deployed revision tracking;
+- shared deployment/rollback lock;
+- active-job rollback gate;
+- pre-rollback database backup;
+- refusal of legacy/untraceable rollback targets;
+- no-build rollback to retained immutable images;
+- real production rollback rehearsal;
+- forward restore rehearsal;
+- release retention;
+- daily PostgreSQL backup automation;
+- backup checksums;
+- structural `pg_restore` validation;
+- recorded database-state metadata;
+- backup retention;
+- disposable full restore rehearsal;
+- weekly automated restore verification;
+- production PostgreSQL isolation checks;
+- final-server PostgreSQL readiness handling;
+- production health/readiness acceptance.
+
+The Phase 3 baseline completed with the full test suite green.
+
+### Known Phase 3 limitation
+
+Backups are stored on the same DigitalOcean host as the production database.
+
+They provide a tested logical recovery path but do not provide complete disaster
+recovery if the entire host is lost.
+
+Off-host backup and point-in-time recovery are Phase 4 responsibilities.
+
+## Phase 4 — AWS + K3s platform
+
+**Status: next**
+
+Phase 4 moves the production control plane to infrastructure designed for the
+next stage of GPULink.
+
+The initial target deliberately remains small:
+
+- one Ubuntu 24.04 EC2 host in `us-east-1`;
+- K3s rather than EKS;
+- self-hosted PostgreSQL;
+- dedicated gp3 EBS storage for PostgreSQL;
+- ECR for application images;
+- S3 for off-host database recovery;
+- SSM for administrative host access;
+- Traefik for ingress;
+- outbound-only personal GPU workers.
+
+The goal is not to maximize AWS complexity. The goal is to establish a clean,
+reproducible platform that can later scale without changing GPULink's core
+application contracts.
+
+### Phase 4A — AWS infrastructure foundation
+
+Planned:
+
+- infrastructure-as-code repository structure;
+- AWS account/IAM baseline;
+- VPC and networking;
+- security groups;
+- Ubuntu 24.04 EC2 host;
+- SSM access;
+- dedicated gp3 PostgreSQL EBS volume;
+- ECR repositories;
+- S3 backup bucket;
+- encryption, versioning, and lifecycle policy;
+- EC2 IAM role and least-privilege policies;
+- reproducible host bootstrap.
+
+No production cutover occurs in this sub-phase.
+
+### Phase 4B — K3s platform
+
+Planned:
+
+- pinned K3s installation;
+- namespace design;
+- Kubernetes Secrets and ConfigMaps;
+- storage classes and persistent volumes;
+- PostgreSQL StatefulSet;
+- control-plane Deployment and Service;
+- readiness/liveness probes;
+- resource requests and limits;
+- Traefik ingress and TLS;
+- ECR image workflow;
+- Kubernetes-native deployment and rollback;
+- multi-replica scheduler-lock verification;
+- cross-replica SSE/event verification.
+
+### Phase 4C — Off-host recovery
+
+Planned:
+
+- pgBackRest;
+- full backups to S3;
+- WAL archiving;
+- backup retention;
+- clean restore rehearsal;
+- point-in-time recovery rehearsal;
+- measured recovery-point objective;
+- measured recovery-time objective;
+- disaster-recovery runbook;
+- proof that loss of the EC2 host does not destroy the backup chain.
+
+### Phase 4D — AWS staging acceptance
+
+Planned:
+
+- non-production GPULink deployment;
+- physical-worker enrollment;
+- diagnostic workload;
+- GPU benchmark workload;
+- heterogeneous scheduling;
+- drain/recovery testing;
+- scheduler concurrency testing;
+- SSE/event testing;
+- backup and restore testing;
+- rollback testing;
+- sustained soak testing.
+
+### Phase 4E — Production migration
+
+Planned:
+
+- final DigitalOcean backup;
+- controlled write freeze;
+- final PostgreSQL state capture;
+- database transfer and restore;
+- state-count verification;
+- AWS control-plane activation;
+- physical-worker reconnection;
+- real workload acceptance;
+- public traffic/DNS cutover;
+- rollback window;
+- AWS production acceptance;
+- DigitalOcean retirement only after acceptance.
+
+## Phase 5 — Workload and platform expansion
+
+**Status: future**
+
+This phase grows GPULink beyond the infrastructure migration.
+
+Candidate work includes:
+
+- embedding workload adapters;
+- automatic speech recognition / TransGo integration;
+- additional inference adapters;
+- stronger model distribution and cache management;
+- queue priority and project quotas;
+- usage and cost accounting;
+- Prometheus/Grafana observability;
+- alerting;
+- centralized structured logging;
+- audit history;
+- additional worker platforms;
+- optional cloud GPU workers;
+- multi-node K3s when actual load justifies it;
+- high-availability PostgreSQL only when operational requirements justify the
+  added complexity.
+
+## Engineering principle
+
+GPULink should make GPU compute a capability that an application requests,
+rather than hardware that every application or end-user device must own.
+
+Infrastructure should remain as simple as possible while preserving the
+correctness, recovery, and security guarantees already proven by the system.

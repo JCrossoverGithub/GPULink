@@ -57,9 +57,10 @@ control plane requires the ready health set, manifest set, and advertised
 capability set to match exactly. Older workers may omit the report.
 
 The built-in diagnostic adapters are versioned in-process adapters. The GPU
-benchmark is a versioned bounded-process adapter. `speech.streaming` has a
-shared session contract but deliberately has no manifest until a real Parakeet
-adapter and readiness check are installed.
+benchmark is a versioned bounded-process adapter and has been accepted on the
+physical GPU fleet. `speech.streaming` has a shared session contract but
+deliberately has no manifest until a real Parakeet adapter and readiness check
+are installed.
 
 ## Bounded process launcher
 
@@ -134,20 +135,42 @@ database.
 
 For streaming transcription, the control plane will grant a lease and the
 gateway will connect the client session to the leased Parakeet adapter. Audio
-frames remain on the streaming data path. For LLM serving, GPUlink's native
+frames remain on the streaming data path. For LLM serving, GPULink's native
 platform API remains authoritative. An optional OpenAI-format compatibility
 adapter may later let existing LLM tools call local models without redefining
-GPUlink's scheduling or identity model.
+GPULink's scheduling or identity model.
 
-## Deployment topology
+## Current deployment topology
 
-The public DigitalOcean droplet runs the control plane in a resource-bounded,
-read-only Docker container. Docker publishes it only on loopback, while the
-droplet's existing Nginx service is the public listener and terminates HTTPS.
+The current production deployment uses a DigitalOcean Ubuntu host as a
+transitional control-plane platform.
+
+The host runs:
+
+- Nginx as the public HTTPS boundary;
+- the GPULink control plane in Docker;
+- PostgreSQL 17 in Docker;
+- systemd-managed backup and restore-verification jobs.
+
+Docker publishes the control plane only on `127.0.0.1:8088`. PostgreSQL has no
+host-published port.
+
+The current physical worker fleet consists of:
+
+- MAINPC — RTX 3070 Ti 8 GB;
+- JPCMAIN — RTX 3090 Ti 24 GB;
+- laptop — RTX 4060 8 GB.
+
 Each Windows GPU host runs the worker under WSL2 and initiates outbound HTTPS
-requests to the droplet; no worker port is exposed to the internet. Workers can
-be drained before gaming, maintenance, or desktop-heavy work and resumed
-without changing their identity.
+requests to the control plane. No GPULink worker port is exposed to the
+Internet.
+
+Workers can be drained before gaming, maintenance, or desktop-heavy work and
+resumed without changing their identity.
+
+The next production platform is planned for AWS on a small K3s deployment.
+That migration changes the infrastructure layer, not the worker/control-plane
+contracts.
 
 ## Operations console
 
@@ -174,6 +197,68 @@ The operations gateway does not write to the scheduler database, emulate job
 state, or contact workers directly. Authenticated production exposure and safe
 administrative controls are later dashboard slices.
 
+## Persistence and distributed coordination
+
+PostgreSQL 17 is the authoritative production persistence backend.
+
+It stores:
+
+- worker identity and inventory;
+- job state;
+- leases;
+- durable operational events;
+- scheduler-visible state.
+
+SQLite remains implemented for focused tests and migration fixtures, but it is
+not the production source of truth.
+
+Scheduler work is asynchronous and passes through a coalescing runner so timer
+ticks cannot create overlapping scheduler executions within one process.
+
+Each scheduling pass runs inside a database transaction. PostgreSQL advisory
+locking provides cross-process exclusion so multiple control-plane replicas do
+not independently schedule the same work.
+
+Event publication is commit-aware. PostgreSQL persists the durable event first
+and uses `LISTEN` / `NOTIFY` to wake subscribers after commit. The event table,
+not the notification itself, remains the durable source.
+
+Graceful control-plane shutdown waits for in-flight scheduler work before
+closing persistence.
+
+## Release and recovery architecture
+
+Modern production releases are immutable and traceable to Git revisions.
+
+The release archive contains `RELEASE_REVISION`, while the control-plane image
+contains OCI source, revision, and version labels. Installed source revision
+and currently deployed control-plane revision are tracked separately so a
+controlled rollback does not make operational tooling ambiguous.
+
+Deploy and rollback operations share one host-level exclusion lock.
+
+Production rollback:
+
+- accepts only traceable releases;
+- requires the target immutable image to already exist;
+- never builds during rollback;
+- refuses rollback while active jobs exist;
+- takes a verified PostgreSQL backup first;
+- validates health and readiness after the switch;
+- automatically attempts restoration of the previous control-plane image if
+  target validation fails.
+
+PostgreSQL backup is automated daily. A weekly restore-verification service
+restores the newest completed backup into an isolated disposable PostgreSQL
+container and compares restored database state with metadata captured during
+backup.
+
+The disposable restore never mounts the production PostgreSQL volume and is
+removed after verification.
+
+Current backups remain on the same DigitalOcean host. Off-host backup, WAL
+archiving, and point-in-time recovery are Phase 4 responsibilities.
+
 ## Durable state machine
 
 Jobs use these states:
@@ -192,7 +277,7 @@ events so high-frequency operation cannot grow the event table without bound.
 
 ## Reliability invariants
 
-1. A GPU has at most one active `leased` or `running` job in Milestone 1.
+1. A GPU has at most one active `leased` or `running` GPULink job.
 2. A drained or stale worker receives no new leases.
 3. A lease has an explicit expiry time and attempt number.
 4. Start, renewal, and completion are rejected after the lease expiry time.
@@ -206,7 +291,7 @@ events so high-frequency operation cannot grow the event table without bound.
 
 ## Scheduling policy
 
-Milestone 1 supports one GPU per job. A worker is eligible when it is online,
+The current scheduler assigns one GPU per job. A worker is eligible when it is online,
 not draining, fresh enough, and advertises every required capability. A GPU is
 eligible when it is not leased and its reported free VRAM, minus the configured
 safety margin, satisfies `minVramMiB`.
@@ -224,13 +309,17 @@ largest GPU unnecessarily.
 
 ## Security boundary
 
-The first operational target has separate client, worker, and administrator
-bootstrap tokens. The administrator token is a deliberate super-scope for
-single-owner recovery. The service refuses short or duplicated tokens. HTTPS is
-mandatory for internet traffic, secrets live in root-readable environment
-files, and workers make outbound-only connections. Later milestones replace
-the bootstrap credentials with hashed, individually revocable project and
-worker credentials.
+The current production API uses separate client, worker, and administrator
+credentials. The administrator credential is a deliberate super-scope for
+single-owner recovery. The service refuses short or duplicated credentials.
+
+HTTPS is mandatory for Internet traffic, secrets live in root-readable
+environment files, PostgreSQL is not host-published, and workers make
+outbound-only connections.
+
+A future identity system may replace bootstrap credentials with individually
+revocable project and worker credentials without changing the worker
+networking model.
 
 Workers will execute only configured adapter manifests. Arbitrary command,
 Python, shell, and container submission is intentionally excluded.

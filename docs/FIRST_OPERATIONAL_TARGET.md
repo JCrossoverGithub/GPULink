@@ -1,5 +1,15 @@
 # First Operational Target
 
+> [!NOTE]
+> **Historical document.** This file describes GPULink's original physical
+> operational target and is preserved as acceptance/deployment history.
+> Production now uses PostgreSQL as the authoritative store, includes RTX
+> 3070 Ti, RTX 3090 Ti, and RTX 4060 workers, and has traceable releases,
+> automated backup/restore verification, and controlled rollback.
+> See `README.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and
+> `docs/PRODUCTION_OPERATIONS.md` for the current system.
+
+
 ## Goal
 
 Prove that an external authorized device can submit a safe GPU diagnostic to a

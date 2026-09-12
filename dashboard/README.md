@@ -1,14 +1,15 @@
-# GPUlink Operations Console
+# GPULink Operations Console
 
-This directory contains the first visual operations surface for GPUlink:
+This directory contains the first visual operations surface for GPULink:
 
 - `backend/` is a small Flask backend-for-frontend;
 - `frontend/` is a standalone Angular operations console.
 
 The Node.js control plane remains authoritative for worker identity, durable
-job state, leases, and scheduling. Flask makes bounded read-only calls to that
-API, aggregates an operations snapshot, and removes job payloads and results
-before the response reaches the browser.
+job state, leases, events, and scheduling, with PostgreSQL as the production
+source of truth. Flask makes bounded read-only calls to that API, aggregates an
+operations snapshot, and removes job payloads and results before the response
+reaches the browser.
 
 ## Security boundary
 
@@ -25,8 +26,8 @@ development proxy, keeping browser requests on one origin.
 
 - Python 3.12 or newer
 - Node.js 24.15 or newer
-- A reachable GPUlink control plane
-- Valid GPUlink administrator and client credentials
+- A reachable GPULink control plane
+- Valid GPULink administrator and client credentials
 
 ## Start the Flask gateway
 
