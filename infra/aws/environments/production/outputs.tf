@@ -62,3 +62,13 @@ output "postgres_device_name" {
   description = "Requested device name for the PostgreSQL EBS attachment."
   value       = module.storage.postgres_device_name
 }
+
+output "postgres_backup_bucket_name" {
+  description = "S3 bucket used for PostgreSQL backups and WAL archives."
+  value       = module.backup.bucket_name
+}
+
+output "postgres_backup_bucket_arn" {
+  description = "ARN of the PostgreSQL backup bucket."
+  value       = module.backup.bucket_arn
+}

@@ -28,4 +28,46 @@ resource "aws_iam_role_policy_attachment" "ssm" {
 resource "aws_iam_instance_profile" "host" {
   name = "gpulink-production-host"
   role = aws_iam_role.host.name
+
+  depends_on = [
+    aws_iam_role_policy_attachment.ssm,
+  ]
+}
+
+data "aws_iam_policy_document" "postgres_backup" {
+  statement {
+    sid = "ListPostgresBackupBucket"
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "s3:ListBucketMultipartUploads",
+    ]
+
+    resources = [
+      var.postgres_backup_bucket_arn,
+    ]
+  }
+
+  statement {
+    sid = "ManagePostgresBackupObjects"
+
+    actions = [
+      "s3:AbortMultipartUpload",
+      "s3:DeleteObject",
+      "s3:GetObject",
+      "s3:ListMultipartUploadParts",
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "${var.postgres_backup_bucket_arn}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "postgres_backup" {
+  name   = "gpulink-postgres-backup"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.postgres_backup.json
 }

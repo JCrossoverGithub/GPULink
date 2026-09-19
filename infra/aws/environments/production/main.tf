@@ -7,6 +7,8 @@ module "networking" {
 
 module "iam" {
   source = "../../modules/iam"
+
+  postgres_backup_bucket_arn = module.backup.bucket_arn
 }
 
 module "compute" {
@@ -18,10 +20,6 @@ module "compute" {
 
   instance_type        = var.instance_type
   root_volume_size_gib = var.root_volume_size_gib
-
-  depends_on = [
-    module.iam
-  ]
 }
 
 module "storage" {
@@ -30,4 +28,16 @@ module "storage" {
   availability_zone = module.networking.availability_zone
   instance_id       = module.compute.instance_id
   volume_size_gib   = var.postgres_volume_size_gib
+}
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  postgres_backup_bucket_name = "gpulink-production-postgres-backups-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+}
+
+module "backup" {
+  source = "../../modules/backup"
+
+  bucket_name = local.postgres_backup_bucket_name
 }
