@@ -17,3 +17,13 @@ output "availability_zone" {
   description = "Availability zone used by the initial GPULink host."
   value       = module.networking.availability_zone
 }
+
+output "host_instance_profile_name" {
+  description = "IAM instance profile used by the GPULink host."
+  value       = module.iam.instance_profile_name
+}
+
+output "host_role_name" {
+  description = "IAM role assumed by the GPULink host."
+  value       = module.iam.role_name
+}
