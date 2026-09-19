@@ -27,3 +27,9 @@ variable "root_volume_size_gib" {
   type        = number
   default     = 20
 }
+
+variable "postgres_volume_size_gib" {
+  description = "Size of the dedicated PostgreSQL data volume."
+  type        = number
+  default     = 20
+}

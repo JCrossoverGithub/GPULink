@@ -47,3 +47,18 @@ output "host_public_ip" {
   description = "Stable public IPv4 address of the GPULink production host."
   value       = module.compute.public_ip
 }
+
+output "postgres_volume_id" {
+  description = "Dedicated PostgreSQL EBS volume ID."
+  value       = module.storage.postgres_volume_id
+}
+
+output "postgres_volume_size_gib" {
+  description = "Dedicated PostgreSQL EBS volume size."
+  value       = module.storage.postgres_volume_size_gib
+}
+
+output "postgres_device_name" {
+  description = "Requested device name for the PostgreSQL EBS attachment."
+  value       = module.storage.postgres_device_name
+}

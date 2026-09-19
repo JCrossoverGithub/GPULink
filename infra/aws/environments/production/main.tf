@@ -23,3 +23,11 @@ module "compute" {
     module.iam
   ]
 }
+
+module "storage" {
+  source = "../../modules/storage"
+
+  availability_zone = module.networking.availability_zone
+  instance_id       = module.compute.instance_id
+  volume_size_gib   = var.postgres_volume_size_gib
+}
