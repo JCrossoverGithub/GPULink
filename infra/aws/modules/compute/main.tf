@@ -32,8 +32,8 @@ resource "aws_instance" "host" {
 
   iam_instance_profile = var.instance_profile_name
 
-  # A stable Elastic IP is associated separately below.
-  associate_public_ip_address = false
+  # Public IPv4 reachability is provided exclusively by the
+  # Terraform-managed Elastic IP associated below.
 
   # GPULink administration uses SSM rather than SSH.
   # No EC2 key pair is configured.
