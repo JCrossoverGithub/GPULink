@@ -86,27 +86,11 @@ for attempt in $(seq 1 60); do
   sleep 2
 done
 
-echo "Waiting for Kubernetes API..."
-for attempt in $(seq 1 60); do
-  if k3s kubectl get node "${NODE_NAME}" >/dev/null 2>&1; then
-    break
-  fi
-
-  if [[ "${attempt}" -eq 60 ]]; then
-    journalctl -u k3s --no-pager -n 100 || true
-    fail "Kubernetes API did not become ready"
-  fi
-
-  sleep 2
-done
-
-NODE_READY="$(
-  k3s kubectl get node "${NODE_NAME}" \
-    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-)"
-
-if [[ "${NODE_READY}" != "True" ]]; then
-  fail "Kubernetes node is not Ready"
+echo "Waiting for Kubernetes node to become Ready..."
+if ! k3s kubectl wait   --for=condition=Ready   "node/${NODE_NAME}"   --timeout=120s; then
+  journalctl -u k3s --no-pager -n 100 || true
+  k3s kubectl get nodes -o wide || true
+  fail "Kubernetes node did not become Ready"
 fi
 
 echo
