@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gpulink-postgres-data-aws
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: gpulink
+    gpulink.io/volume: postgres-data
+spec:
+  capacity:
+    storage: 20Gi
+
+  volumeMode: Filesystem
+
+  accessModes:
+    - ReadWriteOnce
+
+  persistentVolumeReclaimPolicy: Retain
+
+  # This production PV is reserved exclusively for the GPULink PostgreSQL
+  # claim so no other workload can accidentally bind to authoritative data.
+  claimRef:
+    namespace: gpulink
+    name: postgres-data
+
+  # AWS production uses the pre-mounted, Terraform-managed persistent disk.
+  # The portable base knows only the provider-neutral storage class name.
+  storageClassName: gpulink-postgres
+
+  local:
+    path: /var/lib/gpulink/postgres
+
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - gpulink-prod-control-1
