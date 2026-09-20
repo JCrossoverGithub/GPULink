@@ -7,3 +7,8 @@ variable "postgres_auth_secret_arn" {
   description = "ARN of the Secrets Manager secret containing PostgreSQL authentication material."
   type        = string
 }
+
+variable "postgres_image_repository_arn" {
+  description = "ARN of the ECR repository containing the GPULink PostgreSQL runtime image."
+  type        = string
+}

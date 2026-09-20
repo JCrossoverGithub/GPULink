@@ -92,3 +92,35 @@ resource "aws_iam_role_policy" "postgres_auth_secret" {
   role   = aws_iam_role.host.id
   policy = data.aws_iam_policy_document.postgres_auth_secret.json
 }
+
+data "aws_iam_policy_document" "postgres_image_pull" {
+  statement {
+    sid = "GetEcrAuthorizationToken"
+
+    actions = [
+      "ecr:GetAuthorizationToken",
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "PullPostgresRuntimeImage"
+
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+    ]
+
+    resources = [
+      var.postgres_image_repository_arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "postgres_image_pull" {
+  name   = "gpulink-postgres-image-pull"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.postgres_image_pull.json
+}

@@ -8,8 +8,9 @@ module "networking" {
 module "iam" {
   source = "../../modules/iam"
 
-  postgres_backup_bucket_arn = module.backup.bucket_arn
-  postgres_auth_secret_arn   = module.secrets.postgres_auth_secret_arn
+  postgres_backup_bucket_arn    = module.backup.bucket_arn
+  postgres_auth_secret_arn      = module.secrets.postgres_auth_secret_arn
+  postgres_image_repository_arn = module.registry.postgres_repository_arn
 }
 
 module "compute" {
