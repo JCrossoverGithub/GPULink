@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-imds-by-default
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/part-of: gpulink
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+
+  # Preserve normal IPv4 egress while excluding the EC2 metadata service.
+  # Additional policies may selectively restore IMDS access where required.
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-imds
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/part-of: gpulink
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/part-of: gpulink
+
+  policyTypes:
+    - Egress
+
+  # PostgreSQL/pgBackRest may obtain short-lived credentials from IMDSv2.
+  # No other GPULink workload receives this exception.
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
