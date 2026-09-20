@@ -14,4 +14,10 @@ RUN set -eux; \
     test "$(pgbackrest version)" = "pgBackRest ${PGBACKREST_EXPECTED_VERSION}"; \
     test "$(id -u postgres)" = "999"; \
     test "$(id -g postgres)" = "999"; \
+    apt-get purge -y \
+        gnupg \
+        dirmngr \
+        gpg \
+        gpg-agent \
+        gpgsm; \
     rm -rf /var/lib/apt/lists/*

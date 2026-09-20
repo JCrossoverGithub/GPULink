@@ -64,3 +64,16 @@ From the repository root:
 
 The production Kubernetes manifest must eventually reference an immutable
 registry digest rather than this local tag.
+
+## Runtime hardening
+
+General-purpose GnuPG tooling is removed after package installation because
+the PostgreSQL/pgBackRest runtime does not require it.
+
+This reduces unnecessary runtime attack surface while retaining the packages
+required by PostgreSQL, pgBackRest, and apt package verification.
+
+The production image intentionally retains libxml2 and zlib because they are
+runtime dependencies. Vulnerabilities without a supported Debian Trixie fix
+are tracked separately rather than addressed by mixing packages from Debian
+unstable.
