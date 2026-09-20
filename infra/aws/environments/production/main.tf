@@ -9,6 +9,7 @@ module "iam" {
   source = "../../modules/iam"
 
   postgres_backup_bucket_arn = module.backup.bucket_arn
+  postgres_auth_secret_arn   = module.secrets.postgres_auth_secret_arn
 }
 
 module "compute" {
@@ -40,4 +41,10 @@ module "backup" {
   source = "../../modules/backup"
 
   bucket_name = local.postgres_backup_bucket_name
+}
+
+module "secrets" {
+  source = "../../modules/secrets"
+
+  postgres_auth_secret_name = "gpulink/production/postgres-auth"
 }

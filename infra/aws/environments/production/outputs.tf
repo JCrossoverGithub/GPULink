@@ -72,3 +72,13 @@ output "postgres_backup_bucket_arn" {
   description = "ARN of the PostgreSQL backup bucket."
   value       = module.backup.bucket_arn
 }
+
+output "postgres_auth_secret_name" {
+  description = "Name of the durable PostgreSQL authentication secret."
+  value       = module.secrets.postgres_auth_secret_name
+}
+
+output "postgres_auth_secret_arn" {
+  description = "ARN of the durable PostgreSQL authentication secret."
+  value       = module.secrets.postgres_auth_secret_arn
+}

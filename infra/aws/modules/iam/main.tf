@@ -71,3 +71,24 @@ resource "aws_iam_role_policy" "postgres_backup" {
   role   = aws_iam_role.host.id
   policy = data.aws_iam_policy_document.postgres_backup.json
 }
+
+data "aws_iam_policy_document" "postgres_auth_secret" {
+  statement {
+    sid = "ReadPostgresAuthenticationSecret"
+
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+    ]
+
+    resources = [
+      var.postgres_auth_secret_arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "postgres_auth_secret" {
+  name   = "gpulink-postgres-auth-secret"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.postgres_auth_secret.json
+}
