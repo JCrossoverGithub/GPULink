@@ -82,3 +82,18 @@ output "postgres_auth_secret_arn" {
   description = "ARN of the durable PostgreSQL authentication secret."
   value       = module.secrets.postgres_auth_secret_arn
 }
+
+output "postgres_image_repository_name" {
+  description = "Name of the ECR repository containing the GPULink PostgreSQL runtime image."
+  value       = module.registry.postgres_repository_name
+}
+
+output "postgres_image_repository_arn" {
+  description = "ARN of the ECR repository containing the GPULink PostgreSQL runtime image."
+  value       = module.registry.postgres_repository_arn
+}
+
+output "postgres_image_repository_url" {
+  description = "Registry URL of the ECR repository containing the GPULink PostgreSQL runtime image."
+  value       = module.registry.postgres_repository_url
+}

@@ -48,3 +48,9 @@ module "secrets" {
 
   postgres_auth_secret_name = "gpulink/production/postgres-auth"
 }
+
+module "registry" {
+  source = "../../modules/registry"
+
+  postgres_repository_name = "gpulink/postgres-pgbackrest"
+}
