@@ -11,8 +11,8 @@ PostgreSQL:
 
 Base image:
 
-    postgres:17.11-bookworm
-    sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+    postgres:17.11-trixie
+    sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
 
 pgBackRest:
 
@@ -20,7 +20,7 @@ pgBackRest:
 
 Debian package:
 
-    2.59.1-1.pgdg12+1
+    2.59.1-1.pgdg13+1
 
 ## Security boundary
 
