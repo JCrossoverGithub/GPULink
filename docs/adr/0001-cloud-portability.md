@@ -156,3 +156,37 @@ In exchange, GPULink retains:
 - reduced vendor lock-in
 
 Any future change that introduces a cloud-specific dependency into GPULink core must be treated as an architectural change and reviewed against this decision.
+
+## Portability Acceptance Gate
+
+A deployment change is not portable merely because GPULink can theoretically
+be ported away from the current provider.
+
+The portable Kubernetes base must be deployable without AWS.
+
+Nothing under:
+
+    infra/kubernetes/base
+
+may require:
+
+- Amazon ECR;
+- AWS IAM;
+- EC2 Instance Metadata Service;
+- Amazon EBS;
+- Amazon S3;
+- AWS-specific Kubernetes identity;
+- AWS-specific storage classes;
+- AWS-specific service names or APIs.
+
+Provider-specific behavior belongs in deployment profiles or overlays such as:
+
+    infra/kubernetes/overlays/aws
+
+An AWS overlay may select an ECR image location, configure host authentication,
+or provide AWS-specific storage and infrastructure.
+
+Those choices must not become part of the GPULink application contract.
+
+The same portable base must remain usable by a self-hosted or other-cloud
+deployment with equivalent capabilities supplied through that environment.
