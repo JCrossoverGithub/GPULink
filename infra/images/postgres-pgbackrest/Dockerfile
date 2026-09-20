@@ -19,5 +19,7 @@ RUN set -eux; \
         dirmngr \
         gpg \
         gpg-agent \
-        gpgsm; \
+        gpgsm \
+        gnupg-l10n \
+        gpgconf; \
     rm -rf /var/lib/apt/lists/*
