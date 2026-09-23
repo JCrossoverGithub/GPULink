@@ -14,14 +14,6 @@ data:
     pg1-socket-path=/var/run/postgresql
 
     [global]
-    repo1-host=10.40.10.141
-    repo1-host-type=tls
-    repo1-host-port=8432
-    repo1-host-user=pgbackrest
-    repo1-host-ca-file=/etc/pgbackrest/tls/ca.crt
-    repo1-host-cert-file=/etc/pgbackrest/tls/client.crt
-    repo1-host-key-file=/etc/pgbackrest/tls/client.key
-
     tls-server-address=*
     tls-server-port=8432
     tls-server-auth=gpulink-repository=gpulink

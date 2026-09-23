@@ -162,3 +162,19 @@ Do not commit commands such as:
 when the resulting YAML contains real certificate or private-key values.
 
 The Secret may be created directly from local files at deployment time instead.
+
+## Repository endpoint configuration
+
+The repository server address is deployment-specific and is not embedded in
+the database-side server configuration committed to this repository.
+
+During the backup-server phase, the database-side pgBackRest process only
+needs to accept authenticated pgBackRest protocol connections from the
+repository host.
+
+When WAL archival is enabled, the deployment must provide the repository
+endpoint used by the database-side pgBackRest client. That endpoint may be an
+IP address or DNS name appropriate to that deployment.
+
+The endpoint must not be assumed to be the address of the GPULink reference
+AWS deployment.
