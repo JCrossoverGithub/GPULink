@@ -12,6 +12,7 @@ data:
     [gpulink]
     pg1-path=/var/lib/postgresql/data/pgdata
     pg1-socket-path=/var/run/postgresql
+    pg1-user=gpulink
 
     [global]
     tls-server-address=*
