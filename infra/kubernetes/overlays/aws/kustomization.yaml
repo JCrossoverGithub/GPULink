@@ -5,3 +5,8 @@ resources:
   - ../../base
   - postgres-storageclass.yaml
   - postgres-pv.yaml
+  - postgres-pgbackrest-configmap.yaml
+  - postgres-pgbackrest-service.yaml
+
+patches:
+  - path: postgres-pgbackrest-patch.yaml

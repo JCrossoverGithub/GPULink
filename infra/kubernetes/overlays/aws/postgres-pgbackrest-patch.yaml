@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: gpulink
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: prepare-pgdata
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              install -d -m 0700 -o 999 -g 999 /var/lib/postgresql/data/pgdata
+              install -d -m 3775 -o 999 -g 999 /var/run/postgresql
+
+              install -d -m 0700 -o 999 -g 999 /etc/pgbackrest/tls
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/ca.crt \
+                /etc/pgbackrest/tls/ca.crt
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/server.crt \
+                /etc/pgbackrest/tls/server.crt
+
+              install -m 0400 -o 999 -g 999 \
+                /pgbackrest-tls-source/server.key \
+                /etc/pgbackrest/tls/server.key
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/client.crt \
+                /etc/pgbackrest/tls/client.crt
+
+              install -m 0400 -o 999 -g 999 \
+                /pgbackrest-tls-source/client.key \
+                /etc/pgbackrest/tls/client.key
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+            - name: postgres-socket
+              mountPath: /var/run/postgresql
+
+            - name: pgbackrest-tls-source
+              mountPath: /pgbackrest-tls-source
+              readOnly: true
+
+            - name: pgbackrest-tls
+              mountPath: /etc/pgbackrest/tls
+
+      containers:
+        - name: postgres
+          volumeMounts:
+            - name: postgres-socket
+              mountPath: /var/run/postgresql
+
+        - name: pgbackrest
+          image: 790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /usr/bin/pgbackrest
+          args:
+            - --config=/etc/pgbackrest/pgbackrest.conf
+            - server
+
+          ports:
+            - name: pgbackrest
+              containerPort: 8432
+              protocol: TCP
+
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+
+          startupProbe:
+            tcpSocket:
+              port: pgbackrest
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
+
+          readinessProbe:
+            tcpSocket:
+              port: pgbackrest
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+              readOnly: true
+
+            - name: postgres-socket
+              mountPath: /var/run/postgresql
+
+            - name: pgbackrest-config
+              mountPath: /etc/pgbackrest/pgbackrest.conf
+              subPath: pgbackrest.conf
+              readOnly: true
+
+            - name: pgbackrest-tls
+              mountPath: /etc/pgbackrest/tls
+              readOnly: true
+
+      volumes:
+        - name: postgres-socket
+          emptyDir: {}
+
+        - name: pgbackrest-config
+          configMap:
+            name: postgres-pgbackrest-config
+
+        - name: pgbackrest-tls-source
+          secret:
+            secretName: postgres-pgbackrest-tls
+            defaultMode: 0400
+
+        - name: pgbackrest-tls
+          emptyDir: {}

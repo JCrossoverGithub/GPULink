@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-pgbackrest
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: backup
+spec:
+  type: ClusterIP
+
+  selector:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: gpulink
+
+  ports:
+    - name: pgbackrest
+      port: 8432
+      targetPort: pgbackrest
+      protocol: TCP
