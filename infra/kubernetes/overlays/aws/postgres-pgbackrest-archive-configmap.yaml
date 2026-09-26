@@ -11,6 +11,9 @@ data:
   pgbackrest.conf: |
     [gpulink]
     pg1-path=/var/lib/postgresql/data/pgdata
+    pg1-socket-path=/var/run/postgresql
+    pg1-user=gpulink
+    pg1-database=gpulink
 
     [global]
     repo1-host-type=tls
