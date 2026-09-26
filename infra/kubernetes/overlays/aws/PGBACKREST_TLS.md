@@ -216,3 +216,39 @@ A newly created stanza may report that no valid backups or WAL archive entries
 exist. That is expected until the first backup and WAL archival are completed.
 
 TLS transport acceptance must not require enabling `archive_mode`.
+
+## WAL archive repository endpoint
+
+Continuous WAL archiving requires the PostgreSQL-side pgBackRest client to know
+the repository service endpoint.
+
+The endpoint is deployment-local and MUST NOT be hard-coded into the reusable
+AWS overlay. Before enabling the archive-enabled StatefulSet, the deployment
+must provide:
+
+    ConfigMap: postgres-pgbackrest-repository-endpoint
+    Namespace: gpulink
+    Key: host
+
+The value must be an IP address or DNS name covered by the repository server
+certificate's subjectAltName.
+
+Example deployment operation:
+
+    kubectl create configmap postgres-pgbackrest-repository-endpoint \
+      --namespace gpulink \
+      --from-literal=host=<repository-endpoint> \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+The main PostgreSQL container receives this value as
+`GPULINK_PGBACKREST_REPOSITORY_HOST`. The archive wrapper passes it explicitly
+to pgBackRest as `--repo1-host`.
+
+The Kubernetes workload receives no object-storage credentials. WAL is sent
+over mutually authenticated pgBackRest TLS to the repository service, and the
+repository host performs object-storage access using its deployment-specific
+credential mechanism.
+
+The archive client receives only the CA certificate and database client
+certificate/key. It does not require the database-side pgBackRest server
+private key.

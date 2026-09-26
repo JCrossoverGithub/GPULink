@@ -6,6 +6,7 @@ resources:
   - postgres-storageclass.yaml
   - postgres-pv.yaml
   - postgres-pgbackrest-configmap.yaml
+  - postgres-pgbackrest-archive-configmap.yaml
   - postgres-pgbackrest-service.yaml
 
 patches:

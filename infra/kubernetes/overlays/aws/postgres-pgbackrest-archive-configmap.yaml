@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-pgbackrest-archive-config
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: backup
+data:
+  pgbackrest.conf: |
+    [gpulink]
+    pg1-path=/var/lib/postgresql/data/pgdata
+
+    [global]
+    repo1-host-type=tls
+    repo1-host-port=8432
+    repo1-host-config=/etc/pgbackrest/pgbackrest.conf
+    repo1-host-ca-file=/etc/pgbackrest/client-tls/ca.crt
+    repo1-host-cert-file=/etc/pgbackrest/client-tls/client.crt
+    repo1-host-key-file=/etc/pgbackrest/client-tls/client.key
+
+    log-level-console=info
+    log-level-file=off
+
+  archive-push.sh: |
+    #!/bin/sh
+    set -eu
+
+    : "${GPULINK_PGBACKREST_REPOSITORY_HOST:?repository endpoint is required}"
+
+    exec /usr/bin/pgbackrest \
+      --config=/etc/pgbackrest/archive/pgbackrest.conf \
+      --stanza=gpulink \
+      --repo1-host="${GPULINK_PGBACKREST_REPOSITORY_HOST}" \
+      archive-push "$1"

@@ -37,6 +37,20 @@ spec:
                 /pgbackrest-tls-source/client.key \
                 /etc/pgbackrest/tls/client.key
 
+              install -d -m 0700 -o 999 -g 999 /etc/pgbackrest/client-tls
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/ca.crt \
+                /etc/pgbackrest/client-tls/ca.crt
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/client.crt \
+                /etc/pgbackrest/client-tls/client.crt
+
+              install -m 0400 -o 999 -g 999 \
+                /pgbackrest-tls-source/client.key \
+                /etc/pgbackrest/client-tls/client.key
+
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
@@ -51,12 +65,31 @@ spec:
             - name: pgbackrest-tls
               mountPath: /etc/pgbackrest/tls
 
+            - name: pgbackrest-client-tls
+              mountPath: /etc/pgbackrest/client-tls
+
       containers:
         - name: postgres
           image: 790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+
+          env:
+            - name: GPULINK_PGBACKREST_REPOSITORY_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-pgbackrest-repository-endpoint
+                  key: host
+
           volumeMounts:
             - name: postgres-socket
               mountPath: /var/run/postgresql
+
+            - name: pgbackrest-archive-config
+              mountPath: /etc/pgbackrest/archive
+              readOnly: true
+
+            - name: pgbackrest-client-tls
+              mountPath: /etc/pgbackrest/client-tls
+              readOnly: true
 
         - name: pgbackrest
           image: 790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
@@ -138,3 +171,17 @@ spec:
 
         - name: pgbackrest-tls
           emptyDir: {}
+
+        - name: pgbackrest-client-tls
+          emptyDir: {}
+
+        - name: pgbackrest-archive-config
+          configMap:
+            name: postgres-pgbackrest-archive-config
+            items:
+              - key: pgbackrest.conf
+                path: pgbackrest.conf
+                mode: 0444
+              - key: archive-push.sh
+                path: archive-push.sh
+                mode: 0555
