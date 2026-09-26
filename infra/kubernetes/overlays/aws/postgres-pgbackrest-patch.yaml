@@ -72,6 +72,12 @@ spec:
         - name: postgres
           image: 790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
 
+          args:
+            - -c
+            - archive_mode=on
+            - -c
+            - 'archive_command=/etc/pgbackrest/archive/archive-push.sh %p'
+
           env:
             - name: GPULINK_PGBACKREST_REPOSITORY_HOST
               valueFrom:
