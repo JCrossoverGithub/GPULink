@@ -53,6 +53,7 @@ spec:
 
       containers:
         - name: postgres
+          image: 790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
           volumeMounts:
             - name: postgres-socket
               mountPath: /var/run/postgresql
