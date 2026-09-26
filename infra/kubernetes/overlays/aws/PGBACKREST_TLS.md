@@ -178,3 +178,41 @@ IP address or DNS name appropriate to that deployment.
 
 The endpoint must not be assumed to be the address of the GPULink reference
 AWS deployment.
+
+## TLS repository-host behavior
+
+When a repository host uses the pgBackRest TLS protocol, configure:
+
+    repoN-host=<repository endpoint>
+    repoN-host-type=tls
+    repoN-host-port=8432
+    repoN-host-ca-file=<CA certificate>
+    repoN-host-cert-file=<client certificate>
+    repoN-host-key-file=<client private key>
+
+Do not set `repoN-host-user` for a TLS repository host. In pgBackRest 2.59.1,
+that option is valid for SSH transport rather than TLS transport.
+
+For TLS transport, peer identity is established by the client certificate and
+the server's `tls-server-auth` mapping.
+
+## Mutual-TLS acceptance
+
+Before enabling WAL archival, a deployment should prove both protocol
+directions independently:
+
+1. Repository to database:
+   - run `stanza-create` from the repository host;
+   - the database-side pgBackRest TLS server must authorize the repository
+     client certificate;
+   - PostgreSQL must be reachable through the database-side pgBackRest process.
+
+2. Database to repository:
+   - run a read-only repository command such as `info` or `repo-ls` from the
+     database-side pgBackRest process using the repository TLS endpoint;
+   - the repository TLS server must authorize the database client certificate.
+
+A newly created stanza may report that no valid backups or WAL archive entries
+exist. That is expected until the first backup and WAL archival are completed.
+
+TLS transport acceptance must not require enabling `archive_mode`.
