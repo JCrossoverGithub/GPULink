@@ -300,9 +300,38 @@ Accepted:
 - explicit restored-data cleanup;
 - unchanged production PostgreSQL and persistent storage.
 
-At the end of this acceptance run, the weekly restore-verification CronJob
-remained suspended pending final repository review and deliberate activation.
+Following repository review and creation of the accepted suspended-state
+commit and tag, the weekly restore-verification CronJob was deliberately
+activated.
 
-The remaining Phase 4C recovery work includes final activation of the recurring
-restore-verification schedule and completion of the operator disaster-recovery
-runbook.
+The live schedule is:
+
+    schedule=0 4 * * 0
+    timeZone=Etc/UTC
+    suspend=false
+    concurrencyPolicy=Forbid
+    startingDeadlineSeconds=3600
+
+Immediately before activation, four manual restore-verification Jobs existed.
+After activation and controller reconciliation, four Jobs still existed and
+the before/after Job sets were identical. No unintended catch-up restore was
+created.
+
+After activation, production PostgreSQL remained healthy:
+
+    probe_rows=1
+    archive_mode=on
+    archive_timeout=1min
+    failed_count=0
+    system_identifier=7687415552174817305
+
+The production PostgreSQL Pod identity and start time remained unchanged and
+both production containers retained zero restarts.
+
+At activation time, `lastScheduleTime` was empty because no controller-scheduled
+weekly execution had yet occurred. The first naturally scheduled weekly run
+therefore remains future operational evidence rather than part of this
+activation acceptance.
+
+The remaining Phase 4C recovery work is completion of the operator
+disaster-recovery runbook.

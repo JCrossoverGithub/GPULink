@@ -360,7 +360,12 @@ Recovery acceptance through 2026-09-27:
 - the restore verifier enforces a six-hour maximum backup age in the AWS
   weekly schedule, rejects partial application-schema state, runs PostgreSQL
   without a TCP listener and with archive mode disabled, and explicitly
-  removes restored database contents after validation.
+  removes restored database contents after validation;
+- the weekly restore-verification CronJob is active for Sunday 04:00 UTC with
+  `concurrencyPolicy=Forbid` and a one-hour starting deadline;
+- activation produced no unintended catch-up Job and left production
+  PostgreSQL healthy and unchanged. The first naturally scheduled weekly run
+  remains future operational evidence.
 
 The first accepted off-host full backup label was:
 
@@ -374,7 +379,6 @@ Detailed recovery evidence is recorded in:
 
 Remaining Phase 4C work:
 
-- activate the accepted weekly restore-verification schedule;
 - complete the operator disaster-recovery runbook.
 
 ## Phase 4D — Staging acceptance
