@@ -317,7 +317,7 @@ After Phase 4A:
 
 ## Phase 4C — Recovery
 
-Recovery foundation accepted through 2026-09-27:
+Recovery acceptance through 2026-09-27:
 
 - pgBackRest 2.59.1 is present on both database and repository sides;
 - database/repository protocol traffic is mutually authenticated with TLS;
@@ -330,17 +330,29 @@ Recovery foundation accepted through 2026-09-27:
 - the restored PostgreSQL 17 cluster reached a consistent state, promoted, and
   returned the expected persistence probe data;
 - the restored validation instance used no production PVC, no Kubernetes
-  Service, no TCP listener, and archive mode remained disabled.
+  Service, no TCP listener, and archive mode remained disabled;
+- named point-in-time recovery was exercised against an explicit
+  operator-selected restore point in disposable storage;
+- the PITR test recovered state committed before the restore point and excluded
+  state committed after it, even though both states were represented within the
+  same WAL segment;
+- the accepted PITR run used only its disposable local pgBackRest repository
+  during WAL replay and did not attach or modify the production PostgreSQL
+  volume;
+- the accepted PITR file-restore phase completed in 4.627 seconds and PostgreSQL
+  startup/recovery completed in 0.469 seconds for the small acceptance dataset.
+  These measurements are validation evidence, not a production RTO commitment.
 
-The first accepted full backup label was:
+The first accepted off-host full backup label was:
 
     20260926-235429F
 
+Detailed PITR acceptance evidence is recorded in
+`docs/security/aws-postgres-pitr-recovery-acceptance.md`.
+
 Remaining Phase 4C work:
 
-- exercise point-in-time recovery to an explicit operator-selected target;
-- measure and document recovery time;
-- measure and document the recoverable-data window / RPO;
+- measure and document the production recoverable-data window / RPO;
 - automate recurring restore verification;
 - complete the operator disaster-recovery runbook.
 
