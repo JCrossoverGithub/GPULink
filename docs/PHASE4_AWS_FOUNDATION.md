@@ -346,7 +346,26 @@ Recovery acceptance through 2026-09-27:
   segments have an explicit time-based switch threshold;
 - three production marker-to-off-host archive trials completed in 21.338,
   23.508, and 38.590 seconds with zero archive failures. These are observed
-  acceptance measurements, not a production RPO SLA.
+  acceptance measurements, not a production RPO SLA;
+- host-side pgBackRest backup automation is installed and the daily systemd
+  timer is enabled;
+- the automated backup path successfully produced a full backup and an
+  incremental backup through the off-host repository;
+- Kubernetes restore verification successfully restored the newest incremental
+  backup chain into disposable `emptyDir` storage without mounting the
+  production PostgreSQL PVC;
+- the accepted automated restore completed physical restore in 40.133 seconds
+  and PostgreSQL startup/recovery in 2.136 seconds for the current small
+  dataset. These measurements are validation evidence, not a production RTO;
+- the restore verifier enforces a six-hour maximum backup age in the AWS
+  weekly schedule, rejects partial application-schema state, runs PostgreSQL
+  without a TCP listener and with archive mode disabled, and explicitly
+  removes restored database contents after validation;
+- the weekly restore-verification CronJob is active for Sunday 04:00 UTC with
+  `concurrencyPolicy=Forbid` and a one-hour starting deadline;
+- activation produced no unintended catch-up Job and left production
+  PostgreSQL healthy and unchanged. The first naturally scheduled weekly run
+  remains future operational evidence.
 
 The first accepted off-host full backup label was:
 
@@ -355,11 +374,11 @@ The first accepted off-host full backup label was:
 Detailed recovery evidence is recorded in:
 
 - `docs/security/aws-postgres-pitr-recovery-acceptance.md`;
-- `docs/security/aws-postgres-rpo-acceptance.md`.
+- `docs/security/aws-postgres-rpo-acceptance.md`;
+- `docs/security/aws-postgres-recurring-recovery-acceptance.md`.
 
 Remaining Phase 4C work:
 
-- automate recurring restore verification;
 - complete the operator disaster-recovery runbook.
 
 ## Phase 4D — Staging acceptance

@@ -1,0 +1,443 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-restore-verification
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: postgres-restore-verification
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: recovery-verification
+data:
+  verify.sh: |
+    #!/usr/bin/env bash
+    set -Eeuo pipefail
+    umask 0077
+
+    die() {
+      echo "RESTORE VERIFICATION: FAIL: $*" >&2
+      exit 1
+    }
+
+    : "${GPULINK_PGBACKREST_REPOSITORY_HOST:?repository endpoint is required}"
+
+    PGDATA="/var/lib/postgresql/restore/pgdata"
+    SOCKET_DIR="/var/run/postgresql-restore"
+    PORT="55435"
+    CONFIG="/tmp/gpulink-restore-verification-pgbackrest.conf"
+    POSTGRES_LOG="/tmp/gpulink-restore-verification-postgres.log"
+
+    #
+    # Capture the deployment-local repository endpoint, then remove any
+    # inherited pgBackRest environment that could override this verifier's
+    # explicitly generated configuration.
+    #
+    REPOSITORY_HOST="${GPULINK_PGBACKREST_REPOSITORY_HOST}"
+
+    unset PGBACKREST_CONFIG || true
+    unset PGBACKREST_STANZA || true
+    unset PGBACKREST_REPO1_HOST || true
+
+    cat > "${CONFIG}" <<EOF_CONFIG
+    [gpulink]
+    pg1-path=${PGDATA}
+    pg1-socket-path=${SOCKET_DIR}
+    pg1-user=gpulink
+    pg1-database=gpulink
+
+    [global]
+    repo1-host=${REPOSITORY_HOST}
+    repo1-host-type=tls
+    repo1-host-port=8432
+    repo1-host-config=/etc/pgbackrest/pgbackrest.conf
+    repo1-host-ca-file=/etc/pgbackrest/client-tls/ca.crt
+    repo1-host-cert-file=/etc/pgbackrest/client-tls/client.crt
+    repo1-host-key-file=/etc/pgbackrest/client-tls/client.key
+
+    log-level-console=info
+    log-level-file=off
+    EOF_CONFIG
+
+    export PGBACKREST_CONFIG="${CONFIG}"
+    export PGBACKREST_STANZA="gpulink"
+
+    for command in \
+      pgbackrest \
+      postgres \
+      pg_ctl \
+      pg_isready \
+      psql \
+      pg_controldata \
+      date \
+      find \
+      grep \
+      cut \
+      head \
+      sed \
+      seq \
+      sort \
+      tail
+    do
+      command -v "${command}" >/dev/null 2>&1 \
+        || die "${command} is required"
+    done
+
+    [[ -d "${PGDATA}" ]] \
+      || die "restore data directory is missing"
+
+    [[ -d "${SOCKET_DIR}" ]] \
+      || die "restore socket directory is missing"
+
+    [[ ! -e "${PGDATA}/postmaster.pid" ]] \
+      || die "unexpected postmaster.pid exists before restore"
+
+    POSTGRES_STARTED=0
+
+    clean_restore_data() {
+      find "${PGDATA}" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -exec rm -rf -- {} +
+    }
+
+    cleanup() {
+      status=$?
+
+      if [[ "${POSTGRES_STARTED}" == "1" ]] \
+        && [[ -f "${PGDATA}/postmaster.pid" ]]; then
+        pg_ctl \
+          -D "${PGDATA}" \
+          -m fast \
+          -w \
+          -t 60 \
+          stop \
+          >/dev/null 2>&1 \
+          || true
+      fi
+
+      if [[ ${status} -ne 0 ]] && [[ -r "${POSTGRES_LOG}" ]]; then
+        echo
+        echo "===== PostgreSQL log =====" >&2
+        cat "${POSTGRES_LOG}" >&2
+      fi
+
+      clean_restore_data >/dev/null 2>&1 || true
+      rm -f "${CONFIG}" "${POSTGRES_LOG}" || true
+
+      exit "${status}"
+    }
+
+    trap cleanup EXIT
+
+    echo "===== repository state ====="
+
+    INFO_JSON="$(
+      pgbackrest \
+        --config="${CONFIG}" \
+        --stanza=gpulink \
+        --repo=1 \
+        --output=json \
+        info
+    )"
+
+    printf '%s\n' "${INFO_JSON}"
+
+    EXPECTED_SYSTEM_ID="$(
+      printf '%s\n' "${INFO_JSON}" \
+        | grep -o '"system-id":[0-9]*' \
+        | head -n 1 \
+        | cut -d: -f2
+    )"
+
+    BACKUP_LABEL="$(
+      printf '%s\n' "${INFO_JSON}" \
+        | grep -o '"label":"[^"]*"' \
+        | cut -d'"' -f4 \
+        | sort \
+        | tail -n 1
+    )"
+
+    [[ "${EXPECTED_SYSTEM_ID}" =~ ^[0-9]+$ ]] \
+      || die "repository system identifier could not be determined"
+
+    [[ -n "${BACKUP_LABEL}" ]] \
+      || die "no valid backup label was found"
+
+    MAX_BACKUP_AGE_SECONDS="${GPULINK_RESTORE_MAX_BACKUP_AGE_SECONDS:-21600}"
+
+    [[ "${MAX_BACKUP_AGE_SECONDS}" =~ ^[1-9][0-9]*$ ]] \
+      || die "invalid maximum backup age: ${MAX_BACKUP_AGE_SECONDS}"
+
+    BACKUP_TIMESTAMP_LABEL="${BACKUP_LABEL##*_}"
+    BACKUP_TIMESTAMP_LABEL="${BACKUP_TIMESTAMP_LABEL%?}"
+
+    [[ "${BACKUP_TIMESTAMP_LABEL}" =~ ^[0-9]{8}-[0-9]{6}$ ]] \
+      || die "unable to parse backup timestamp from label: ${BACKUP_LABEL}"
+
+    BACKUP_YEAR="${BACKUP_TIMESTAMP_LABEL:0:4}"
+    BACKUP_MONTH="${BACKUP_TIMESTAMP_LABEL:4:2}"
+    BACKUP_DAY="${BACKUP_TIMESTAMP_LABEL:6:2}"
+    BACKUP_HOUR="${BACKUP_TIMESTAMP_LABEL:9:2}"
+    BACKUP_MINUTE="${BACKUP_TIMESTAMP_LABEL:11:2}"
+    BACKUP_SECOND="${BACKUP_TIMESTAMP_LABEL:13:2}"
+
+    BACKUP_EPOCH="$(
+      date -u -d \
+        "${BACKUP_YEAR}-${BACKUP_MONTH}-${BACKUP_DAY} ${BACKUP_HOUR}:${BACKUP_MINUTE}:${BACKUP_SECOND} UTC" \
+        +%s
+    )" \
+      || die "unable to convert backup label timestamp"
+
+    NOW_EPOCH="$(date -u +%s)"
+    BACKUP_AGE_SECONDS=$((NOW_EPOCH - BACKUP_EPOCH))
+
+    [[ "${BACKUP_AGE_SECONDS}" -ge 0 ]] \
+      || die "selected backup timestamp is in the future"
+
+    [[ "${BACKUP_AGE_SECONDS}" -le "${MAX_BACKUP_AGE_SECONDS}" ]] \
+      || die "selected backup is stale: age=${BACKUP_AGE_SECONDS}s max=${MAX_BACKUP_AGE_SECONDS}s"
+
+    echo "repository_system_identifier=${EXPECTED_SYSTEM_ID}"
+    echo "selected_backup=${BACKUP_LABEL}"
+    echo "backup_age_seconds=${BACKUP_AGE_SECONDS}"
+    echo "max_backup_age_seconds=${MAX_BACKUP_AGE_SECONDS}"
+
+    echo
+    echo "===== physical restore ====="
+
+    RESTORE_START_NS="$(date +%s%N)"
+
+    pgbackrest \
+      --config="${CONFIG}" \
+      --stanza=gpulink \
+      --repo=1 \
+      --set="${BACKUP_LABEL}" \
+      --type=immediate \
+      --target-action=promote \
+      --archive-mode=off \
+      restore
+
+    RESTORE_STOP_NS="$(date +%s%N)"
+    RESTORE_MS=$(( (RESTORE_STOP_NS - RESTORE_START_NS) / 1000000 ))
+
+    echo "restore_duration_ms=${RESTORE_MS}"
+
+    RESTORED_CONTROL_SYSTEM_ID="$(
+      pg_controldata "${PGDATA}" \
+        | sed -n \
+          's/^Database system identifier:[[:space:]]*//p'
+    )"
+
+    [[ "${RESTORED_CONTROL_SYSTEM_ID}" == "${EXPECTED_SYSTEM_ID}" ]] \
+      || die "restored system identifier does not match repository"
+
+    echo "restored_control_system_identifier=${RESTORED_CONTROL_SYSTEM_ID}"
+
+    #
+    # PostgreSQL launched by this verifier inherits only the explicitly
+    # generated pgBackRest configuration above. No PGBACKREST_REPO1_HOST
+    # environment override is used.
+    #
+    echo
+    echo "===== isolated PostgreSQL startup ====="
+
+    POSTGRES_START_NS="$(date +%s%N)"
+
+    postgres \
+      -D "${PGDATA}" \
+      -c "listen_addresses=" \
+      -c "port=${PORT}" \
+      -c "unix_socket_directories=${SOCKET_DIR}" \
+      -c "archive_mode=off" \
+      >"${POSTGRES_LOG}" 2>&1 &
+
+    POSTGRES_PID=$!
+    POSTGRES_STARTED=1
+
+    ready=0
+
+    for attempt in $(seq 1 120); do
+      if ! kill -0 "${POSTGRES_PID}" >/dev/null 2>&1; then
+        die "restored PostgreSQL exited before becoming ready"
+      fi
+
+      if pg_isready \
+        -h "${SOCKET_DIR}" \
+        -p "${PORT}" \
+        -U gpulink \
+        -d gpulink \
+        >/dev/null 2>&1
+      then
+        ready=1
+        break
+      fi
+
+      sleep 1
+    done
+
+    [[ "${ready}" == "1" ]] \
+      || die "restored PostgreSQL did not become ready"
+
+    POSTGRES_READY_NS="$(date +%s%N)"
+    STARTUP_MS=$(( (POSTGRES_READY_NS - POSTGRES_START_NS) / 1000000 ))
+
+    echo "postgres_startup_recovery_ms=${STARTUP_MS}"
+
+    CORE_RESULT="$(
+      psql \
+        -h "${SOCKET_DIR}" \
+        -p "${PORT}" \
+        -U gpulink \
+        -d gpulink \
+        -v ON_ERROR_STOP=1 \
+        -At \
+        -F '|' \
+        -c "
+          SELECT
+            system_identifier,
+            (SELECT count(*) FROM public.gpulink_persistence_probe),
+            pg_is_in_recovery(),
+            current_setting('archive_mode'),
+            current_setting('listen_addresses'),
+            current_setting('port')
+          FROM pg_control_system();
+        "
+    )"
+
+    SYSTEM_ID="$(printf '%s\n' "${CORE_RESULT}" | cut -d'|' -f1)"
+    PROBE_ROWS="$(printf '%s\n' "${CORE_RESULT}" | cut -d'|' -f2)"
+    IN_RECOVERY="$(printf '%s\n' "${CORE_RESULT}" | cut -d'|' -f3)"
+    ARCHIVE_MODE="$(printf '%s\n' "${CORE_RESULT}" | cut -d'|' -f4)"
+    LISTEN_ADDRESSES="$(printf '%s\n' "${CORE_RESULT}" | cut -d'|' -f5)"
+    RESTORED_PORT="$(printf '%s\n' "${CORE_RESULT}" | cut -d'|' -f6)"
+
+    #
+    # Phase 4 recovery validation begins before the application/control-plane
+    # schema is staged in AWS. Accept either:
+    #
+    #   0/4 application tables: application schema not staged yet
+    #   4/4 application tables: staged schema with migration history
+    #
+    # Any partial application schema is considered invalid.
+    #
+    APP_SCHEMA_TABLES="$(
+      psql \
+        -h "${SOCKET_DIR}" \
+        -p "${PORT}" \
+        -U gpulink \
+        -d gpulink \
+        -v ON_ERROR_STOP=1 \
+        -Atc "
+          SELECT count(*)
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name IN (
+              'workers',
+              'jobs',
+              'events',
+              'gpulink_schema_migrations'
+            );
+        "
+    )"
+
+    APPLICATION_SCHEMA_STATE=""
+    MIGRATIONS="not-staged"
+    WORKERS_COUNT="not-staged"
+    JOBS_COUNT="not-staged"
+    EVENTS_COUNT="not-staged"
+
+    case "${APP_SCHEMA_TABLES}" in
+      0)
+        APPLICATION_SCHEMA_STATE="not-staged"
+        ;;
+
+      4)
+        APPLICATION_SCHEMA_STATE="present"
+
+        APP_RESULT="$(
+          psql \
+            -h "${SOCKET_DIR}" \
+            -p "${PORT}" \
+            -U gpulink \
+            -d gpulink \
+            -v ON_ERROR_STOP=1 \
+            -At \
+            -F '|' \
+            -c "
+              SELECT
+                (SELECT count(*) FROM public.workers),
+                (SELECT count(*) FROM public.jobs),
+                (SELECT count(*) FROM public.events),
+                (SELECT count(*) FROM public.gpulink_schema_migrations);
+            "
+        )"
+
+        WORKERS_COUNT="$(printf '%s\n' "${APP_RESULT}" | cut -d'|' -f1)"
+        JOBS_COUNT="$(printf '%s\n' "${APP_RESULT}" | cut -d'|' -f2)"
+        EVENTS_COUNT="$(printf '%s\n' "${APP_RESULT}" | cut -d'|' -f3)"
+        MIGRATIONS="$(printf '%s\n' "${APP_RESULT}" | cut -d'|' -f4)"
+
+        [[ "${MIGRATIONS}" =~ ^[1-9][0-9]*$ ]] \
+          || die "staged application schema has empty migration history"
+        ;;
+
+      *)
+        die "partial application schema detected: ${APP_SCHEMA_TABLES}/4 required application tables are present"
+        ;;
+    esac
+
+    echo "system_identifier=${SYSTEM_ID}"
+    echo "probe_rows=${PROBE_ROWS}"
+    echo "in_recovery=${IN_RECOVERY}"
+    echo "archive_mode=${ARCHIVE_MODE}"
+    echo "listen_addresses=${LISTEN_ADDRESSES}"
+    echo "port=${RESTORED_PORT}"
+    echo "application_schema_state=${APPLICATION_SCHEMA_STATE}"
+    echo "application_schema_tables=${APP_SCHEMA_TABLES}/4"
+    echo "workers_count=${WORKERS_COUNT}"
+    echo "jobs_count=${JOBS_COUNT}"
+    echo "events_count=${EVENTS_COUNT}"
+    echo "schema_migrations=${MIGRATIONS}"
+
+    [[ "${SYSTEM_ID}" == "${EXPECTED_SYSTEM_ID}" ]] \
+      || die "running system identifier does not match repository"
+
+    [[ "${PROBE_ROWS}" =~ ^[1-9][0-9]*$ ]] \
+      || die "persistence probe is missing"
+
+    [[ "${IN_RECOVERY}" == "f" ]] \
+      || die "restored PostgreSQL remained in recovery"
+
+    [[ "${ARCHIVE_MODE}" == "off" ]] \
+      || die "archive mode is not disabled in restore verifier"
+
+    [[ -z "${LISTEN_ADDRESSES}" ]] \
+      || die "restore verifier unexpectedly has a TCP listen address"
+
+    [[ "${RESTORED_PORT}" == "${PORT}" ]] \
+      || die "unexpected restore-verification PostgreSQL port"
+
+    pg_ctl \
+      -D "${PGDATA}" \
+      -m fast \
+      -w \
+      -t 60 \
+      stop
+
+    POSTGRES_STARTED=0
+
+    clean_restore_data \
+      || die "failed to remove disposable restored database"
+
+    TOTAL_MS=$((RESTORE_MS + STARTUP_MS))
+
+    echo
+    echo "RESTORE VERIFICATION: PASS"
+    echo "backup=${BACKUP_LABEL}"
+    echo "system_identifier=${SYSTEM_ID}"
+    echo "restore_duration_ms=${RESTORE_MS}"
+    echo "postgres_startup_recovery_ms=${STARTUP_MS}"
+    echo "restore_plus_startup_ms=${TOTAL_MS}"
+    echo "production_pvc_mounted=false"
+    echo "tcp_listener_enabled=false"
+    echo "archive_mode=off"
+    echo "restore_data_removed=true"

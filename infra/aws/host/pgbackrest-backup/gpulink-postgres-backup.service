@@ -1,0 +1,24 @@
+[Unit]
+Description=GPULink AWS PostgreSQL pgBackRest backup
+Wants=network-online.target
+After=network-online.target pgbackrest.service
+Requires=pgbackrest.service
+ConditionPathExists=/etc/pgbackrest/pgbackrest.conf
+
+[Service]
+Type=oneshot
+User=pgbackrest
+Group=pgbackrest
+UMask=0027
+
+ExecStart=/usr/local/sbin/gpulink-pgbackrest-backup
+
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full

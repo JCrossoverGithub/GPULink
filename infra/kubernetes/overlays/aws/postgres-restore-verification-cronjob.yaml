@@ -1,0 +1,157 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-restore-verification
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: postgres-restore-verification
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: recovery-verification
+spec:
+  schedule: "0 4 * * 0"
+  timeZone: Etc/UTC
+  suspend: false
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 1800
+
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: postgres-restore-verification
+            app.kubernetes.io/part-of: gpulink
+            app.kubernetes.io/component: recovery-verification
+
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          terminationGracePeriodSeconds: 60
+
+          initContainers:
+            - name: prepare-restore
+              image: registry.invalid/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+              imagePullPolicy: IfNotPresent
+
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  install -d -m 0700 -o 999 -g 999 \
+                    /var/lib/postgresql/restore/pgdata
+
+                  install -d -m 3775 -o 999 -g 999 \
+                    /var/run/postgresql-restore
+
+                  install -d -m 0700 -o 999 -g 999 \
+                    /etc/pgbackrest/client-tls
+
+                  install -m 0444 -o 999 -g 999 \
+                    /pgbackrest-tls-source/ca.crt \
+                    /etc/pgbackrest/client-tls/ca.crt
+
+                  install -m 0444 -o 999 -g 999 \
+                    /pgbackrest-tls-source/client.crt \
+                    /etc/pgbackrest/client-tls/client.crt
+
+                  install -m 0400 -o 999 -g 999 \
+                    /pgbackrest-tls-source/client.key \
+                    /etc/pgbackrest/client-tls/client.key
+
+              volumeMounts:
+                - name: restore-data
+                  mountPath: /var/lib/postgresql/restore
+
+                - name: restore-socket
+                  mountPath: /var/run/postgresql-restore
+
+                - name: pgbackrest-tls-source
+                  mountPath: /pgbackrest-tls-source
+                  readOnly: true
+
+                - name: pgbackrest-client-tls
+                  mountPath: /etc/pgbackrest/client-tls
+
+          containers:
+            - name: verification
+              image: registry.invalid/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+              imagePullPolicy: IfNotPresent
+
+              command:
+                - /opt/gpulink/restore-verification/verify.sh
+
+              env:
+                - name: GPULINK_PGBACKREST_REPOSITORY_HOST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: postgres-pgbackrest-repository-endpoint
+                      key: host
+
+                - name: GPULINK_RESTORE_MAX_BACKUP_AGE_SECONDS
+                  value: "21600"
+
+              securityContext:
+                runAsUser: 999
+                runAsGroup: 999
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1536Mi
+
+              volumeMounts:
+                - name: restore-data
+                  mountPath: /var/lib/postgresql/restore
+
+                - name: restore-socket
+                  mountPath: /var/run/postgresql-restore
+
+                - name: pgbackrest-client-tls
+                  mountPath: /etc/pgbackrest/client-tls
+                  readOnly: true
+
+                - name: restore-verification-script
+                  mountPath: /opt/gpulink/restore-verification
+                  readOnly: true
+
+          volumes:
+            - name: restore-data
+              emptyDir: {}
+
+            - name: restore-socket
+              emptyDir: {}
+
+            - name: pgbackrest-client-tls
+              emptyDir: {}
+
+            - name: pgbackrest-tls-source
+              secret:
+                secretName: postgres-pgbackrest-tls
+                defaultMode: 0400
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+                  - key: client.crt
+                    path: client.crt
+                  - key: client.key
+                    path: client.key
+
+            - name: restore-verification-script
+              configMap:
+                name: postgres-restore-verification
+                defaultMode: 0555

@@ -57,9 +57,9 @@ pattern = re.compile(
 
 digests = pattern.findall(text)
 
-if len(digests) != 2 or len(set(digests)) != 1:
+if len(digests) < 2 or len(set(digests)) != 1:
     raise SystemExit(
-        "expected exactly two identical registry.invalid PostgreSQL image "
+        "expected at least two identical registry.invalid PostgreSQL image "
         f"sentinels, found {len(digests)}"
     )
 
