@@ -14,11 +14,11 @@ deployment onto a reproducible AWS/K3s platform.
 Accepted through 2026-09-27 are the AWS infrastructure foundation, K3s host
 foundation, PostgreSQL 17 runtime, protected persistent storage, host-side ECR
 authentication, workload isolation from EC2 metadata, pgBackRest mutual TLS,
-continuous WAL archival, a full off-host backup, and an isolated restore
-rehearsal.
+continuous WAL archival, a full off-host backup, isolated restore and named
+point-in-time recovery, and measured low-write off-host WAL recoverability.
 
-Phase 4 is not yet complete. Application/control-plane staging, the remaining
-recovery exercises and measurements, worker/workload acceptance, public
+Phase 4 is not yet complete. Application/control-plane staging, remaining
+recovery automation and runbook work, worker/workload acceptance, public
 cutover, and rollback-window completion remain open.
 
 No production cutover should occur until the AWS environment has independently
@@ -341,18 +341,24 @@ Recovery acceptance through 2026-09-27:
   volume;
 - the accepted PITR file-restore phase completed in 4.627 seconds and PostgreSQL
   startup/recovery completed in 0.469 seconds for the small acceptance dataset.
-  These measurements are validation evidence, not a production RTO commitment.
+  These measurements are validation evidence, not a production RTO commitment;
+- the AWS PostgreSQL runtime now uses `archive_timeout=60s` so low-write WAL
+  segments have an explicit time-based switch threshold;
+- three production marker-to-off-host archive trials completed in 21.338,
+  23.508, and 38.590 seconds with zero archive failures. These are observed
+  acceptance measurements, not a production RPO SLA.
 
 The first accepted off-host full backup label was:
 
     20260926-235429F
 
-Detailed PITR acceptance evidence is recorded in
-`docs/security/aws-postgres-pitr-recovery-acceptance.md`.
+Detailed recovery evidence is recorded in:
+
+- `docs/security/aws-postgres-pitr-recovery-acceptance.md`;
+- `docs/security/aws-postgres-rpo-acceptance.md`.
 
 Remaining Phase 4C work:
 
-- measure and document the production recoverable-data window / RPO;
 - automate recurring restore verification;
 - complete the operator disaster-recovery runbook.
 
