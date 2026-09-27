@@ -8,7 +8,7 @@ PASS
 
 AWS reference deployment:
 
-- EC2 instance: `i-006d4ff542f893a04`
+- EC2 instance: deployment-local production host (identifier intentionally omitted)
 - K3s node: `gpulink-prod-control-1`
 - Kubernetes: `v1.36.4+k3s1`
 - ECR credential provider: `v1.36.1`
@@ -21,7 +21,7 @@ Credential provider artifact SHA-256:
 
 A disposable Kubernetes Pod successfully pulled:
 
-    790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+    <aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
 
 The image executed successfully and reported:
 
@@ -71,7 +71,7 @@ The Pod therefore could not obtain an IMDSv2 token.
 
 At the same time, the EC2 host successfully resolved:
 
-    arn:aws:sts::790072401452:assumed-role/gpulink-production-host/i-006d4ff542f893a04
+    arn:aws:sts::<aws-account-id>:assumed-role/gpulink-production-host/<instance-id>
 
 This proves the intended boundary:
 

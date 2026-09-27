@@ -51,6 +51,19 @@ Examples may include:
 - AWS-specific backup configuration
 - production image registry settings
 
+The committed AWS overlay does not contain an AWS account-specific registry
+name. It uses the reserved `registry.invalid` domain as a fail-closed image
+sentinel while retaining the accepted immutable OCI digest.
+
+Produce a deployable AWS manifest with:
+
+    infra/kubernetes/scripts/render-aws.sh \
+      '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/postgres-pgbackrest@sha256:<digest>' \
+      > /tmp/gpulink-aws.yaml
+
+The renderer requires the deployment-provided image reference to use the same
+digest recorded by the committed overlay.
+
 ## Self-Hosted Overlay
 
 The `overlays/self-hosted` directory demonstrates that GPULink can run without AWS.

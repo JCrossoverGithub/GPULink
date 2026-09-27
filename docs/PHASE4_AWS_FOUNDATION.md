@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 4 is the current active infrastructure milestone.
+Phase 4 remains the active infrastructure milestone.
 
 Phases 0 through 3 established and production-tested the GPULink application,
 PostgreSQL persistence layer, distributed scheduling semantics, release
@@ -10,6 +10,16 @@ management, rollback, backup, and restore-verification behavior.
 
 Phase 4 moves those guarantees from the transitional DigitalOcean Docker
 deployment onto a reproducible AWS/K3s platform.
+
+Accepted through 2026-09-27 are the AWS infrastructure foundation, K3s host
+foundation, PostgreSQL 17 runtime, protected persistent storage, host-side ECR
+authentication, workload isolation from EC2 metadata, pgBackRest mutual TLS,
+continuous WAL archival, a full off-host backup, and an isolated restore
+rehearsal.
+
+Phase 4 is not yet complete. Application/control-plane staging, the remaining
+recovery exercises and measurements, worker/workload acceptance, public
+cutover, and rollback-window completion remain open.
 
 No production cutover should occur until the AWS environment has independently
 passed staging, recovery, worker, workload, and rollback acceptance.
@@ -61,13 +71,15 @@ The first deployment should remain in one region.
 Applications and personal GPU workers communicate with the public GPULink
 control plane over HTTPS.
 
-The AWS environment contains one Ubuntu 24.04 EC2 instance running K3s.
+The accepted AWS environment contains one Ubuntu 24.04 EC2 instance running
+K3s.
 
-K3s hosts:
+The currently proven K3s application workload in this Phase 4 record is
+PostgreSQL 17 with its pgBackRest integration.
 
-- Traefik;
-- the GPULink control plane;
-- PostgreSQL 17.
+The Phase 4 target also places Traefik and the GPULink control plane on K3s.
+Those application-layer components are not claimed as accepted by the recovery
+milestones documented here.
 
 PostgreSQL data lives on a dedicated gp3 EBS volume rather than the EC2 root
 filesystem.
@@ -114,13 +126,14 @@ Personal GPU workers continue to require only outbound connectivity.
 
 The initial platform uses one EC2 Ubuntu 24.04 instance.
 
-The instance hosts:
+The currently accepted instance role hosts:
 
 - K3s;
-- Traefik;
-- GPULink control-plane pods;
 - PostgreSQL;
-- operational tooling.
+- pgBackRest repository services and operational tooling.
+
+Phase 4 application staging will add and validate the GPULink control plane and
+ingress responsibilities before cutover.
 
 Instance sizing should be based on the current GPULink workload rather than
 selected for theoretical future scale.
@@ -304,16 +317,32 @@ After Phase 4A:
 
 ## Phase 4C — Recovery
 
-After the Kubernetes platform is functional:
+Recovery foundation accepted through 2026-09-27:
 
-- configure pgBackRest;
-- configure S3 full backups;
-- configure WAL archiving;
-- restore into a clean database;
-- exercise point-in-time recovery;
-- measure recovery time;
-- measure recoverable data window;
-- document the disaster-recovery procedure.
+- pgBackRest 2.59.1 is present on both database and repository sides;
+- database/repository protocol traffic is mutually authenticated with TLS;
+- cloud credentials remain outside Kubernetes workloads;
+- continuous PostgreSQL WAL archival reaches the off-host repository;
+- PostgreSQL reported zero archive failures during acceptance;
+- a full PostgreSQL backup completed successfully;
+- that backup was restored into fresh disposable storage through the repository
+  service while the production PostgreSQL Pod remained online;
+- the restored PostgreSQL 17 cluster reached a consistent state, promoted, and
+  returned the expected persistence probe data;
+- the restored validation instance used no production PVC, no Kubernetes
+  Service, no TCP listener, and archive mode remained disabled.
+
+The first accepted full backup label was:
+
+    20260926-235429F
+
+Remaining Phase 4C work:
+
+- exercise point-in-time recovery to an explicit operator-selected target;
+- measure and document recovery time;
+- measure and document the recoverable-data window / RPO;
+- automate recurring restore verification;
+- complete the operator disaster-recovery runbook.
 
 ## Phase 4D — Staging acceptance
 

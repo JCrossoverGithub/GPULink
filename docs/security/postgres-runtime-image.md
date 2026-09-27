@@ -2,13 +2,19 @@
 
 ## Status
 
-Accepted as the GPULink Phase 4 PostgreSQL deployment candidate.
+Accepted and deployed in the GPULink AWS PostgreSQL reference deployment.
 
-Assessment date:
+Initial security assessment:
 
     2026-09-20
 
-The image has not yet been deployed to production.
+AWS PostgreSQL runtime acceptance:
+
+    2026-09-26
+
+Full-backup and isolated-restore acceptance:
+
+    2026-09-27
 
 ## Final image
 
@@ -162,14 +168,29 @@ For the AWS reference deployment:
   credentials;
 - PostgreSQL backup cloud credentials remain outside Kubernetes.
 
-## Promotion requirements
+## Deployment acceptance record
 
-Before this image can replace the currently running PostgreSQL image:
+The final runtime has now passed the intended deployment controls, with the
+migration sequencing note below recorded explicitly.
 
-1. The deployment environment must be able to pull the immutable image.
-2. Kubernetes Pods must remain unable to access IMDS.
-3. A verified pgBackRest backup and restore must succeed.
-4. The Bookworm-to-Trixie collation migration runbook must be complete.
-5. A fresh verified backup must exist before the production image switch.
-6. PostgreSQL persistence and existing GPULink data must be verified after
-   migration.
+Accepted:
+
+1. The deployment environment successfully pulls the immutable image.
+2. Ordinary Kubernetes Pods remain unable to access IMDS while the host retains
+   its instance-role identity.
+3. pgBackRest mutual TLS and continuous WAL archival are working.
+4. The Bookworm-to-Trixie collation migration completed and current database
+   collation metadata was refreshed.
+5. PostgreSQL persistence and existing GPULink data were verified after the
+   runtime migration.
+6. A full pgBackRest backup completed and was independently restored into
+   disposable storage; the restored database reached consistency and returned
+   the expected persistence probe data.
+
+Migration sequencing note:
+
+The first verified pgBackRest full-backup/restore rehearsal occurred after the
+Trixie runtime migration. The migration itself was protected by a
+stopped-database EBS snapshot plus PostgreSQL identity and persistence checks.
+This record intentionally does not rewrite that sequence as a pre-switch
+pgBackRest backup.

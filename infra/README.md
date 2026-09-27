@@ -28,7 +28,7 @@ Do not place AWS credentials, application tokens, private keys, database
 passwords, Terraform state, or Kubernetes Secret values in the
 repository.
 
-## Planned layout
+## Layout
 
     infra/
       aws/
@@ -39,5 +39,21 @@ repository.
         base/
         production/
 
-AWS resources will be introduced only after the Phase 4 architecture and state
-strategy are reviewed.
+The AWS reference infrastructure is now implemented. PostgreSQL runtime,
+continuous WAL archival, full backup, and isolated restore verification have
+been accepted. Application staging and production cutover remain Phase 4 work.
+
+## Deployment-local Terraform backend
+
+S3 backend bucket names are deployment-local and are intentionally not committed
+to the public repository.
+
+The AWS root modules retain their state key, region, encryption, and S3 lockfile
+contract in `backend.tf`, but the `bucket` field is left empty.
+
+Supply the bucket during `terraform init`, preferably with a deployment-local
+backend configuration file passed through `-backend-config`.
+
+Existing deployments must provide the same already-established state bucket when
+reinitializing. Changing this source configuration does not itself move or alter
+remote Terraform state.

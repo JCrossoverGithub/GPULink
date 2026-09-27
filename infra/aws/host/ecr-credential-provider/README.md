@@ -42,9 +42,13 @@ These correspond to the K3s credential-provider defaults.
 
 ## Registry scope
 
-The provider is invoked only for:
+The provider is invoked only for the GPULink PostgreSQL repository path in
+standard commercial Amazon ECR registries:
 
-    790072401452.dkr.ecr.us-east-1.amazonaws.com/gpulink/postgres-pgbackrest
+    *.dkr.ecr.*.amazonaws.com/gpulink/postgres-pgbackrest
+
+The AWS account ID and region are deployment-local values. They are not part of
+the reusable credential-provider configuration.
 
 ## IAM
 
