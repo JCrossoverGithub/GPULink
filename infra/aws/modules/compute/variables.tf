@@ -1,3 +1,13 @@
+variable "ami_id" {
+  description = "Immutable, region-specific AMI ID for the GPULink host."
+  type        = string
+
+  validation {
+    condition     = can(regex("^ami-[0-9a-f]+$", var.ami_id))
+    error_message = "ami_id must be an AWS AMI ID such as ami-0123456789abcdef0."
+  }
+}
+
 variable "subnet_id" {
   description = "Subnet in which to launch the GPULink host."
   type        = string

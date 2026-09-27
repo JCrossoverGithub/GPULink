@@ -1,3 +1,13 @@
+variable "host_ami_id" {
+  description = "Immutable, region-specific AMI ID for the GPULink production host. Supply through deployment-local configuration."
+  type        = string
+
+  validation {
+    condition     = can(regex("^ami-[0-9a-f]+$", var.host_ami_id))
+    error_message = "host_ami_id must be an AWS AMI ID such as ami-0123456789abcdef0."
+  }
+}
+
 variable "aws_region" {
   description = "Primary AWS region for GPULink."
   type        = string

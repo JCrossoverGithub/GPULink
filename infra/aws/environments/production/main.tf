@@ -20,6 +20,7 @@ module "compute" {
   security_group_id     = module.networking.host_security_group_id
   instance_profile_name = module.iam.instance_profile_name
 
+  ami_id               = var.host_ami_id
   instance_type        = var.instance_type
   root_volume_size_gib = var.root_volume_size_gib
 }

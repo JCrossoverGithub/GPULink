@@ -1,0 +1,7 @@
+# Deployment-local production inputs.
+#
+# Copy this file to terraform.tfvars and provide the immutable AMI selected
+# for this deployment and AWS region. Real *.tfvars files are gitignored.
+#
+# Do not use a moving "latest Ubuntu" lookup for an existing production host.
+host_ami_id = "ami-0123456789abcdef0"

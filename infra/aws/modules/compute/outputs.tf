@@ -4,8 +4,8 @@ output "instance_id" {
 }
 
 output "ami_id" {
-  description = "Ubuntu 24.04 AMI used by the GPULink host."
-  value       = data.aws_ami.ubuntu.id
+  description = "Immutable AMI used by the GPULink host."
+  value       = var.ami_id
 }
 
 output "private_ip" {

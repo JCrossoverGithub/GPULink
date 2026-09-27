@@ -34,7 +34,7 @@ output "host_instance_id" {
 }
 
 output "host_ami_id" {
-  description = "Ubuntu AMI used by the GPULink production host."
+  description = "Immutable AMI used by the GPULink production host."
   value       = module.compute.ami_id
 }
 
