@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: gpulink
+spec:
+  accessModes:
+    - ReadWriteOnce
+
+  volumeMode: Filesystem
+
+  # Deployment profiles must provide a storage implementation satisfying
+  # this provider-neutral GPULink storage class contract.
+  storageClassName: gpulink-postgres
+
+  resources:
+    requests:
+      storage: 20Gi

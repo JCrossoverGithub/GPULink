@@ -24,3 +24,15 @@ __pycache__/
 *.pfx
 *.dump
 *.backup
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+.terraformrc
+terraform.rc
