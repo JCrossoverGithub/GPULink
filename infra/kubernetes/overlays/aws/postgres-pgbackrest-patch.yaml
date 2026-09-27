@@ -77,6 +77,8 @@ spec:
             - archive_mode=on
             - -c
             - 'archive_command=/etc/pgbackrest/archive/archive-push.sh %p'
+            - -c
+            - archive_timeout=60s
 
           env:
             - name: GPULINK_PGBACKREST_REPOSITORY_HOST
