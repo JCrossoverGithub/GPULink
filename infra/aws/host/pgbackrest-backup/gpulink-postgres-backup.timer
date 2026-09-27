@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily GPULink AWS PostgreSQL pgBackRest backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+AccuracySec=1m
+Unit=gpulink-postgres-backup.service
+
+[Install]
+WantedBy=timers.target
