@@ -29,7 +29,7 @@ That creates two useful capabilities:
 - other software can treat GPU compute as infrastructure instead of requiring
   every end-user device to own a compatible accelerator.
 
-For example, a future TransGo integration could run its user interface on a
+For example, a future CaptionLink integration could run its user interface on a
 lightweight device such as a Chromebook while GPULink supplies GPU compute for
 an ASR model running on another machine.
 
