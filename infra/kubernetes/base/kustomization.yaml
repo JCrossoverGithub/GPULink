@@ -7,3 +7,5 @@ resources:
   - postgres-headless-service.yaml
   - postgres-service.yaml
   - postgres-statefulset.yaml
+  - control-plane-service.yaml
+  - control-plane-deployment.yaml
