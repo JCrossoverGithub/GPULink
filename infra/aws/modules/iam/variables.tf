@@ -22,3 +22,8 @@ variable "control_plane_image_repository_arn" {
   description = "ARN of the ECR repository containing the GPULink control-plane runtime image."
   type        = string
 }
+
+variable "control_plane_tls_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing deployment-local GPULink control-plane TLS material."
+  type        = string
+}

@@ -32,3 +32,20 @@ resource "aws_secretsmanager_secret" "control_plane_auth" {
     Purpose   = "Authentication"
   }
 }
+
+resource "aws_secretsmanager_secret" "control_plane_tls" {
+  name        = var.control_plane_tls_secret_name
+  description = "Deployment-local TLS material for the GPULink production control-plane ingress."
+
+  recovery_window_in_days = 30
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  tags = {
+    Name      = var.control_plane_tls_secret_name
+    Component = "ControlPlane"
+    Purpose   = "TLS"
+  }
+}
