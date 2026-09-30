@@ -43,6 +43,27 @@ This demonstrates that private ECR authentication is being performed by the
 host-side kubelet exec credential provider rather than Kubernetes registry
 Secrets.
 
+### Control-plane ECR follow-up
+
+On 2026-09-30 the same host-side credential path was extended and accepted for:
+
+    <aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/control-plane@sha256:03c5bbdf5487f11abe020cad800192c3ca28c337ede958333bc2be6ac1e18fc5
+
+A disposable control-plane image test confirmed:
+
+- the private image pulled successfully without an `imagePullSecret`;
+- the runtime image ID matched the accepted digest;
+- the container executed as UID/GID 1000;
+- the required runtime files were present.
+
+The reusable provider match scope now contains both:
+
+    *.dkr.ecr.*.amazonaws.com/gpulink/postgres-pgbackrest
+    *.dkr.ecr.*.amazonaws.com/gpulink/control-plane
+
+The credential-provider binary and EC2 instance-role trust boundary were
+unchanged.
+
 ## Pod AWS Credential Isolation
 
 A dedicated unprivileged test Pod was created with:

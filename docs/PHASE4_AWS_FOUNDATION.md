@@ -11,15 +11,17 @@ management, rollback, backup, and restore-verification behavior.
 Phase 4 moves those guarantees from the transitional DigitalOcean Docker
 deployment onto a reproducible AWS/K3s platform.
 
-Accepted through 2026-09-27 are the AWS infrastructure foundation, K3s host
+Accepted through 2026-09-30 are the AWS infrastructure foundation, K3s host
 foundation, PostgreSQL 17 runtime, protected persistent storage, host-side ECR
 authentication, workload isolation from EC2 metadata, pgBackRest mutual TLS,
 continuous WAL archival, a full off-host backup, isolated restore and named
-point-in-time recovery, and measured low-write off-host WAL recoverability.
+point-in-time recovery, measured low-write off-host WAL recoverability, and the
+first single-replica GPULink control-plane staging deployment on K3s.
 
-Phase 4 is not yet complete. Application/control-plane staging, remaining
-recovery automation and runbook work, worker/workload acceptance, public
-cutover, and rollback-window completion remain open.
+Phase 4 is not yet complete. Remaining recovery/runbook work, physical
+worker/workload acceptance, public ingress and cutover, multi-replica
+application acceptance, sustained operation, and rollback-window completion
+remain open.
 
 No production cutover should occur until the AWS environment has independently
 passed staging, recovery, worker, workload, and rollback acceptance.
@@ -74,12 +76,14 @@ control plane over HTTPS.
 The accepted AWS environment contains one Ubuntu 24.04 EC2 instance running
 K3s.
 
-The currently proven K3s application workload in this Phase 4 record is
-PostgreSQL 17 with its pgBackRest integration.
+The currently proven K3s application workloads in this Phase 4 record are
+PostgreSQL 17 with its pgBackRest integration and the single-replica GPULink
+control plane.
 
-The Phase 4 target also places Traefik and the GPULink control plane on K3s.
-Those application-layer components are not claimed as accepted by the recovery
-milestones documented here.
+The control plane completed its first staging acceptance on 2026-09-30.
+Traefik/public ingress remains outside the accepted application boundary.
+The PostgreSQL recovery milestones documented below remain distinct from the
+control-plane staging acceptance.
 
 PostgreSQL data lives on a dedicated gp3 EBS volume rather than the EC2 root
 filesystem.
@@ -132,8 +136,9 @@ The currently accepted instance role hosts:
 - PostgreSQL;
 - pgBackRest repository services and operational tooling.
 
-Phase 4 application staging will add and validate the GPULink control plane and
-ingress responsibilities before cutover.
+The GPULink control plane completed its first single-replica staging acceptance
+on 2026-09-30. Traefik and public ingress responsibilities remain to be added
+and accepted before cutover.
 
 Instance sizing should be based on the current GPULink workload rather than
 selected for theoretical future scale.
@@ -383,7 +388,25 @@ Remaining Phase 4C work:
 
 ## Phase 4D — Staging acceptance
 
-The AWS stack must prove:
+Control-plane staging acceptance completed on 2026-09-30:
+
+- the accepted immutable control-plane ECR digest pulled through the host-side
+  credential provider;
+- the Kubernetes Deployment and ClusterIP Service rolled out successfully;
+- the single control-plane Pod remained Ready with zero restarts;
+- `/healthz` and `/readyz` returned their expected HTTP 200 contracts;
+- the Service exposed exactly one ready EndpointSlice address;
+- PostgreSQL remained stable with zero container restarts;
+- the persistence probe remained intact;
+- the application migration created `workers`, `jobs`, and `events`;
+- `gpulink_schema_migrations` recorded exactly `0001-initial.sql`;
+- the recorded migration checksum matched the committed migration file.
+
+See:
+
+- `docs/security/aws-control-plane-staging-acceptance.md`.
+
+Remaining Phase 4D staging acceptance must prove:
 
 - real worker registration;
 - RTX 3070 Ti connectivity;
