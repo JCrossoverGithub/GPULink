@@ -1,0 +1,217 @@
+# DISASTER-RECOVERY TEMPLATE ONLY.
+#
+# This manifest is intentionally not referenced by the AWS kustomization.
+# The image registry and target PVC are fail-closed sentinels and must be
+# rendered explicitly by the operator recovery wrapper.
+#
+# Never apply this source manifest directly.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-disaster-restore
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: postgres-disaster-restore
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: disaster-recovery
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-disaster-restore
+        app.kubernetes.io/part-of: gpulink
+        app.kubernetes.io/component: disaster-recovery
+
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+
+      initContainers:
+        - name: prepare-authoritative-target
+          image: registry.invalid/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              marker=/var/lib/postgresql/data/.gpulink-storage-marker
+              pgdata=/var/lib/postgresql/data/pgdata
+
+              test -r "${marker}"
+
+              grep -Fq \
+                "AWS volume: ${GPULINK_RECOVERY_EXPECTED_VOLUME_ID}" \
+                "${marker}"
+
+              if [[ -d "${pgdata}" ]] \
+                && find "${pgdata}" -mindepth 1 -maxdepth 1 -print -quit \
+                  | grep -q .; then
+                echo "ERROR: PGDATA is not empty" >&2
+                exit 1
+              fi
+
+              install -d -m 0700 -o 999 -g 999 "${pgdata}"
+
+              install -d -m 3775 -o 999 -g 999 \
+                /var/run/postgresql-recovery
+
+              install -d -m 0700 -o 999 -g 999 \
+                /etc/pgbackrest/client-tls
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/ca.crt \
+                /etc/pgbackrest/client-tls/ca.crt
+
+              install -m 0444 -o 999 -g 999 \
+                /pgbackrest-tls-source/client.crt \
+                /etc/pgbackrest/client-tls/client.crt
+
+              install -m 0400 -o 999 -g 999 \
+                /pgbackrest-tls-source/client.key \
+                /etc/pgbackrest/client-tls/client.key
+
+          env:
+            - name: GPULINK_RECOVERY_EXPECTED_VOLUME_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: expected-volume-id
+
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+            - name: recovery-socket
+              mountPath: /var/run/postgresql-recovery
+
+            - name: pgbackrest-tls-source
+              mountPath: /pgbackrest-tls-source
+              readOnly: true
+
+            - name: pgbackrest-client-tls
+              mountPath: /etc/pgbackrest/client-tls
+
+      containers:
+        - name: restore
+          image: registry.invalid/gpulink/postgres-pgbackrest@sha256:ad91f0e6bdb4a3d2d62692709b56df0830ed135abdd05d9f93715602162932c7
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - /opt/gpulink/disaster-restore/restore.sh
+
+          env:
+            - name: GPULINK_PGBACKREST_REPOSITORY_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-pgbackrest-repository-endpoint
+                  key: host
+
+            - name: GPULINK_RECOVERY_EXPECTED_VOLUME_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: expected-volume-id
+
+            - name: GPULINK_RECOVERY_BACKUP_LABEL
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: backup-label
+
+            - name: GPULINK_RECOVERY_EXPECTED_SYSTEM_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: expected-system-id
+
+            - name: GPULINK_RECOVERY_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: recovery-mode
+
+            - name: GPULINK_RECOVERY_TARGET
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: recovery-target
+
+            - name: GPULINK_RECOVERY_SCHEMA_STATE
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-disaster-restore-request
+                  key: schema-state
+
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+            - name: recovery-socket
+              mountPath: /var/run/postgresql-recovery
+
+            - name: pgbackrest-client-tls
+              mountPath: /etc/pgbackrest/client-tls
+              readOnly: true
+
+            - name: restore-script
+              mountPath: /opt/gpulink/disaster-restore
+              readOnly: true
+
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: gpulink-disaster-restore-target
+
+        - name: recovery-socket
+          emptyDir: {}
+
+        - name: pgbackrest-client-tls
+          emptyDir: {}
+
+        - name: pgbackrest-tls-source
+          secret:
+            secretName: postgres-pgbackrest-tls
+            defaultMode: 0400
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: client.crt
+                path: client.crt
+              - key: client.key
+                path: client.key
+
+        - name: restore-script
+          configMap:
+            name: postgres-disaster-restore-script
+            defaultMode: 0555
