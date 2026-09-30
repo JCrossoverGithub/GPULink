@@ -1,0 +1,20 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: certificate-management
+  annotations:
+    gpulink.io/upstream-chart-url: "https://charts.jetstack.io/charts/cert-manager-v1.21.2.tgz"
+    gpulink.io/chart-sha256: "73a56e1728edd6c99f1f31082618c3259d279a76b7ebd3d4bdc5475c2442d34a"
+spec:
+  chart: https://%{KUBERNETES_API}%/static/charts/cert-manager-v1.21.2.tgz
+  targetNamespace: cert-manager
+  createNamespace: true
+  valuesContent: |-
+    crds:
+      enabled: true
+      keep: true

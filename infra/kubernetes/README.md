@@ -109,3 +109,18 @@ For example:
 - GPULink requires OCI images, not ECR.
 - GPULink requires backup storage, not S3 specifically.
 - GPULink requires secure administration, not Systems Manager specifically.
+
+### AWS certificate management
+
+The AWS certificate-management foundation lives separately under
+`overlays/aws/cert-manager/`.
+
+It installs cert-manager through the K3s `HelmChart` API and defines the
+production Let's Encrypt `ClusterIssuer` contract. It is intentionally not
+part of the normal application kustomization because the cert-manager CRDs
+and webhook must become healthy before issuer resources are applied.
+
+Deployment-specific ACME contact information is rendered outside Git.
+
+See `overlays/aws/cert-manager/README.md` for installation order and lifecycle
+boundaries.
