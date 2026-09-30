@@ -6,6 +6,7 @@ providers:
 
     matchImages:
       - "*.dkr.ecr.*.amazonaws.com/gpulink/postgres-pgbackrest"
+      - "*.dkr.ecr.*.amazonaws.com/gpulink/control-plane"
 
     defaultCacheDuration: "12h"
 
