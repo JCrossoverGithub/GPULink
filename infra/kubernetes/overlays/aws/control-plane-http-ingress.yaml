@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: control-plane-http
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: ingress
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: gpulink-control-plane-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: control-plane.gpulink.invalid
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane
+                port:
+                  number: 8088

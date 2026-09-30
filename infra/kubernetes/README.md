@@ -59,16 +59,32 @@ Both the PostgreSQL and control-plane sentinels retain their accepted
 immutable OCI digests. Deployment rendering replaces only the registry
 location while preserving those committed digest acceptance boundaries.
 
-Produce a deployable AWS manifest with both immutable image references:
+The committed public control-plane Ingress also uses the reserved hostname:
+
+    control-plane.gpulink.invalid
+
+The real public hostname is deployment material and is supplied only during
+rendering. Real certificate and private-key material is provisioned separately
+and must not be committed to Git.
+
+Produce a deployable AWS manifest with both immutable image references and the
+deployment public hostname:
 
     infra/kubernetes/scripts/render-aws.sh \
       '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/postgres-pgbackrest@sha256:<accepted-postgres-digest>' \
       '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/control-plane@sha256:<control-plane-release-digest>' \
+      '<public-control-plane-hostname>' \
       > /tmp/gpulink-aws.yaml
 
 The renderer requires both deployment-provided images to use the same
 SHA-256 digests recorded by the committed manifests. Mismatched digests,
-mutable image references, and unresolved GPULink image sentinels are rejected.
+mutable image references, unresolved GPULink image sentinels, invalid public
+hostnames, and unresolved hostname sentinels are rejected.
+
+The AWS HTTPS Ingress expects a deployment-provided Kubernetes TLS Secret named
+`control-plane-tls`. See
+`overlays/aws/CONTROL_PLANE_TLS.md` for the certificate and provisioning
+contract.
 
 ## Self-Hosted Overlay
 

@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: control-plane-https
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: ingress
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - control-plane.gpulink.invalid
+      secretName: control-plane-tls
+  rules:
+    - host: control-plane.gpulink.invalid
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane
+                port:
+                  number: 8088

@@ -88,3 +88,35 @@ Example interface only:
       namespace: gpulink
     stringData:
       database-url: <deployment-provided-postgresql-connection-string>
+
+## Control-Plane TLS
+
+Deployments that expose the GPULink control plane through TLS require a
+Kubernetes Secret named:
+
+    control-plane-tls
+
+in the `gpulink` namespace.
+
+It must have type:
+
+    kubernetes.io/tls
+
+and contain the standard Kubernetes TLS keys:
+
+    tls.crt
+    tls.key
+
+The certificate and private key are deployment material and must never be
+committed to Git.
+
+The certificate must be valid for the deployment's rendered public
+control-plane hostname.
+
+The cloud-neutral contract defines only the Secret interface. Certificate
+issuance, renewal, and provisioning are responsibilities of the deployment
+environment.
+
+The AWS reference deployment documents its provisioning boundary in:
+
+    infra/kubernetes/overlays/aws/CONTROL_PLANE_TLS.md
