@@ -43,7 +43,7 @@ spec:
 
       containers:
         - name: control-plane
-          image: registry.invalid/gpulink/control-plane@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: registry.invalid/gpulink/control-plane@sha256:03c5bbdf5487f11abe020cad800192c3ca28c337ede958333bc2be6ac1e18fc5
           imagePullPolicy: IfNotPresent
 
           env:

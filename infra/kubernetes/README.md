@@ -55,9 +55,9 @@ The committed AWS overlay does not contain AWS account-specific registry
 names. It uses the reserved `registry.invalid` domain for fail-closed image
 sentinels.
 
-The PostgreSQL sentinel retains the accepted immutable OCI digest. The
-control-plane sentinel remains zeroed until a release image has been built and
-accepted for deployment.
+Both the PostgreSQL and control-plane sentinels retain their accepted
+immutable OCI digests. Deployment rendering replaces only the registry
+location while preserving those committed digest acceptance boundaries.
 
 Produce a deployable AWS manifest with both immutable image references:
 
@@ -66,9 +66,9 @@ Produce a deployable AWS manifest with both immutable image references:
       '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/control-plane@sha256:<control-plane-release-digest>' \
       > /tmp/gpulink-aws.yaml
 
-The renderer requires the PostgreSQL image to use the same digest recorded by
-the committed overlay. Both deployment-provided image references must be
-pinned by SHA-256 digest, and unresolved GPULink image sentinels are rejected.
+The renderer requires both deployment-provided images to use the same
+SHA-256 digests recorded by the committed manifests. Mismatched digests,
+mutable image references, and unresolved GPULink image sentinels are rejected.
 
 ## Self-Hosted Overlay
 

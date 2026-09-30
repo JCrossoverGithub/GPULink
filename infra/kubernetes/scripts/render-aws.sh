@@ -94,21 +94,36 @@ postgres_placeholder = (
     + postgres_digest
 )
 
+control_plane_pattern = re.compile(
+    r"registry\.invalid/gpulink/control-plane@"
+    r"(sha256:[0-9a-f]{64})"
+)
+
+control_plane_digests = control_plane_pattern.findall(text)
+
+if (
+    len(control_plane_digests) != 1
+    or len(set(control_plane_digests)) != 1
+):
+    raise SystemExit(
+        "expected exactly one committed registry.invalid control-plane "
+        f"image sentinel, found {len(control_plane_digests)}"
+    )
+
+control_plane_digest = control_plane_digests[0]
+
+if not control_plane_image.endswith(
+    "@" + control_plane_digest
+):
+    raise SystemExit(
+        "deployment control-plane image digest does not match committed "
+        f"accepted digest {control_plane_digest}"
+    )
+
 control_plane_placeholder = (
     "registry.invalid/gpulink/control-plane@"
-    "sha256:"
-    + ("0" * 64)
+    + control_plane_digest
 )
-
-control_plane_count = text.count(
-    control_plane_placeholder
-)
-
-if control_plane_count != 1:
-    raise SystemExit(
-        "expected exactly one fail-closed control-plane image "
-        f"sentinel, found {control_plane_count}"
-    )
 
 text = text.replace(
     postgres_placeholder,
