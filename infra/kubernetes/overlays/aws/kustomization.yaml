@@ -3,6 +3,9 @@ kind: Kustomization
 
 resources:
   - ../../base
+  - control-plane-http-redirect-middleware.yaml
+  - control-plane-http-ingress.yaml
+  - control-plane-https-ingress.yaml
   - postgres-storageclass.yaml
   - postgres-pv.yaml
   - postgres-pgbackrest-configmap.yaml

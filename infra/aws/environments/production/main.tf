@@ -8,9 +8,12 @@ module "networking" {
 module "iam" {
   source = "../../modules/iam"
 
-  postgres_backup_bucket_arn    = module.backup.bucket_arn
-  postgres_auth_secret_arn      = module.secrets.postgres_auth_secret_arn
-  postgres_image_repository_arn = module.registry.postgres_repository_arn
+  postgres_backup_bucket_arn         = module.backup.bucket_arn
+  postgres_auth_secret_arn           = module.secrets.postgres_auth_secret_arn
+  postgres_image_repository_arn      = module.registry.postgres_repository_arn
+  control_plane_auth_secret_arn      = module.secrets.control_plane_auth_secret_arn
+  control_plane_tls_secret_arn       = module.secrets.control_plane_tls_secret_arn
+  control_plane_image_repository_arn = module.registry.control_plane_repository_arn
 }
 
 module "compute" {
@@ -48,11 +51,14 @@ module "backup" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  postgres_auth_secret_name = "gpulink/production/postgres-auth"
+  postgres_auth_secret_name      = "gpulink/production/postgres-auth"
+  control_plane_auth_secret_name = "gpulink/production/control-plane-auth"
+  control_plane_tls_secret_name  = "gpulink/production/control-plane-tls"
 }
 
 module "registry" {
   source = "../../modules/registry"
 
-  postgres_repository_name = "gpulink/postgres-pgbackrest"
+  postgres_repository_name      = "gpulink/postgres-pgbackrest"
+  control_plane_repository_name = "gpulink/control-plane"
 }

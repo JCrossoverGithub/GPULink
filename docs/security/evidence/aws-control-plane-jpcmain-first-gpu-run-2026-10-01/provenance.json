@@ -1,0 +1,49 @@
+{
+  "controlPlane": {
+    "containerRestarts": 0,
+    "imageDigest": "sha256:03c5bbdf5487f11abe020cad800192c3ca28c337ede958333bc2be6ac1e18fc5",
+    "podCreatedAtUtc": "2026-09-30T18:06:24Z",
+    "podUid": "868a6176-258b-4ea6-8d9a-f607d082ab98",
+    "runAttribution": "The same zero-restart control-plane pod predates the benchmark run, so this immutable image digest is attributable to the run."
+  },
+  "operatorCapture": {
+    "bytes": 3399,
+    "note": "SHA-256 refers to the original operator latency capture retained outside the public repository. The raw capture itself is intentionally not published here.",
+    "publishedInBundle": false,
+    "sha256": "cdbcaf351260e803803a13b4bf487017544ad92ab892ce8b421f7adfb9279e1f"
+  },
+  "run": {
+    "jobId": "job_aefbe4a66e22481cb15f701d33bf3f06",
+    "queuedAtUtc": "2026-10-01T00:18:24.206Z"
+  },
+  "runtimeReportedByJob": {
+    "backend": "pytorch-cuda",
+    "backendVersion": "2.12.1+cu130",
+    "cudaRuntimeVersion": "13.0",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3090 Ti",
+      "uuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4"
+    }
+  },
+  "worker": {
+    "benchmarkRunnerSha256": "81679ca2d3ff116e6aef9b9db2061eb86fe7e677efa1a3f587b4b695fc86f343",
+    "exactInstalledGitCommit": null,
+    "exactInstalledGitCommitKnown": false,
+    "executionClosureFileCount": 19,
+    "executionClosureSha256": "06a56ec6d76c34bfac5d5d3393f1b4abefb73274441a460b515c6e159070dc1d",
+    "executionFilesPredateServiceStart": true,
+    "installedGitRepository": false,
+    "latestExecutionFile": "src/worker/runners/gpu-benchmark.py",
+    "latestExecutionFileMtimeUtc": "2026-09-10T20:06:52.159Z",
+    "logicalName": "jpcmain-3090ti",
+    "mainPidAtFreeze": 189,
+    "packageVersion": "0.1.0",
+    "provenanceLimitation": "The installed worker tree does not preserve .git metadata, so the exact repository checkout commit used during installation cannot be proven. The running service began before the benchmark run, has zero automatic restarts, every installed worker/shared execution file predates that service start, and the installed execution closure is byte-for-byte identical to the current repository closure. The last Git commit that changed that execution closure is recorded separately and is not asserted to be the installation commit.",
+    "serviceRestarts": 0,
+    "serviceStartUtc": "2026-10-01T00:13:17Z",
+    "sourceClosureLastChangeCommit": "881a29d4efb0da09070a946f29a1c5f51c6c54b2",
+    "sourceClosureLastChangeSubject": "Harden GPU benchmark runtime initialization",
+    "sourceClosureLastChangeTime": "2026-09-10T15:56:47-04:00",
+    "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+  }
+}

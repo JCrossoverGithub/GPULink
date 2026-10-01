@@ -51,18 +51,40 @@ Examples may include:
 - AWS-specific backup configuration
 - production image registry settings
 
-The committed AWS overlay does not contain an AWS account-specific registry
-name. It uses the reserved `registry.invalid` domain as a fail-closed image
-sentinel while retaining the accepted immutable OCI digest.
+The committed AWS overlay does not contain AWS account-specific registry
+names. It uses the reserved `registry.invalid` domain for fail-closed image
+sentinels.
 
-Produce a deployable AWS manifest with:
+Both the PostgreSQL and control-plane sentinels retain their accepted
+immutable OCI digests. Deployment rendering replaces only the registry
+location while preserving those committed digest acceptance boundaries.
+
+The committed public control-plane Ingress also uses the reserved hostname:
+
+    control-plane.gpulink.invalid
+
+The real public hostname is deployment material and is supplied only during
+rendering. Real certificate and private-key material is provisioned separately
+and must not be committed to Git.
+
+Produce a deployable AWS manifest with both immutable image references and the
+deployment public hostname:
 
     infra/kubernetes/scripts/render-aws.sh \
-      '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/postgres-pgbackrest@sha256:<digest>' \
+      '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/postgres-pgbackrest@sha256:<accepted-postgres-digest>' \
+      '<aws-account-id>.dkr.ecr.<region>.amazonaws.com/gpulink/control-plane@sha256:<control-plane-release-digest>' \
+      '<public-control-plane-hostname>' \
       > /tmp/gpulink-aws.yaml
 
-The renderer requires the deployment-provided image reference to use the same
-digest recorded by the committed overlay.
+The renderer requires both deployment-provided images to use the same
+SHA-256 digests recorded by the committed manifests. Mismatched digests,
+mutable image references, unresolved GPULink image sentinels, invalid public
+hostnames, and unresolved hostname sentinels are rejected.
+
+The AWS HTTPS Ingress expects a deployment-provided Kubernetes TLS Secret named
+`control-plane-tls`. See
+`overlays/aws/CONTROL_PLANE_TLS.md` for the certificate and provisioning
+contract.
 
 ## Self-Hosted Overlay
 
@@ -87,3 +109,18 @@ For example:
 - GPULink requires OCI images, not ECR.
 - GPULink requires backup storage, not S3 specifically.
 - GPULink requires secure administration, not Systems Manager specifically.
+
+### AWS certificate management
+
+The AWS certificate-management foundation lives separately under
+`overlays/aws/cert-manager/`.
+
+It installs cert-manager through the K3s `HelmChart` API and defines the
+production Let's Encrypt `ClusterIssuer` contract. It is intentionally not
+part of the normal application kustomization because the cert-manager CRDs
+and webhook must become healthy before issuer resources are applied.
+
+Deployment-specific ACME contact information is rendered outside Git.
+
+See `overlays/aws/cert-manager/README.md` for installation order and lifecycle
+boundaries.

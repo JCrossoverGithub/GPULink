@@ -132,7 +132,12 @@ Off-host backup and point-in-time recovery are Phase 4 responsibilities.
 
 ## Phase 4 — AWS + K3s platform
 
-**Status: next**
+**Status: in progress**
+
+The AWS/K3s foundation, PostgreSQL runtime and recovery path, and first
+single-replica control-plane staging deployment are accepted. Physical
+worker/workload staging, ingress/cutover, rollback, sustained-operation, and
+production-migration acceptance remain.
 
 Phase 4 moves the production control plane to infrastructure designed for the
 next stage of GPULink.

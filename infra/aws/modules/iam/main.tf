@@ -124,3 +124,77 @@ resource "aws_iam_role_policy" "postgres_image_pull" {
   role   = aws_iam_role.host.id
   policy = data.aws_iam_policy_document.postgres_image_pull.json
 }
+
+data "aws_iam_policy_document" "control_plane_auth_secret" {
+  statement {
+    sid = "ReadControlPlaneAuthenticationSecret"
+
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+    ]
+
+    resources = [
+      var.control_plane_auth_secret_arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "control_plane_auth_secret" {
+  name   = "gpulink-control-plane-auth-secret"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.control_plane_auth_secret.json
+}
+
+data "aws_iam_policy_document" "control_plane_image_pull" {
+  statement {
+    sid = "GetEcrAuthorizationToken"
+
+    actions = [
+      "ecr:GetAuthorizationToken",
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "PullControlPlaneRuntimeImage"
+
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+    ]
+
+    resources = [
+      var.control_plane_image_repository_arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "control_plane_image_pull" {
+  name   = "gpulink-control-plane-image-pull"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.control_plane_image_pull.json
+}
+
+data "aws_iam_policy_document" "control_plane_tls_secret" {
+  statement {
+    sid = "ReadControlPlaneTlsSecret"
+
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+    ]
+
+    resources = [
+      var.control_plane_tls_secret_arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "control_plane_tls_secret" {
+  name   = "gpulink-control-plane-tls-secret"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.control_plane_tls_secret.json
+}

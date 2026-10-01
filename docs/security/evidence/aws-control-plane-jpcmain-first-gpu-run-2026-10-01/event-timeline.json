@@ -1,0 +1,40 @@
+[
+  {
+    "createdAt": 1790813904206,
+    "payload": {
+      "priority": 100,
+      "projectId": "gpulink-benchmark",
+      "type": "benchmark.gpu"
+    },
+    "sequence": 10,
+    "type": "job.queued"
+  },
+  {
+    "createdAt": 1790813904211,
+    "payload": {
+      "attempt": 1,
+      "gpuUuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4",
+      "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+    },
+    "sequence": 11,
+    "type": "job.leased"
+  },
+  {
+    "createdAt": 1790813905246,
+    "payload": {
+      "attempt": 1,
+      "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+    },
+    "sequence": 12,
+    "type": "job.started"
+  },
+  {
+    "createdAt": 1790813907512,
+    "payload": {
+      "attempt": 1,
+      "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+    },
+    "sequence": 13,
+    "type": "job.succeeded"
+  }
+]

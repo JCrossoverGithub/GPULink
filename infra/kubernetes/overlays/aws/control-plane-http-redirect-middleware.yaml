@@ -1,0 +1,13 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: control-plane-https-redirect
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: ingress
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

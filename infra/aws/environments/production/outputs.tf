@@ -97,3 +97,38 @@ output "postgres_image_repository_url" {
   description = "Registry URL of the ECR repository containing the GPULink PostgreSQL runtime image."
   value       = module.registry.postgres_repository_url
 }
+
+output "control_plane_auth_secret_name" {
+  description = "Name of the durable GPULink control-plane authentication secret."
+  value       = module.secrets.control_plane_auth_secret_name
+}
+
+output "control_plane_auth_secret_arn" {
+  description = "ARN of the durable GPULink control-plane authentication secret."
+  value       = module.secrets.control_plane_auth_secret_arn
+}
+
+output "control_plane_image_repository_name" {
+  description = "Name of the ECR repository containing the GPULink control-plane runtime image."
+  value       = module.registry.control_plane_repository_name
+}
+
+output "control_plane_image_repository_arn" {
+  description = "ARN of the ECR repository containing the GPULink control-plane runtime image."
+  value       = module.registry.control_plane_repository_arn
+}
+
+output "control_plane_image_repository_url" {
+  description = "Registry URL of the ECR repository containing the GPULink control-plane runtime image."
+  value       = module.registry.control_plane_repository_url
+}
+
+output "control_plane_tls_secret_name" {
+  description = "Name of the deployment-local GPULink control-plane TLS secret."
+  value       = module.secrets.control_plane_tls_secret_name
+}
+
+output "control_plane_tls_secret_arn" {
+  description = "ARN of the deployment-local GPULink control-plane TLS secret."
+  value       = module.secrets.control_plane_tls_secret_arn
+}

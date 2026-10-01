@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: 1
+
+  # Initial Phase 4 staging deliberately avoids overlapping control-plane
+  # Pods during rollout. Multi-replica behavior is a separate acceptance gate.
+  strategy:
+    type: Recreate
+
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 300
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: control-plane
+      app.kubernetes.io/part-of: gpulink
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: control-plane
+        app.kubernetes.io/part-of: gpulink
+        app.kubernetes.io/component: control-plane
+
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: control-plane
+          image: registry.invalid/gpulink/control-plane@sha256:03c5bbdf5487f11abe020cad800192c3ca28c337ede958333bc2be6ac1e18fc5
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: GPULINK_CONTROL_HOST
+              value: "0.0.0.0"
+
+            - name: GPULINK_CONTROL_PORT
+              value: "8088"
+
+            - name: GPULINK_CONTROL_DATABASE
+              value: "postgres"
+
+            - name: GPULINK_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: control-plane-database
+                  key: database-url
+
+            - name: GPULINK_CONTROL_HEARTBEAT_TIMEOUT_MS
+              value: "15000"
+
+            - name: GPULINK_CONTROL_LEASE_DURATION_MS
+              value: "30000"
+
+            - name: GPULINK_CONTROL_SCHEDULER_INTERVAL_MS
+              value: "1000"
+
+            - name: GPULINK_CONTROL_VRAM_SAFETY_MIB
+              value: "512"
+
+            - name: GPULINK_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: control-plane-auth
+                  key: client-token
+
+            - name: GPULINK_WORKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: control-plane-auth
+                  key: worker-token
+
+            - name: GPULINK_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: control-plane-auth
+                  key: admin-token
+
+          ports:
+            - name: http
+              containerPort: 8088
+              protocol: TCP
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

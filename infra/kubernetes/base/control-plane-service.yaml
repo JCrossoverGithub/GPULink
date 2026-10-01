@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: gpulink
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: gpulink
+    app.kubernetes.io/component: control-plane
+spec:
+  type: ClusterIP
+
+  selector:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: gpulink
+
+  ports:
+    - name: http
+      port: 8088
+      targetPort: http
+      protocol: TCP

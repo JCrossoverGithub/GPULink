@@ -12,3 +12,18 @@ output "postgres_repository_url" {
   description = "Registry URL of the GPULink PostgreSQL ECR repository."
   value       = aws_ecr_repository.postgres.repository_url
 }
+
+output "control_plane_repository_name" {
+  description = "Name of the GPULink control-plane ECR repository."
+  value       = aws_ecr_repository.control_plane.name
+}
+
+output "control_plane_repository_arn" {
+  description = "ARN of the GPULink control-plane ECR repository."
+  value       = aws_ecr_repository.control_plane.arn
+}
+
+output "control_plane_repository_url" {
+  description = "Registry URL of the GPULink control-plane ECR repository."
+  value       = aws_ecr_repository.control_plane.repository_url
+}
