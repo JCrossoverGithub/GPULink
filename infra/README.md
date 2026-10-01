@@ -40,8 +40,16 @@ repository.
         production/
 
 The AWS reference infrastructure is now implemented. PostgreSQL runtime,
-continuous WAL archival, full backup, and isolated restore verification have
-been accepted. Application staging and production cutover remain Phase 4 work.
+continuous WAL archival, off-host backup, isolated restore, point-in-time
+recovery, recurring recovery automation, the operator disaster-recovery
+runbook, single-replica control-plane staging, public Traefik/TLS ingress,
+cert-manager certificate management, and the first physical JPCMAIN RTX 3090 Ti
+workload have been accepted.
+
+Remaining Phase 4 work includes the other physical workers, heterogeneous
+scheduling, multi-replica scheduler/event behavior, application rollback,
+sustained operation, and the authoritative production migration from
+DigitalOcean.
 
 ## Deployment-local Terraform backend
 

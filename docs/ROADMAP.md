@@ -128,19 +128,42 @@ Backups are stored on the same DigitalOcean host as the production database.
 They provide a tested logical recovery path but do not provide complete disaster
 recovery if the entire host is lost.
 
-Off-host backup and point-in-time recovery are Phase 4 responsibilities.
+Off-host backup and point-in-time recovery were Phase 4 responsibilities.
+The AWS Phase 4C reference environment has since accepted that recovery path;
+the same-host limitation remains applicable to the transitional DigitalOcean
+production deployment until Phase 4E migration.
 
 ## Phase 4 — AWS + K3s platform
 
 **Status: in progress**
 
-The AWS/K3s foundation, PostgreSQL runtime and recovery path, and first
-single-replica control-plane staging deployment are accepted. Physical
-worker/workload staging, ingress/cutover, rollback, sustained-operation, and
-production-migration acceptance remain.
+Accepted through 2026-10-01 are:
 
-Phase 4 moves the production control plane to infrastructure designed for the
-next stage of GPULink.
+- the Terraform-managed AWS infrastructure foundation;
+- the K3s host foundation;
+- dedicated encrypted PostgreSQL gp3 storage;
+- PostgreSQL 17 on K3s;
+- immutable ECR image distribution;
+- host-side ECR credential isolation;
+- S3-backed off-host backup and WAL archival;
+- isolated restore verification;
+- named point-in-time recovery;
+- recurring backup and restore-verification automation;
+- the operator disaster-recovery runbook;
+- the first single-replica GPULink control-plane deployment on K3s;
+- public Traefik HTTP/HTTPS ingress;
+- trusted public TLS;
+- cert-manager steady-state certificate management;
+- the first physical worker registered through the public AWS control plane;
+- JPCMAIN RTX 3090 Ti execution of a real `benchmark.gpu` CUDA workload;
+- persistence of the result and durable lifecycle events through AWS.
+
+The first accepted AWS GPU workload uses an AWS-hosted **control plane** with a
+physical JPCMAIN GPU worker. It is not an AWS-hosted GPU.
+
+Remaining Phase 4 work centers on fleet-wide staging acceptance,
+multi-replica behavior, application rollback, sustained operation, and final
+authoritative production migration from DigitalOcean.
 
 The initial target deliberately remains small:
 
@@ -154,94 +177,127 @@ The initial target deliberately remains small:
 - Traefik for ingress;
 - outbound-only personal GPU workers.
 
-The goal is not to maximize AWS complexity. The goal is to establish a clean,
-reproducible platform that can later scale without changing GPULink's core
-application contracts.
-
 ### Phase 4A — AWS infrastructure foundation
 
-Planned:
+**Status: accepted**
+
+Accepted:
 
 - infrastructure-as-code repository structure;
 - AWS account/IAM baseline;
 - VPC and networking;
 - security groups;
 - Ubuntu 24.04 EC2 host;
-- SSM access;
-- dedicated gp3 PostgreSQL EBS volume;
+- Systems Manager administrative access;
+- dedicated encrypted gp3 PostgreSQL EBS volume;
 - ECR repositories;
-- S3 backup bucket;
-- encryption, versioning, and lifecycle policy;
+- protected S3 recovery bucket;
 - EC2 IAM role and least-privilege policies;
 - reproducible host bootstrap.
 
-No production cutover occurs in this sub-phase.
-
 ### Phase 4B — K3s platform
 
-Planned:
+**Status: partially accepted**
+
+Accepted:
 
 - pinned K3s installation;
-- namespace design;
-- Kubernetes Secrets and ConfigMaps;
-- storage classes and persistent volumes;
+- namespace, Secret, and ConfigMap contracts;
+- persistent storage definitions;
 - PostgreSQL StatefulSet;
-- control-plane Deployment and Service;
-- readiness/liveness probes;
-- resource requests and limits;
-- Traefik ingress and TLS;
-- ECR image workflow;
-- Kubernetes-native deployment and rollback;
+- GPULink control-plane Deployment and Service;
+- health/readiness probes;
+- immutable ECR image deployment;
+- Traefik HTTP/HTTPS ingress;
+- public TLS;
+- cert-manager steady-state certificate management;
+- single-replica control-plane staging.
+
+Remaining:
+
+- Kubernetes-native application rollback acceptance;
 - multi-replica scheduler-lock verification;
 - cross-replica SSE/event verification.
 
 ### Phase 4C — Off-host recovery
 
-Planned:
+**Status: accepted for the staging reference environment**
+
+Accepted:
 
 - pgBackRest;
-- full backups to S3;
-- WAL archiving;
-- backup retention;
-- clean restore rehearsal;
-- point-in-time recovery rehearsal;
-- measured recovery-point objective;
-- measured recovery-time objective;
-- disaster-recovery runbook;
-- proof that loss of the EC2 host does not destroy the backup chain.
+- full and incremental backups;
+- S3-backed off-host storage;
+- continuous WAL archiving;
+- backup retention controls;
+- isolated clean restore rehearsal;
+- named point-in-time recovery;
+- measured low-write WAL recoverability;
+- measured restore timings for the acceptance dataset;
+- recurring backup automation;
+- recurring restore-verification automation;
+- AWS credential isolation from Kubernetes workloads;
+- operator disaster-recovery runbook.
+
+Observed timings are acceptance evidence, not production RPO/RTO SLAs.
+
+The first naturally scheduled weekly restore-verification run remains future
+operational evidence; the automation path itself has already been accepted.
 
 ### Phase 4D — AWS staging acceptance
 
-Planned:
+**Status: in progress**
 
-- non-production GPULink deployment;
-- physical-worker enrollment;
-- diagnostic workload;
-- GPU benchmark workload;
-- heterogeneous scheduling;
-- drain/recovery testing;
-- scheduler concurrency testing;
-- SSE/event testing;
-- backup and restore testing;
-- rollback testing;
-- sustained soak testing.
+Accepted through 2026-10-01:
+
+- non-production GPULink control-plane deployment;
+- public ingress and trusted TLS;
+- cert-manager steady-state certificate management;
+- PostgreSQL-backed application persistence;
+- physical JPCMAIN worker registration;
+- a real `benchmark.gpu` CUDA workload;
+- durable queue, lease, start, and success events;
+- persisted benchmark result;
+- post-run public HTTPS latency sampling;
+- workload-evidence provenance and sanitization;
+- Phase 4C backup and restore foundations.
+
+Still to prove:
+
+- RTX 3070 Ti connectivity to AWS;
+- RTX 4060 connectivity to AWS;
+- fleet-wide diagnostic workload coverage;
+- GPU benchmark acceptance on the remaining physical GPUs;
+- heterogeneous scheduling across multiple eligible workers;
+- drain/resume;
+- stale-worker recovery;
+- scheduler concurrency with multiple control-plane replicas;
+- cross-replica SSE/event delivery;
+- application rollback;
+- sustained soak operation.
 
 ### Phase 4E — Production migration
 
-Planned:
+**Status: future**
 
-- final DigitalOcean backup;
-- controlled write freeze;
-- final PostgreSQL state capture;
-- database transfer and restore;
-- state-count verification;
-- AWS control-plane activation;
-- physical-worker reconnection;
-- real workload acceptance;
-- public traffic/DNS cutover;
-- rollback window;
-- AWS production acceptance;
-- DigitalOcean retirement only after acceptance.
+Only after the remaining staging acceptance:
+
+- take a final DigitalOcean backup;
+- freeze authoritative writes;
+- capture final PostgreSQL production state;
+- transfer and restore that state into AWS;
+- verify worker, job, event, and migration-history counts;
+- make the restored AWS state authoritative;
+- reconnect and verify the physical worker fleet;
+- run final real-workload acceptance;
+- activate authoritative production traffic on the already-accepted AWS ingress;
+- retain a defined rollback window;
+- complete AWS production acceptance;
+- retire DigitalOcean only after acceptance.
+
+AWS ingress and public TLS are already accepted as staging capabilities. Phase
+4E therefore focuses on authoritative state, production traffic, final worker
+reconnection, and rollback.
 
 ## Phase 5 — Workload and platform expansion
 
@@ -252,7 +308,7 @@ This phase grows GPULink beyond the infrastructure migration.
 Candidate work includes:
 
 - embedding workload adapters;
-- automatic speech recognition / TransGo integration;
+- automatic speech recognition / CaptionLink integration;
 - additional inference adapters;
 - stronger model distribution and cache management;
 - queue priority and project quotas;

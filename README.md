@@ -44,34 +44,43 @@ infrastructure.
 
 ## Current status
 
-Phases 0 through 3 of the current architecture rework are complete.
+Phases 0 through 3 of the current architecture rework are complete. Phase 4,
+the AWS + K3s platform migration, is actively in progress.
 
-The production system currently includes:
+The transitional DigitalOcean deployment remains the authoritative production
+environment until the Phase 4E production-state migration and rollback window
+are accepted.
 
-- a public HTTPS control plane hosted on DigitalOcean;
-- PostgreSQL 17 as the authoritative persistence backend;
-- three real outbound-only GPU workers:
-  - RTX 3070 Ti desktop;
-  - RTX 3090 Ti workstation;
-  - RTX 4060 laptop;
-- GPU-aware scheduling with exclusive one-job-per-GPU assignment;
-- minimum-VRAM and capability constraints;
-- worker heartbeat, drain, lease expiry, and bounded retry semantics;
-- warm-model and verified model-cache locality;
-- scoped client, worker, and administrator credentials;
-- durable job, worker, lease, and event state;
-- PostgreSQL advisory locking for cross-replica scheduler exclusion;
-- commit-aware event notification and server-sent events;
-- allowlisted diagnostic and GPU benchmark workloads;
-- adapter health and versioned adapter manifests;
-- traceable immutable control-plane releases;
-- guarded no-build production rollback;
-- automated PostgreSQL backups;
-- automated weekly restoration of a backup into an isolated PostgreSQL
-  instance to prove that the backup is actually recoverable.
+The AWS/K3s reference environment has now accepted:
 
-The next major phase moves the control plane from the transitional DigitalOcean
-Docker Compose deployment to an AWS/K3s platform.
+- Terraform-managed AWS infrastructure in `us-east-1`;
+- a pinned K3s host on Ubuntu 24.04;
+- PostgreSQL 17 on dedicated encrypted gp3 storage;
+- immutable PostgreSQL and control-plane images distributed through ECR;
+- host-side ECR authentication without exposing AWS credentials to Pods;
+- pgBackRest mutual TLS;
+- continuous WAL archival and off-host PostgreSQL backup storage;
+- isolated restore verification and named point-in-time recovery;
+- recurring backup and restore-verification automation;
+- the PostgreSQL disaster-recovery runbook;
+- a single-replica GPULink control plane backed by AWS PostgreSQL;
+- public Traefik HTTP-to-HTTPS ingress;
+- trusted public TLS and cert-manager certificate management;
+- physical JPCMAIN worker registration through the public AWS control plane;
+- a real `benchmark.gpu` CUDA workload executed on the physical RTX 3090 Ti;
+- persisted benchmark results and durable queue, lease, start, and success
+  events.
+
+The physical GPU fleet remains:
+
+- MAINPC — RTX 3070 Ti 8 GB;
+- JPCMAIN — RTX 3090 Ti 24 GB;
+- laptop — RTX 4060 8 GB.
+
+AWS staging currently proves the complete JPCMAIN RTX 3090 Ti path. Remaining
+Phase 4D work expands that acceptance across the RTX 3070 Ti and RTX 4060,
+heterogeneous scheduling, drain/recovery behavior, multi-replica scheduler and
+event correctness, application rollback, and sustained operation.
 
 See [Roadmap](docs/ROADMAP.md) for the current project plan.
 
@@ -119,38 +128,67 @@ Workloads are explicit, versioned, validated capabilities.
 
 ## Current architecture
 
+GPULink currently has two intentionally distinct infrastructure roles:
+
+1. the transitional DigitalOcean deployment remains the authoritative
+   production environment until Phase 4E migration acceptance;
+2. the AWS/K3s reference environment is the active Phase 4 staging platform and
+   has independently passed infrastructure, recovery, public-ingress,
+   single-replica control-plane, and first-GPU-workload acceptance.
+
 ```mermaid
 flowchart TD
     Client["Application / Product / CLI"]
 
-    subgraph Public["Current control plane — DigitalOcean"]
+    subgraph DO["Authoritative production — transitional DigitalOcean"]
         Nginx["Nginx + TLS"]
-        Control["GPULink Control Plane"]
-        Postgres[("PostgreSQL 17")]
+        DOControl["GPULink Control Plane"]
+        DOPostgres[("PostgreSQL 17")]
     end
 
-    subgraph Fleet["Outbound-only GPU worker pool"]
+    subgraph AWS["AWS/K3s reference environment — Phase 4 staging"]
+        Traefik["Traefik + HTTPS"]
+        AWSControl["GPULink Control Plane"]
+        AWSPostgres[("PostgreSQL 17 on gp3")]
+        Recovery["pgBackRest"]
+        S3["Off-host S3 backup + WAL"]
+    end
+
+    subgraph Fleet["Outbound-only physical GPU workers"]
         GPU1["MAINPC\nRTX 3070 Ti 8 GB"]
         GPU2["JPCMAIN\nRTX 3090 Ti 24 GB"]
         GPU3["Laptop\nRTX 4060 8 GB"]
     end
 
-    Client -->|"HTTPS"| Nginx
-    Nginx -->|"127.0.0.1:8088"| Control
-    Control --> Postgres
+    Client -->|"production HTTPS"| Nginx
+    Nginx --> DOControl
+    DOControl --> DOPostgres
 
-    GPU1 -->|"Outbound HTTPS"| Nginx
-    GPU2 -->|"Outbound HTTPS"| Nginx
-    GPU3 -->|"Outbound HTTPS"| Nginx
+    Client -.->|"AWS staging HTTPS"| Traefik
+    Traefik --> AWSControl
+    AWSControl --> AWSPostgres
+    AWSPostgres --> Recovery
+    Recovery --> S3
+
+    GPU1 -->|"outbound HTTPS"| Nginx
+    GPU2 -->|"outbound HTTPS"| Nginx
+    GPU3 -->|"outbound HTTPS"| Nginx
+
+    GPU2 -.->|"accepted AWS workload path"| Traefik
 ```
 
-Docker publishes the control plane only on `127.0.0.1:8088` on the host.
-Nginx terminates public HTTPS and proxies to that loopback listener.
+The DigitalOcean control plane remains loopback-published behind its HTTPS
+reverse proxy and PostgreSQL has no public host port.
 
-PostgreSQL has no host-published port.
+The AWS reference environment runs the control plane and PostgreSQL inside K3s.
+Traefik provides the accepted public HTTPS boundary while PostgreSQL remains
+internal. Deployment-specific TLS material stays outside the public repository;
+cert-manager owns steady-state public-certificate renewal.
 
-Workers initiate outbound connections to the control plane, so no inbound
-GPULink port needs to be opened on a personal GPU computer.
+Workers initiate outbound connections, so GPULink does not require inbound
+worker ports on personal GPU computers. JPCMAIN has completed this path through
+the public AWS control plane and executed a real CUDA workload on its RTX 3090
+Ti.
 
 See [Architecture](docs/ARCHITECTURE.md) for the detailed design.
 
@@ -226,25 +264,33 @@ See [Production Operations](docs/PRODUCTION_OPERATIONS.md).
 
 ## Backup and recovery
 
-The DigitalOcean deployment creates verified PostgreSQL custom-format backups.
+The transitional DigitalOcean production deployment continues to create
+verified PostgreSQL custom-format backups with checksums, structural validation,
+database-state metadata, and automated disposable restore verification.
 
-Each completed backup includes:
+Those DigitalOcean backups remain on the same host as the authoritative
+production database. That limitation remains until production state is migrated
+to AWS.
 
-- the PostgreSQL dump;
-- SHA-256 checksum;
-- `pg_restore --list` structural validation;
-- recorded worker, job, event, and job-status counts;
-- metadata describing the backup.
+The AWS/K3s reference environment has independently accepted the Phase 4
+off-host recovery path:
 
-A weekly systemd job restores the newest completed backup into an isolated
-disposable PostgreSQL 17 container, compares the restored state with the state
-recorded at backup time, and removes the disposable resources afterward.
+- pgBackRest full and incremental backups;
+- S3-backed off-host backup storage;
+- continuous WAL archival;
+- a 60-second PostgreSQL `archive_timeout` for low-write WAL switching;
+- named point-in-time recovery;
+- isolated restore rehearsals that do not mount the production PostgreSQL PVC;
+- recurring host-side backup automation;
+- Kubernetes restore-verification automation;
+- an operator disaster-recovery runbook.
 
-This proves that the backup is restorable.
+This proves that the AWS recovery chain is not dependent on the EC2 database
+volume alone. It does not mean that the DigitalOcean production database has
+already been migrated or retired.
 
-Current backups are still stored on the same DigitalOcean host. They protect
-against logical/database failures, but do **not** provide complete protection
-against loss of the entire droplet. Phase 4 adds off-host S3/WAL recovery.
+See [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md) and the recovery
+acceptance records under `docs/security/`.
 
 ## Operations console
 
@@ -339,7 +385,7 @@ The current architecture rework is organized into major phases:
 - **Phase 1 — PostgreSQL persistence:** complete
 - **Phase 2 — distributed scheduler/event correctness:** complete
 - **Phase 3 — production hardening and recovery:** complete
-- **Phase 4 — AWS + K3s platform migration:** next
+- **Phase 4 — AWS + K3s platform migration:** in progress
 - **Phase 5 — workload/platform expansion:** future
 
 See [Roadmap](docs/ROADMAP.md) for details.
@@ -349,8 +395,12 @@ See [Roadmap](docs/ROADMAP.md) for details.
 - [Architecture](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md)
 - [Production Operations](docs/PRODUCTION_OPERATIONS.md)
 - [GPU Benchmark Workload](docs/GPU_BENCHMARK.md)
+- [AWS Control-Plane Staging Acceptance](docs/security/aws-control-plane-staging-acceptance.md)
+- [AWS GPU Workload Acceptance](docs/security/aws-gpu-workload-acceptance.md)
+- [AWS PostgreSQL Disaster-Recovery Runbook](docs/security/aws-postgres-disaster-recovery-runbook.md)
 - [Model Cache Inventory](docs/MODEL_CACHE.md)
 - [Operations Console](dashboard/README.md)
 - [First Operational Target — historical](docs/FIRST_OPERATIONAL_TARGET.md)

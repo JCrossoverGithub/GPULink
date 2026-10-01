@@ -11,20 +11,24 @@ management, rollback, backup, and restore-verification behavior.
 Phase 4 moves those guarantees from the transitional DigitalOcean Docker
 deployment onto a reproducible AWS/K3s platform.
 
-Accepted through 2026-09-30 are the AWS infrastructure foundation, K3s host
+Accepted through 2026-10-01 are the AWS infrastructure foundation, K3s host
 foundation, PostgreSQL 17 runtime, protected persistent storage, host-side ECR
 authentication, workload isolation from EC2 metadata, pgBackRest mutual TLS,
-continuous WAL archival, a full off-host backup, isolated restore and named
-point-in-time recovery, measured low-write off-host WAL recoverability, and the
-first single-replica GPULink control-plane staging deployment on K3s.
+continuous WAL archival, off-host backup, isolated restore, named
+point-in-time recovery, recurring recovery automation, the operator
+disaster-recovery runbook, the single-replica GPULink control plane, public
+Traefik ingress, trusted TLS, cert-manager certificate management, physical
+JPCMAIN worker registration, and the first real CUDA workload through the
+public AWS GPULink control plane on the JPCMAIN RTX 3090 Ti.
 
-Phase 4 is not yet complete. Remaining recovery/runbook work, physical
-worker/workload acceptance, public ingress and cutover, multi-replica
-application acceptance, sustained operation, and rollback-window completion
-remain open.
+Phase 4 is not yet complete. Remaining work includes RTX 3070 Ti and RTX 4060
+AWS connectivity, fleet-wide diagnostic and benchmark acceptance,
+heterogeneous scheduling, drain/recovery behavior, multi-replica scheduler and
+SSE acceptance, application rollback, sustained operation, and final
+authoritative production migration from DigitalOcean.
 
-No production cutover should occur until the AWS environment has independently
-passed staging, recovery, worker, workload, and rollback acceptance.
+The transitional DigitalOcean deployment remains authoritative production
+until Phase 4E state migration and rollback-window acceptance.
 
 ## Goals
 
@@ -70,38 +74,42 @@ The first deployment should remain in one region.
 
 ## High-level topology
 
-Applications and personal GPU workers communicate with the public GPULink
-control plane over HTTPS.
+Applications and personal GPU workers communicate with GPULink over HTTPS.
 
-The accepted AWS environment contains one Ubuntu 24.04 EC2 instance running
-K3s.
+The accepted AWS reference environment contains one Ubuntu 24.04 EC2 instance
+running K3s.
 
-The currently proven K3s application workloads in this Phase 4 record are
-PostgreSQL 17 with its pgBackRest integration and the single-replica GPULink
-control plane.
+Accepted K3s application components now include:
 
-The control plane completed its first staging acceptance on 2026-09-30.
-Traefik/public ingress remains outside the accepted application boundary.
-The PostgreSQL recovery milestones documented below remain distinct from the
-control-plane staging acceptance.
+- PostgreSQL 17 with pgBackRest integration;
+- the single-replica GPULink control plane;
+- Traefik public ingress;
+- HTTP-to-HTTPS redirection;
+- cert-manager-managed public TLS.
 
-PostgreSQL data lives on a dedicated gp3 EBS volume rather than the EC2 root
-filesystem.
+PostgreSQL data lives on a dedicated encrypted gp3 EBS volume rather than the
+EC2 root filesystem.
 
 AWS supporting services provide:
 
-- ECR for GPULink container images;
+- ECR for immutable GPULink container images;
 - S3 for PostgreSQL backup and WAL storage;
 - Systems Manager for administrative host access.
 
-The existing GPU workers remain outside AWS and connect outbound to the public
-control plane.
+Physical GPU workers remain outside AWS and connect outbound.
 
-Current workers include:
+The fleet is:
 
 - MAINPC — RTX 3070 Ti 8 GB;
 - JPCMAIN — RTX 3090 Ti 24 GB;
 - laptop — RTX 4060 8 GB.
+
+As of 2026-10-01, JPCMAIN is the first physical worker with accepted
+end-to-end AWS workload evidence. Its RTX 3090 Ti executed a real
+`benchmark.gpu` PyTorch/CUDA workload through the public AWS control plane.
+
+The RTX 3070 Ti and RTX 4060 remain part of the physical fleet but still require
+their Phase 4D AWS connectivity and workload acceptance.
 
 ## Network model
 
@@ -128,23 +136,28 @@ Personal GPU workers continue to require only outbound connectivity.
 
 ## Compute
 
-The initial platform uses one EC2 Ubuntu 24.04 instance.
+The initial AWS platform uses one Ubuntu 24.04 EC2 instance.
 
-The currently accepted instance role hosts:
+The accepted instance role hosts:
 
 - K3s;
+- Traefik;
+- the GPULink control-plane Deployment;
 - PostgreSQL;
-- pgBackRest repository services and operational tooling.
+- pgBackRest integration and operational tooling.
 
-The GPULink control plane completed its first single-replica staging acceptance
-on 2026-09-30. Traefik and public ingress responsibilities remain to be added
-and accepted before cutover.
+The GPULink control plane completed single-replica staging acceptance on
+2026-09-30. Public Traefik ingress, trusted TLS, and cert-manager steady-state
+certificate handling were subsequently accepted.
 
-Instance sizing should be based on the current GPULink workload rather than
-selected for theoretical future scale.
+On 2026-10-01, JPCMAIN completed the first accepted physical-worker workload
+through that public AWS path.
 
-The instance must be replaceable from infrastructure-as-code plus persistent
-data and recovery artifacts.
+Instance sizing remains based on current workload rather than theoretical
+future scale.
+
+The instance must remain replaceable from infrastructure-as-code plus
+persistent data and recovery artifacts.
 
 ## Storage
 
@@ -382,63 +395,88 @@ Detailed recovery evidence is recorded in:
 - `docs/security/aws-postgres-rpo-acceptance.md`;
 - `docs/security/aws-postgres-recurring-recovery-acceptance.md`.
 
-Remaining Phase 4C work:
+Phase 4C recovery is accepted for the staging reference environment.
 
-- complete the operator disaster-recovery runbook.
+The operator recovery procedure is documented in:
+
+- `docs/security/aws-postgres-disaster-recovery-runbook.md`.
+
+The first naturally scheduled weekly restore-verification run remains future
+operational evidence, but the backup, restore, PITR, automation, and operator
+runbook paths for the current staging recovery boundary are accepted.
 
 ## Phase 4D — Staging acceptance
 
 Control-plane staging acceptance completed on 2026-09-30:
 
-- the accepted immutable control-plane ECR digest pulled through the host-side
-  credential provider;
-- the Kubernetes Deployment and ClusterIP Service rolled out successfully;
-- the single control-plane Pod remained Ready with zero restarts;
-- `/healthz` and `/readyz` returned their expected HTTP 200 contracts;
-- the Service exposed exactly one ready EndpointSlice address;
-- PostgreSQL remained stable with zero container restarts;
-- the persistence probe remained intact;
-- the application migration created `workers`, `jobs`, and `events`;
-- `gpulink_schema_migrations` recorded exactly `0001-initial.sql`;
-- the recorded migration checksum matched the committed migration file.
+- the immutable control-plane ECR digest pulled through the host credential
+  provider;
+- the Deployment and ClusterIP Service rolled out successfully;
+- the control-plane Pod remained Ready with zero restarts;
+- `/healthz` and `/readyz` returned HTTP 200;
+- PostgreSQL remained stable;
+- application migrations created `workers`, `jobs`, and `events`;
+- the migration checksum matched the committed migration.
+
+Public ingress and TLS acceptance subsequently established:
+
+- public DNS to the AWS endpoint;
+- Traefik HTTP-to-HTTPS redirection;
+- trusted HTTPS service;
+- the deployment-provided TLS Secret contract;
+- cert-manager installation and issuer readiness;
+- cert-manager steady-state certificate ownership.
+
+Physical-worker/workload acceptance on 2026-10-01 established:
+
+- JPCMAIN registered through the public AWS control plane;
+- the expected RTX 3090 Ti identity was reported;
+- the scheduler leased a bounded `benchmark.gpu` workload to JPCMAIN;
+- the physical RTX 3090 Ti executed real PyTorch/CUDA work;
+- the result completed successfully and was persisted;
+- durable queue, lease, start, and success events were recorded;
+- the evidence bundle passed provenance and sanitization checks.
 
 See:
 
-- `docs/security/aws-control-plane-staging-acceptance.md`.
+- `docs/security/aws-control-plane-staging-acceptance.md`;
+- `docs/security/aws-gpu-workload-acceptance.md`;
+- `docs/security/evidence/aws-control-plane-jpcmain-first-gpu-run-2026-10-01/`.
 
 Remaining Phase 4D staging acceptance must prove:
 
-- real worker registration;
 - RTX 3070 Ti connectivity;
-- RTX 3090 Ti connectivity;
 - RTX 4060 connectivity;
-- diagnostic workloads;
-- GPU benchmark workloads;
+- fleet-wide diagnostic workload coverage;
+- GPU benchmark workloads on the remaining physical GPUs;
 - heterogeneous scheduling;
 - drain/resume;
 - stale-worker recovery;
-- scheduler concurrency;
-- SSE delivery;
-- backup;
-- restore;
-- rollback;
+- scheduler concurrency across multiple control-plane replicas;
+- cross-replica SSE delivery;
+- application rollback;
 - sustained operation.
 
 ## Phase 4E — Production migration
 
-Only after staging acceptance:
+Only after the remaining staging acceptance:
 
 - take a final DigitalOcean backup;
 - freeze authoritative writes;
-- capture the final PostgreSQL state;
+- capture final PostgreSQL production state;
 - restore that state into AWS;
 - verify workers, jobs, events, and migration history;
-- bring the AWS control plane online;
-- reconnect physical workers;
-- run real workload acceptance;
-- move public traffic;
-- retain a rollback window;
-- retire DigitalOcean only after AWS production acceptance.
+- make the restored AWS state authoritative;
+- reconnect and verify the physical worker fleet;
+- run final real workload acceptance;
+- activate authoritative production traffic on the already-accepted AWS ingress;
+- retain a defined rollback window;
+- complete AWS production acceptance;
+- retire DigitalOcean only after acceptance.
+
+The AWS public ingress/TLS path is already accepted as a staging capability.
+Phase 4E must prove authoritative state migration, worker reconnection,
+production traffic, and rollback rather than rediscovering the ingress design.
 
 ## Design principle
 

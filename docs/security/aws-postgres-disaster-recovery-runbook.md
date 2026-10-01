@@ -795,5 +795,10 @@ then re-verified.
 The disaster-recovery implementation and operator runbook required for Phase
 4C are complete in this revision.
 
-Phase 4D staging, worker/workload acceptance, public cutover, and rollback
-acceptance remain separate work and are not implied by Phase 4C completion.
+Phase 4D fleet-wide worker/workload acceptance, multi-replica application
+acceptance, rollback, sustained operation, and Phase 4E production migration
+remain separate work and are not implied by Phase 4C completion.
+
+Single-replica control-plane staging, public ingress/TLS, and the first physical
+JPCMAIN RTX 3090 Ti workload subsequently received their own acceptance
+evidence.

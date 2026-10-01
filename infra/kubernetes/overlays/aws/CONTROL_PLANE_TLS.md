@@ -152,3 +152,20 @@ Before physical workers are enrolled, deployment acceptance must verify:
 - direct Internet access to port 8088 remains unavailable;
 - the production cert-manager Certificate is Ready once steady-state
   certificate management has been enabled.
+
+## Current reference-deployment acceptance
+
+The contracts in this document remain requirements for a fresh deployment.
+
+The current AWS reference deployment has exercised this path successfully:
+
+- public DNS reached the intended AWS ingress;
+- HTTP redirected to HTTPS;
+- the public HTTPS endpoint passed trust and health checks;
+- cert-manager became the steady-state certificate owner;
+- JPCMAIN subsequently completed the first accepted physical GPU workload
+  through that public endpoint.
+
+Future deployments must still satisfy the prerequisites in this document before
+worker enrollment. This acceptance does not weaken the fail-closed hostname,
+Secret, or deployment-local certificate-material boundaries.

@@ -156,3 +156,16 @@ remain healthy through normal public DNS.
 The bootstrap certificate source should not be removed from its secure
 deployment-local recovery location until the cert-manager-managed path has
 been accepted and an explicit rollback policy has been established.
+
+## Current reference-deployment status
+
+The current AWS reference deployment has completed the bootstrap-to-cert-manager
+transition.
+
+Public HTTP/HTTPS ingress was accepted, the production Certificate became
+Ready, and cert-manager is the steady-state owner of `control-plane-tls`.
+
+Deployment-local bootstrap certificate material remains recovery material rather
+than the normal certificate-management path. Real certificates, private keys,
+CA signing keys, fingerprints, and configuration tailored to one issued
+certificate must remain outside this public repository.
