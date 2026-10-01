@@ -4,7 +4,13 @@ This document describes the current GPULink production deployment and its
 operational safety mechanisms.
 
 The current DigitalOcean deployment is transitional infrastructure. It remains
-the production environment until the AWS/K3s migration is accepted.
+the authoritative production environment until the Phase 4E AWS/K3s
+production-state migration and rollback window are accepted.
+
+The AWS/K3s reference environment is already active for Phase 4 staging and has
+accepted PostgreSQL recovery, public HTTPS ingress, the single-replica control
+plane, and the first JPCMAIN RTX 3090 Ti workload. Those staging milestones do
+not change the authoritative-production designation of this document.
 
 ## Production topology
 
@@ -232,7 +238,7 @@ logical and database failures.
 It does not provide complete host-loss disaster recovery because completed
 backups currently live on the same DigitalOcean host.
 
-Phase 4 moves the recovery boundary off-host using S3-backed PostgreSQL backup
+The AWS/K3s staging environment has accepted an off-host recovery boundary using S3-backed PostgreSQL backup
 and WAL archiving.
 
 ## Worker safety boundary

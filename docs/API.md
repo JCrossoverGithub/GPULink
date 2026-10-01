@@ -119,7 +119,7 @@ Relevant request fields:
 
 #### `speech.streaming` session payload
 
-The durable job contains only the bounded metadata needed to schedule a TransGo
+The durable job contains only the bounded metadata needed to schedule a CaptionLink
 streaming session. Audio frames, bearer tokens, callback URLs, executable
 commands, and transport controls are not accepted in this payload:
 
@@ -211,3 +211,11 @@ telemetry will be scraped independently from DCGM Exporter on each worker.
 
 Runs one authenticated reconciliation cycle. Intended for testing and
 administrative recovery; the control plane also runs reconciliation on a timer.
+
+## CaptionLink compatibility naming
+
+The current accessibility application is CaptionLink.
+
+Existing lowercase protocol identifiers such as `transgo-v1` remain unchanged
+where they are part of an established compatibility contract. Product naming
+does not silently change an on-wire protocol version.

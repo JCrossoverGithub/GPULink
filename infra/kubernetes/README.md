@@ -42,6 +42,17 @@ It must not directly contain:
 
 ## AWS Overlay
 
+### Current AWS acceptance status
+
+As of 2026-10-01, the AWS overlay has passed acceptance for PostgreSQL 17,
+off-host recovery integration, the single-replica GPULink control plane, public
+Traefik HTTP/HTTPS ingress, cert-manager-managed TLS, and the first physical
+JPCMAIN RTX 3090 Ti `benchmark.gpu` workload.
+
+Fleet-wide worker acceptance, multi-replica application behavior, application
+rollback, sustained operation, and final production-state migration remain
+open.
+
 The `overlays/aws` directory contains configuration specific to the GPULink AWS production reference architecture.
 
 Examples may include:

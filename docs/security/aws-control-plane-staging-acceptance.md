@@ -248,3 +248,20 @@ The acceptance proves:
 Still outside this acceptance boundary are public ingress/TLS, multi-replica
 control-plane behavior, physical GPU-worker enrollment, real GPU workloads,
 staging rollback, sustained operation, and production cutover.
+
+## Follow-on acceptance
+
+This document intentionally preserves the boundary that existed when the first
+single-replica control-plane staging acceptance was recorded.
+
+Subsequent Phase 4 work expanded that accepted boundary to include public
+Traefik HTTPS/TLS and the first physical GPU workload through the AWS control
+plane.
+
+The first accepted physical workload was executed on the JPCMAIN RTX 3090 Ti
+and is documented in:
+
+- `aws-gpu-workload-acceptance.md`.
+
+The original statements above describing ingress and GPU workloads as outside
+*this document's* acceptance boundary remain historically accurate.

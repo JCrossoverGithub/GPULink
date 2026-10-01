@@ -335,3 +335,14 @@ activation acceptance.
 
 The remaining Phase 4C recovery work is completion of the operator
 disaster-recovery runbook.
+
+## Follow-on application status
+
+This document preserves the database state that existed when recurring recovery
+automation was accepted.
+
+Application/control-plane staging subsequently occurred in the AWS database,
+including creation of the GPULink application tables and successful
+single-replica control-plane staging. The earlier statements above remain
+historical evidence of the database state at the time of this recovery
+acceptance.

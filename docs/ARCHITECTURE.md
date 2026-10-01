@@ -110,9 +110,9 @@ configuration enter the scheduler database. A worker does not advertise
 `speech.streaming` merely because this shared contract exists. Advertisement
 will begin only after the Parakeet adapter and its readiness probe are installed.
 
-TransGo continues to own audio capture, the 16 kHz mono PCM contract,
+CaptionLink continues to own audio capture, the 16 kHz mono PCM contract,
 interim/final caption rendering, and client reconnection behavior. Its existing
-`/v1/transcription` WebSocket protocol will be preserved by a TransGo adapter.
+`/v1/transcription` WebSocket protocol will be preserved by a CaptionLink adapter.
 
 ## Model cache inventory
 
@@ -168,7 +168,12 @@ Internet.
 Workers can be drained before gaming, maintenance, or desktop-heavy work and
 resumed without changing their identity.
 
-The next production platform is planned for AWS on a small K3s deployment.
+The AWS/K3s reference platform is now deployed and undergoing Phase 4
+acceptance. It has accepted PostgreSQL recovery, a single-replica control plane,
+public Traefik/TLS ingress, cert-manager certificate management, and the first
+physical JPCMAIN RTX 3090 Ti workload. The transitional DigitalOcean deployment
+remains authoritative production until the Phase 4E state migration is
+accepted.
 That migration changes the infrastructure layer, not the worker/control-plane
 contracts.
 
@@ -256,8 +261,14 @@ backup.
 The disposable restore never mounts the production PostgreSQL volume and is
 removed after verification.
 
-Current backups remain on the same DigitalOcean host. Off-host backup, WAL
-archiving, and point-in-time recovery are Phase 4 responsibilities.
+Backups for the transitional DigitalOcean production deployment remain on
+that same host.
+
+The AWS/K3s reference environment has accepted the Phase 4 off-host recovery
+architecture: pgBackRest backup to S3, continuous WAL archival, isolated restore
+verification, recurring recovery automation, and named point-in-time recovery.
+That AWS recovery path becomes the authoritative production recovery boundary
+only after the Phase 4E state migration.
 
 ## Durable state machine
 
@@ -326,9 +337,9 @@ Python, shell, and container submission is intentionally excluded.
 
 The llama.cpp RPC backend is not part of the trusted platform data plane.
 
-## TransGo compatibility
+## CaptionLink compatibility
 
-The future TransGo adapter preserves:
+The future CaptionLink adapter preserves:
 
 - WebSocket path `/v1/transcription`;
 - subprotocol `transgo-v1`;
@@ -340,4 +351,19 @@ The future TransGo adapter preserves:
 - P50/P95/P99 capture, queue, inference, and render timing.
 
 The adapter will translate those semantics into a scheduler lease without
-requiring changes to the existing TransGo clients during the first migration.
+requiring changes to the existing CaptionLink clients during the first migration.
+
+## AWS Phase 4 acceptance status
+
+As of 2026-10-01, the AWS/K3s reference architecture has passed acceptance for
+the infrastructure foundation, PostgreSQL persistence and off-host recovery,
+single-replica control-plane deployment, public Traefik HTTPS ingress,
+cert-manager certificate management, and the first physical GPU workload.
+
+The accepted GPU path used the physical JPCMAIN RTX 3090 Ti through the public
+AWS control plane. AWS did not host the GPU itself.
+
+Remaining architecture acceptance includes the RTX 3070 Ti and RTX 4060 worker
+paths, heterogeneous scheduling, drain/recovery behavior, multiple
+control-plane replicas, cross-replica event delivery, application rollback,
+sustained operation, and Phase 4E production-state migration.

@@ -100,3 +100,25 @@ npm run cli -- wait <job-id>
    lease recovery/failure behavior.
 6. Confirm each GPU still has at most one active job.
 7. Confirm neither worker has an inbound GPUlink listener.
+
+## AWS staging acceptance
+
+On 2026-10-01, `benchmark.gpu` completed the first accepted real GPU execution
+through the public AWS GPULink control plane.
+
+The worker was the physical JPCMAIN machine with an NVIDIA GeForce RTX 3090 Ti.
+AWS hosted the GPULink control plane; the GPU itself was not AWS-hosted.
+
+The accepted run used a 4096 x 4096 float32 PyTorch matrix multiplication with
+three warmup iterations and ten measured iterations. The completed benchmark
+result and durable queue, lease, start, and success events were persisted
+through the normal GPULink job lifecycle.
+
+See:
+
+- `security/aws-gpu-workload-acceptance.md`;
+- `security/evidence/aws-control-plane-jpcmain-first-gpu-run-2026-10-01/`.
+
+This establishes the bounded benchmark path on one physical worker. It is not a
+fleet-wide performance characterization and does not replace the remaining
+heterogeneous-worker Phase 4D acceptance.
