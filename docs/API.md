@@ -212,6 +212,94 @@ telemetry will be scraped independently from DCGM Exporter on each worker.
 Runs one authenticated reconciliation cycle. Intended for testing and
 administrative recovery; the control plane also runs reconciliation on a timer.
 
+## Application-facing execution model
+
+GPULink's application-facing contract is intended to support two execution
+shapes.
+
+### Jobs
+
+Jobs represent finite work submitted to the durable scheduler.
+
+Applications may:
+
+- submit a validated workload;
+- declare capability/resource requirements;
+- observe queue/lease/run state;
+- wait for completion;
+- receive a bounded result;
+- inspect durable lifecycle events.
+
+The existing job APIs implement this foundation.
+
+### Sessions
+
+Sessions will represent persistent allocations for interactive or
+latency-sensitive workloads.
+
+The intended application-level operations are conceptually:
+
+```text
+request session
+observe allocation
+connect to session data plane
+renew/observe session
+close session
+observe lifecycle events
+```
+
+This section defines the framework direction. Persistent session endpoints are
+not yet claimed as implemented.
+
+The durable session request should contain scheduling metadata only.
+
+Latency-sensitive payloads such as:
+
+- PCM audio frames;
+- video frames;
+- token streams;
+- tensors;
+- model-server protocol traffic;
+
+must not be copied into PostgreSQL merely because the compute resource was
+scheduled by GPULink.
+
+### Capability requests
+
+Applications should request reusable capabilities rather than hard-code worker
+names.
+
+A future session request may express requirements such as:
+
+```json
+{
+  "capability": "speech.streaming",
+  "requirements": {
+    "minVramMiB": 16384
+  }
+}
+```
+
+The final wire schema may differ.
+
+Worker selection remains a GPULink responsibility.
+
+### SDK boundary
+
+A future GPULink SDK should wrap stable application-facing APIs rather than
+expose deployment internals.
+
+Application code should not need knowledge of:
+
+- AWS;
+- K3s;
+- PostgreSQL;
+- ECR;
+- scheduler locks;
+- worker heartbeat internals.
+
+See `APPLICATION_FRAMEWORK.md` for the framework and application boundary.
+
 ## CaptionLink compatibility naming
 
 The current accessibility application is CaptionLink.

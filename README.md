@@ -126,6 +126,38 @@ GPULink does **not** currently:
 
 Workloads are explicit, versioned, validated capabilities.
 
+## GPULink as an application framework
+
+GPULink Core is the GPU orchestration layer, not a single end-user application.
+
+It provides reusable infrastructure for:
+
+- GPU worker discovery and inventory;
+- capability-aware scheduling;
+- leases and resource ownership;
+- adapter and model readiness;
+- authentication;
+- durable lifecycle state;
+- retries and worker recovery;
+- batch execution;
+- future persistent real-time sessions.
+
+Applications consume those primitives while keeping their own product behavior
+outside the scheduler.
+
+The first real-time integration target is **CaptionLink**, which will use
+GPULink to allocate compatible GPU resources for live speech inference while
+keeping audio capture, caption rendering, and accessibility UX inside
+CaptionLink.
+
+Future reference applications may demonstrate other uses of the same framework,
+including batch scheduling, secure remote inference access, organizational fleet
+management, and external capacity sharing. Those applications are not current
+GPULink Core features.
+
+See [Application Framework](docs/APPLICATION_FRAMEWORK.md) for the architectural
+boundary and execution model.
+
 ## Current architecture
 
 GPULink currently has two intentionally distinct infrastructure roles:
@@ -393,6 +425,8 @@ See [Roadmap](docs/ROADMAP.md) for details.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Application Framework](docs/APPLICATION_FRAMEWORK.md)
+- [ADR 0002 — Application Framework Boundary](docs/adr/0002-application-framework-boundary.md)
 - [API](docs/API.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md)

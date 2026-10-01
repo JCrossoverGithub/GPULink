@@ -127,6 +127,59 @@ adapter type. Absolute paths and manifest-relative paths remain private to the
 worker. Cached inventory is intentionally separate from `warmModels`: cached
 means the model can be loaded locally, while warm means it is already resident.
 
+## Application framework boundary
+
+GPULink Core exposes reusable GPU-compute primitives to applications.
+
+The core owns scheduling, worker state, GPU inventory, capabilities, leases,
+adapter readiness, model locality, authentication, durable lifecycle state, and
+generic execution policy.
+
+Applications own domain-specific user experience and business behavior.
+
+The architecture recognizes two execution primitives:
+
+### Finite jobs
+
+Finite jobs use the durable scheduler lifecycle directly:
+
+```text
+queued -> leased -> running -> succeeded
+   |         |         |
+   |         |         +-------> failed
+   |         +-----------------> queued
+   +---------------------------> cancelled
+```
+
+This remains the appropriate model for bounded work such as GPU benchmarks,
+offline inference, conversion, rendering, or training slices.
+
+### Persistent sessions
+
+Latency-sensitive applications require a different execution shape.
+
+A session allocates compatible compute once and keeps that allocation for a
+longer-lived interaction:
+
+```text
+requested -> allocated -> connecting -> active -> closed
+                                      |
+                                      +-> interrupted
+```
+
+The scheduler remains authoritative for the allocation, but individual
+application messages do not become scheduler jobs.
+
+For example, CaptionLink may request a `speech.streaming` session. GPULink can
+choose a worker based on GPU availability, VRAM, adapter health, and model
+locality. Once allocated, audio frames and caption results travel through a
+streaming data plane rather than PostgreSQL.
+
+This prevents scheduler/database latency from becoming part of every real-time
+inference operation.
+
+See `docs/APPLICATION_FRAMEWORK.md` for the full application boundary.
+
 ## Control and data planes
 
 Scheduling and lifecycle operations go through the control plane. Large or
