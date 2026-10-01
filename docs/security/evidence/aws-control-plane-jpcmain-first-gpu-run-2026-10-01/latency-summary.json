@@ -1,0 +1,58 @@
+{
+  "controlPlaneLifecycle": {
+    "leaseToStartAcknowledgementMs": 1035,
+    "queueToLeaseMs": 5,
+    "queueToSuccessMs": 3306,
+    "startAcknowledgementToSuccessMs": 2266
+  },
+  "crossCheck": {
+    "controlPlaneStartToSuccessMinusWorkerDurationMs": 26,
+    "interpretation": "The difference is consistent with network round-trip plus worker/API orchestration overhead, but is not a direct network latency measurement."
+  },
+  "cudaIterationTiming": {
+    "measuredIterations": 10,
+    "medianMs": 5.561344,
+    "note": "P95 is an interpolated sample percentile over only 10 measured iterations and should not be treated as a robust tail-latency characterization.",
+    "p95InterpolatedMs": 6.388906,
+    "p95SampleCount": 10,
+    "warmupIterations": 3
+  },
+  "estimatedThroughput": {
+    "derivedFrom": "2 * matrixSize^3 / (medianIterationMs / 1000) / 1e12",
+    "independentMeasurement": false,
+    "tflops": 24.713262
+  },
+  "jobId": "job_aefbe4a66e22481cb15f701d33bf3f06",
+  "postRunPublicHttpsReference": {
+    "endpoint": "https://gpulink.schultzsystems.com/healthz",
+    "notOriginalSubmissionLatency": true,
+    "sampleCount": 10,
+    "sampledAtUtc": "2026-10-01T00:22:00Z",
+    "statistics": {
+      "tcpConnect": {
+        "meanMs": 23.445,
+        "medianMs": 23.386,
+        "p95Ms": 25.159
+      },
+      "tlsComplete": {
+        "meanMs": 47.746,
+        "medianMs": 47.495,
+        "p95Ms": 50.778
+      },
+      "total": {
+        "meanMs": 68.127,
+        "medianMs": 68.273,
+        "p95Ms": 72.483
+      },
+      "ttfb": {
+        "meanMs": 68.09,
+        "medianMs": 68.228,
+        "p95Ms": 72.447
+      }
+    }
+  },
+  "workerBenchmarkProcess": {
+    "durationMs": 2240,
+    "scope": "Worker-side benchmark subprocess wall-clock duration; includes Python startup, PyTorch import, CUDA/runtime initialization, allocation, warmup, measured iterations, result serialization, and process teardown."
+  }
+}

@@ -1,0 +1,26 @@
+SANITIZATION STATUS: PASS
+
+This public evidence bundle was built in a private staging directory before
+being copied into the repository.
+
+Only explicitly selected public-safe fields were retained.
+
+The original operator capture was not copied into the public repository.
+
+The completed candidate bundle was scanned before SHA256SUMS was generated.
+
+Rejected-pattern checks included:
+- 12-digit AWS account identifiers
+- private ECR repository URIs
+- AWS access-key identifiers
+- bearer credential values
+- GPULink token assignments
+- database URLs containing passwords
+- PEM private keys
+- email addresses
+- the local operator username
+- the local operator home path
+
+Result: PASS
+
+SHA256SUMS was generated only after this scan completed successfully.

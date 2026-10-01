@@ -1,0 +1,80 @@
+{
+  "snapshotContext": {
+    "capturedAfterRun": true,
+    "dynamicTelemetryRepresentsBenchmarkTime": false,
+    "note": "This worker snapshot was captured during evidence freezing. Dynamic GPU telemetry, adapter-health timestamps, and lastSeenAt must not be interpreted as benchmark-time measurements."
+  },
+  "worker": {
+    "adapterHealth": [
+      {
+        "checkedAt": 1790814806890,
+        "code": "ready",
+        "schemaVersion": 1,
+        "state": "ready",
+        "type": "benchmark.gpu"
+      },
+      {
+        "checkedAt": 1790814806890,
+        "code": "ready",
+        "schemaVersion": 1,
+        "state": "ready",
+        "type": "diagnostic.echo"
+      },
+      {
+        "checkedAt": 1790814806890,
+        "code": "ready",
+        "schemaVersion": 1,
+        "state": "ready",
+        "type": "diagnostic.gpu-status"
+      }
+    ],
+    "adapterManifests": [
+      {
+        "executionMode": "bounded-process",
+        "schemaVersion": 1,
+        "type": "benchmark.gpu",
+        "version": "1.0.0"
+      },
+      {
+        "executionMode": "in-process",
+        "schemaVersion": 1,
+        "type": "diagnostic.echo",
+        "version": "1.0.0"
+      },
+      {
+        "executionMode": "in-process",
+        "schemaVersion": 1,
+        "type": "diagnostic.gpu-status",
+        "version": "1.0.0"
+      }
+    ],
+    "capabilities": [
+      "benchmark.gpu",
+      "diagnostic.echo",
+      "diagnostic.gpu-status"
+    ],
+    "drainMode": false,
+    "gpus": [
+      {
+        "index": 0,
+        "memoryTotalMiB": 24564,
+        "memoryUsedMiB": 2833,
+        "name": "NVIDIA GeForce RTX 3090 Ti",
+        "powerDrawWatts": 35.83,
+        "temperatureC": 52,
+        "utilizationPercent": 15,
+        "uuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4"
+      }
+    ],
+    "id": "worker_4e79d49450844252bd83dd378bac28ef",
+    "labels": {
+      "availabilityProfile": "shared",
+      "hostType": "desktop",
+      "operatingSystem": "windows-wsl"
+    },
+    "lastSeenAt": 1790814987032,
+    "name": "jpcmain-3090ti",
+    "status": "online",
+    "version": "0.1.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "assignedGpuUuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4",
+  "assignedWorkerId": "worker_4e79d49450844252bd83dd378bac28ef",
+  "attempt": 1,
+  "createdAt": 1790813904206,
+  "error": null,
+  "id": "job_aefbe4a66e22481cb15f701d33bf3f06",
+  "maxAttempts": 2,
+  "payload": {
+    "matrixSize": 4096,
+    "measuredIterations": 10,
+    "schemaVersion": 1,
+    "warmupIterations": 3
+  },
+  "priority": 100,
+  "projectId": "gpulink-benchmark",
+  "result": {
+    "backend": "pytorch-cuda",
+    "backendVersion": "2.12.1+cu130",
+    "completedAt": 1790813907543,
+    "cudaRuntimeVersion": "13.0",
+    "dtype": "float32",
+    "durationMs": 2240,
+    "estimatedTflops": 24.713262,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3090 Ti",
+      "uuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4"
+    },
+    "matrixSize": 4096,
+    "measuredIterations": 10,
+    "medianIterationMs": 5.561344,
+    "p95IterationMs": 6.388906,
+    "peakAllocatedMiB": 200.125,
+    "schemaVersion": 1,
+    "startedAt": 1790813905303,
+    "warmupIterations": 3
+  },
+  "status": "succeeded",
+  "type": "benchmark.gpu",
+  "updatedAt": 1790813907512
+}

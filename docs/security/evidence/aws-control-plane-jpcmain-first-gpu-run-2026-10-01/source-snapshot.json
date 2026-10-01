@@ -1,0 +1,175 @@
+{
+  "controlPlane": {
+    "containerRestarts": 0,
+    "imageDigest": "sha256:03c5bbdf5487f11abe020cad800192c3ca28c337ede958333bc2be6ac1e18fc5",
+    "podCreatedAtUtc": "2026-09-30T18:06:24Z",
+    "podUid": "868a6176-258b-4ea6-8d9a-f607d082ab98"
+  },
+  "events": [
+    {
+      "createdAt": 1790813904206,
+      "payload": {
+        "priority": 100,
+        "projectId": "gpulink-benchmark",
+        "type": "benchmark.gpu"
+      },
+      "sequence": 10,
+      "type": "job.queued"
+    },
+    {
+      "createdAt": 1790813904211,
+      "payload": {
+        "attempt": 1,
+        "gpuUuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4",
+        "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+      },
+      "sequence": 11,
+      "type": "job.leased"
+    },
+    {
+      "createdAt": 1790813905246,
+      "payload": {
+        "attempt": 1,
+        "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+      },
+      "sequence": 12,
+      "type": "job.started"
+    },
+    {
+      "createdAt": 1790813907512,
+      "payload": {
+        "attempt": 1,
+        "workerId": "worker_4e79d49450844252bd83dd378bac28ef"
+      },
+      "sequence": 13,
+      "type": "job.succeeded"
+    }
+  ],
+  "job": {
+    "assignedGpuUuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4",
+    "assignedWorkerId": "worker_4e79d49450844252bd83dd378bac28ef",
+    "attempt": 1,
+    "createdAt": 1790813904206,
+    "error": null,
+    "id": "job_aefbe4a66e22481cb15f701d33bf3f06",
+    "maxAttempts": 2,
+    "payload": {
+      "matrixSize": 4096,
+      "measuredIterations": 10,
+      "schemaVersion": 1,
+      "warmupIterations": 3
+    },
+    "priority": 100,
+    "projectId": "gpulink-benchmark",
+    "result": {
+      "backend": "pytorch-cuda",
+      "backendVersion": "2.12.1+cu130",
+      "completedAt": 1790813907543,
+      "cudaRuntimeVersion": "13.0",
+      "dtype": "float32",
+      "durationMs": 2240,
+      "estimatedTflops": 24.713262,
+      "gpu": {
+        "name": "NVIDIA GeForce RTX 3090 Ti",
+        "uuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4"
+      },
+      "matrixSize": 4096,
+      "measuredIterations": 10,
+      "medianIterationMs": 5.561344,
+      "p95IterationMs": 6.388906,
+      "peakAllocatedMiB": 200.125,
+      "schemaVersion": 1,
+      "startedAt": 1790813905303,
+      "warmupIterations": 3
+    },
+    "status": "succeeded",
+    "type": "benchmark.gpu",
+    "updatedAt": 1790813907512
+  },
+  "worker": {
+    "adapterHealth": [
+      {
+        "checkedAt": 1790814806890,
+        "code": "ready",
+        "schemaVersion": 1,
+        "state": "ready",
+        "type": "benchmark.gpu"
+      },
+      {
+        "checkedAt": 1790814806890,
+        "code": "ready",
+        "schemaVersion": 1,
+        "state": "ready",
+        "type": "diagnostic.echo"
+      },
+      {
+        "checkedAt": 1790814806890,
+        "code": "ready",
+        "schemaVersion": 1,
+        "state": "ready",
+        "type": "diagnostic.gpu-status"
+      }
+    ],
+    "adapterManifests": [
+      {
+        "executionMode": "bounded-process",
+        "schemaVersion": 1,
+        "type": "benchmark.gpu",
+        "version": "1.0.0"
+      },
+      {
+        "executionMode": "in-process",
+        "schemaVersion": 1,
+        "type": "diagnostic.echo",
+        "version": "1.0.0"
+      },
+      {
+        "executionMode": "in-process",
+        "schemaVersion": 1,
+        "type": "diagnostic.gpu-status",
+        "version": "1.0.0"
+      }
+    ],
+    "capabilities": [
+      "benchmark.gpu",
+      "diagnostic.echo",
+      "diagnostic.gpu-status"
+    ],
+    "drainMode": false,
+    "gpus": [
+      {
+        "index": 0,
+        "memoryTotalMiB": 24564,
+        "memoryUsedMiB": 2833,
+        "name": "NVIDIA GeForce RTX 3090 Ti",
+        "powerDrawWatts": 35.83,
+        "temperatureC": 52,
+        "utilizationPercent": 15,
+        "uuid": "GPU-326a4232-3d30-423b-29a1-66f2d054a0d4"
+      }
+    ],
+    "id": "worker_4e79d49450844252bd83dd378bac28ef",
+    "labels": {
+      "availabilityProfile": "shared",
+      "hostType": "desktop",
+      "operatingSystem": "windows-wsl"
+    },
+    "lastSeenAt": 1790814987032,
+    "name": "jpcmain-3090ti",
+    "status": "online",
+    "version": "0.1.0"
+  },
+  "workerSnapshotContext": {
+    "capturedAfterRun": true,
+    "dynamicFields": [
+      "worker.adapterHealth[].checkedAt",
+      "worker.gpus[].memoryUsedMiB",
+      "worker.gpus[].utilizationPercent",
+      "worker.gpus[].temperatureC",
+      "worker.gpus[].powerDrawWatts",
+      "worker.lastSeenAt"
+    ],
+    "dynamicTelemetryRepresentsBenchmarkTime": false,
+    "purpose": "Freeze-time worker identity, capability, adapter-health, and inventory evidence."
+  }
+}
