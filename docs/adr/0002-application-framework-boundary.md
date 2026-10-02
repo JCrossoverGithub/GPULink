@@ -61,8 +61,11 @@ resource while latency-sensitive application traffic uses a separate data plane.
 
 CaptionLink will be the first real-time reference integration target.
 
-Potential future reference applications include GPULink Batch, GPULink Relay,
-GPULink Fleet, and GPULink Exchange.
+Potential future reference applications include batch/HPC-style compute,
+secure remote inference, organizational fleet management, and external capacity
+sharing.
+
+Those are architectural use-case categories, not committed product names.
 
 Their product-specific business logic will not be incorporated into GPULink Core.
 

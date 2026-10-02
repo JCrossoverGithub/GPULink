@@ -417,8 +417,12 @@ The current architecture rework is organized into major phases:
 - **Phase 1 — PostgreSQL persistence:** complete
 - **Phase 2 — distributed scheduler/event correctness:** complete
 - **Phase 3 — production hardening and recovery:** complete
-- **Phase 4 — AWS + K3s platform migration:** in progress
-- **Phase 5 — workload/platform expansion:** future
+- **Phase 4 — AWS + K3s production GPU fabric:** in progress
+- **Phase 5 — application platform (jobs, sessions, data plane, SDK):** future
+- **Phase 6 — reference applications (CaptionLink first):** future
+- **Phase 7 — private multi-user GPU fleet:** future
+- **Phase 8 — cross-trust distributed GPU network:** long-term future
+- **Phase 9 — optional capacity exchange:** long-term concept
 
 See [Roadmap](docs/ROADMAP.md) for details.
 
