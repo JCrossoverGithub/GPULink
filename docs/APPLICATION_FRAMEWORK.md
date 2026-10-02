@@ -197,7 +197,7 @@ Conceptually:
   "capability": "speech.streaming",
   "requirements": {
     "minVramMiB": 16384,
-    "adapter": "captionlink.streaming"
+    "adapter": "speech.streaming.multitalker"
   },
   "preferences": {
     "warmModels": [
@@ -246,6 +246,34 @@ compatible worker with the required models already warm.
 
 Warm-model preference must remain a scheduling optimization rather than an
 application-specific special case.
+
+## Resource isolation and sharing
+
+GPULink must distinguish "the operating system can run multiple GPU processes"
+from "the platform has a validated resource-sharing mechanism."
+
+For the current heterogeneous workstation/consumer fleet, the safe default is:
+
+```text
+one active GPULink allocation -> one whole GPU
+```
+
+unless the worker explicitly advertises a sharing capability that has its own
+resource-accounting, interference, failure-isolation, and acceptance evidence.
+
+Future sharing mechanisms may include:
+
+- time slicing;
+- memory-aware concurrency;
+- hardware partitioning where supported;
+- workload-specific co-scheduling.
+
+Those mechanisms must be modeled explicitly. They must not be inferred merely
+because two workloads can technically execute at the same time.
+
+This is especially important for latency-sensitive sessions, where an unrelated
+workload can create unacceptable interference even when both workloads fit in
+VRAM.
 
 ## Application contract
 
@@ -396,6 +424,10 @@ either design.
 Reference applications should demonstrate independent uses of the same core
 framework.
 
+Names and labels in this section are working descriptions rather than
+committed product names. Their purpose is to prove distinct architectural
+uses of GPULink Core; naming may change as the boundaries mature.
+
 ### CaptionLink
 
 Status: existing external project / first real-time integration target.
@@ -409,7 +441,7 @@ The GPULink integration is intended to demonstrate:
 - diarization;
 - session recovery.
 
-### GPULink Batch
+### Batch / HPC-style client
 
 Status: future reference application.
 
@@ -424,7 +456,7 @@ Would demonstrate:
 
 It should consume GPULink Core rather than become a second scheduler.
 
-### GPULink Relay
+### Secure remote inference client
 
 Status: future reference application.
 
@@ -437,7 +469,7 @@ Would demonstrate:
 
 It must not reduce GPULink to an unauthenticated port-forwarding system.
 
-### GPULink Fleet
+### Organizational fleet application
 
 Status: future reference application.
 
@@ -454,7 +486,7 @@ Would demonstrate organizational use of GPULink:
 
 Organization-specific UX belongs here rather than in GPULink Core.
 
-### GPULink Exchange
+### Capacity exchange concept
 
 Status: future concept.
 
@@ -499,6 +531,25 @@ These examples describe the desired abstraction, not committed SDK syntax.
 
 The SDK must not hide unsafe behavior or bypass scheduler ownership.
 
+## Deployment responsibility
+
+GPULink Core can report hardware and software capabilities, but it does not
+determine whether a particular deployment model is legally, commercially, or
+operationally appropriate.
+
+Deployment owners remain responsible for validating requirements such as:
+
+- GPU and driver licensing;
+- software/model licensing;
+- commercial-service restrictions;
+- organizational policy;
+- data-handling requirements;
+- isolation requirements.
+
+This becomes especially important before cross-trust or capacity-exchange use
+cases. Hardware compatibility alone must not be interpreted as permission to
+operate a given commercial service model.
+
 ## Repository boundary
 
 The GPULink repository should contain:
@@ -516,10 +567,10 @@ The GPULink repository should contain:
 Separate application repositories may contain:
 
 - CaptionLink;
-- GPULink Batch;
-- GPULink Relay;
-- GPULink Fleet;
-- GPULink Exchange;
+- a batch / HPC-style client;
+- a secure remote inference client;
+- an organizational fleet application;
+- a capacity-exchange application;
 - other products built on the framework.
 
 A reference application may live in this repository temporarily during early
