@@ -400,18 +400,6 @@ install \
   "${service_source}" \
   "${service_file}"
 
-restart_count_before="$(
-  systemctl show \
-    gpulink-worker.service \
-    --property=NRestarts \
-    --value \
-    2>/dev/null || true
-)"
-
-if [[ ! ${restart_count_before} =~ ^[0-9]+$ ]]; then
-  restart_count_before=0
-fi
-
 systemctl daemon-reload
 systemctl enable --now gpulink-worker.service
 
@@ -437,6 +425,18 @@ main_pid="$(
 if [[ ! ${main_pid} =~ ^[1-9][0-9]*$ ]]; then
   show_service_failure_context
   die "gpulink-worker.service does not have a live main process."
+fi
+
+restart_count_baseline="$(
+  systemctl show \
+    gpulink-worker.service \
+    --property=NRestarts \
+    --value
+)"
+
+if [[ ! ${restart_count_baseline} =~ ^[0-9]+$ ]]; then
+  show_service_failure_context
+  die "gpulink-worker.service returned an invalid restart count."
 fi
 
 echo "SERVICE STABILITY: verifying the worker for 8 seconds"
@@ -474,13 +474,13 @@ for (( second = 1; second <= 8; second++ )); do
   fi
 
   if [[ ! ${current_restart_count} =~ ^[0-9]+$ \
-     || ${current_restart_count} -ne ${restart_count_before} ]]; then
+     || ${current_restart_count} -ne ${restart_count_baseline} ]]; then
     show_service_failure_context
     die "gpulink-worker.service restart count changed during the post-install stability window."
   fi
 done
 
-echo "PASS: worker remained stable with PID ${main_pid} and NRestarts=${restart_count_before}."
+echo "PASS: worker remained stable with PID ${main_pid} and NRestarts=${restart_count_baseline}."
 
 systemctl --no-pager --full status gpulink-worker.service
 
