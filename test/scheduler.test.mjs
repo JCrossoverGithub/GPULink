@@ -7,7 +7,7 @@ import {
   submitJob,
 } from "./helpers.mjs";
 
-test("scheduler chooses the smallest sufficient GPU in a heterogeneous fleet", async () => {
+test("scheduler chooses the smallest sufficient GPU when utilization is equal", async () => {
   const context = createTestContext();
 
   try {
@@ -85,6 +85,72 @@ test("scheduler chooses the smallest sufficient GPU in a heterogeneous fleet", a
     assert.equal(
       largeJob.assignedGpuUuid,
       "GPU-24GB",
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+
+test("scheduler prefers lower utilization before smaller VRAM headroom", async () => {
+  const context = createTestContext();
+
+  try {
+    const smallerBusy = await registerWorker(
+      context,
+      {
+        name: "smaller-busy-worker",
+        gpus: [
+          gpu({
+            uuid: "GPU-8GB-BUSY",
+            memoryTotalMiB: 8192,
+            utilizationPercent: 43,
+          }),
+        ],
+      },
+    );
+
+    const largerIdle = await registerWorker(
+      context,
+      {
+        name: "larger-idle-worker",
+        gpus: [
+          gpu({
+            uuid: "GPU-24GB-IDLE",
+            memoryTotalMiB: 24576,
+            utilizationPercent: 8,
+          }),
+        ],
+      },
+    );
+
+    const job = await submitJob(
+      context,
+      {
+        constraints: {
+          minVramMiB: 4096,
+          capabilities: [
+            "diagnostic.echo",
+          ],
+        },
+      },
+    );
+
+    assert.equal(
+      job.status,
+      "leased",
+    );
+    assert.equal(
+      job.assignedWorkerId,
+      largerIdle.id,
+    );
+    assert.equal(
+      job.assignedGpuUuid,
+      "GPU-24GB-IDLE",
+    );
+    assert.notEqual(
+      job.assignedWorkerId,
+      smallerBusy.id,
     );
   } finally {
     await context.close();
