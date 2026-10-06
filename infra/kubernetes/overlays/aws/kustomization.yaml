@@ -16,3 +16,4 @@ resources:
 
 patches:
   - path: postgres-pgbackrest-patch.yaml
+  - path: control-plane-multi-replica-patch.yaml

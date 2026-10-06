@@ -49,9 +49,9 @@ off-host recovery integration, the single-replica GPULink control plane, public
 Traefik HTTP/HTTPS ingress, cert-manager-managed TLS, and the first physical
 JPCMAIN RTX 3090 Ti `benchmark.gpu` workload.
 
-Fleet-wide worker acceptance, multi-replica application behavior, application
-rollback, sustained operation, and final production-state migration remain
-open.
+Phase 4D fleet-wide worker acceptance, multi-replica application behavior,
+application rollback, and sustained operation are accepted. Final authoritative
+production-state migration remains Phase 4E work.
 
 The `overlays/aws` directory contains configuration specific to the GPULink AWS production reference architecture.
 

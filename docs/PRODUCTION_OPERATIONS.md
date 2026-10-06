@@ -7,10 +7,12 @@ The current DigitalOcean deployment is transitional infrastructure. It remains
 the authoritative production environment until the Phase 4E AWS/K3s
 production-state migration and rollback window are accepted.
 
-The AWS/K3s reference environment is already active for Phase 4 staging and has
-accepted PostgreSQL recovery, public HTTPS ingress, the single-replica control
-plane, and the first JPCMAIN RTX 3090 Ti workload. Those staging milestones do
-not change the authoritative-production designation of this document.
+The AWS/K3s reference environment has completed Phase 4D staging acceptance,
+including PostgreSQL recovery, public HTTPS ingress, all three physical GPU
+workers, the two-replica control plane, cross-replica scheduler/event behavior,
+application rollback, and sustained operation. Those staging milestones do not
+change the authoritative-production designation of this document; DigitalOcean
+remains authoritative until Phase 4E migration and rollback-window acceptance.
 
 ## Production topology
 

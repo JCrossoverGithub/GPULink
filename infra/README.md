@@ -46,10 +46,10 @@ runbook, single-replica control-plane staging, public Traefik/TLS ingress,
 cert-manager certificate management, and the first physical JPCMAIN RTX 3090 Ti
 workload have been accepted.
 
-Remaining Phase 4 work includes the other physical workers, heterogeneous
-scheduling, multi-replica scheduler/event behavior, application rollback,
-sustained operation, and the authoritative production migration from
-DigitalOcean.
+Phase 4D AWS staging acceptance is complete, including fleet-wide physical
+workers, heterogeneous scheduling, multi-replica scheduler/event behavior,
+application rollback, and sustained operation. The authoritative production
+migration from DigitalOcean remains Phase 4E work.
 
 ## Deployment-local Terraform backend
 
