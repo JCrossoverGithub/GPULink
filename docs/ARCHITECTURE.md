@@ -408,15 +408,28 @@ requiring changes to the existing CaptionLink clients during the first migration
 
 ## AWS Phase 4 acceptance status
 
-As of 2026-10-01, the AWS/K3s reference architecture has passed acceptance for
-the infrastructure foundation, PostgreSQL persistence and off-host recovery,
-single-replica control-plane deployment, public Traefik HTTPS ingress,
-cert-manager certificate management, and the first physical GPU workload.
+As of 2026-10-05, Phase 4D AWS/K3s staging acceptance is complete.
 
-The accepted GPU path used the physical JPCMAIN RTX 3090 Ti through the public
-AWS control plane. AWS did not host the GPU itself.
+The accepted staging architecture includes:
 
-Remaining architecture acceptance includes the RTX 3070 Ti and RTX 4060 worker
-paths, heterogeneous scheduling, drain/recovery behavior, multiple
-control-plane replicas, cross-replica event delivery, application rollback,
-sustained operation, and Phase 4E production-state migration.
+- PostgreSQL persistence and off-host recovery;
+- public Traefik HTTPS ingress and cert-manager certificate management;
+- RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 physical worker paths;
+- heterogeneous whole-GPU scheduling;
+- drain/resume and stale-worker recovery;
+- two control-plane replicas;
+- PostgreSQL advisory-lock scheduler exclusion across replicas;
+- cross-replica durable event/SSE delivery;
+- Kubernetes-native immutable-image application rollback;
+- verified PostgreSQL backup before rollback;
+- sustained three-worker operation with stable control-plane and PostgreSQL
+  Pods.
+
+AWS hosts the control plane and persistence tier; the accepted GPUs remain
+physical GPULink workers outside AWS.
+
+The remaining Phase 4 architecture boundary is Phase 4E authoritative
+production-state migration and rollback-window acceptance. Until that migration
+is accepted, DigitalOcean remains authoritative production.
+
+See `docs/security/aws-phase4d-staging-acceptance-2026-10-05.md`.

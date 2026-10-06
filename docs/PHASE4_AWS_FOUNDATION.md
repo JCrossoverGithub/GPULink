@@ -21,10 +21,10 @@ Traefik ingress, trusted TLS, cert-manager certificate management, physical
 JPCMAIN worker registration, and the first real CUDA workload through the
 public AWS GPULink control plane on the JPCMAIN RTX 3090 Ti.
 
-Phase 4 is not yet complete. Remaining work includes RTX 3070 Ti and RTX 4060
-AWS connectivity, fleet-wide diagnostic and benchmark acceptance,
-heterogeneous scheduling, drain/recovery behavior, multi-replica scheduler and
-SSE acceptance, application rollback, sustained operation, and final
+Phase 4D AWS staging acceptance is complete as of 2026-10-05. The physical
+fleet, heterogeneous scheduler, drain/recovery behavior, multi-replica
+scheduler/SSE paths, application rollback, and sustained operation are accepted.
+Phase 4 is not yet complete because Phase 4E must still perform the final
 authoritative production migration from DigitalOcean.
 
 The transitional DigitalOcean deployment remains authoritative production
@@ -108,7 +108,7 @@ As of 2026-10-01, JPCMAIN is the first physical worker with accepted
 end-to-end AWS workload evidence. Its RTX 3090 Ti executed a real
 `benchmark.gpu` PyTorch/CUDA workload through the public AWS control plane.
 
-The RTX 3070 Ti and RTX 4060 remain part of the physical fleet but still require
+The RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 physical workers have completed
 their Phase 4D AWS connectivity and workload acceptance.
 
 ## Network model
@@ -443,23 +443,30 @@ See:
 - `docs/security/aws-gpu-workload-acceptance.md`;
 - `docs/security/evidence/aws-control-plane-jpcmain-first-gpu-run-2026-10-01/`.
 
-Remaining Phase 4D staging acceptance must prove:
+Phase 4D staging acceptance subsequently established:
 
-- RTX 3070 Ti connectivity;
-- RTX 4060 connectivity;
+- RTX 3070 Ti and RTX 4060 connectivity alongside the accepted RTX 3090 Ti;
 - fleet-wide diagnostic workload coverage;
 - GPU benchmark workloads on the remaining physical GPUs;
-- heterogeneous scheduling;
+- heterogeneous scheduling and ineligible-worker rejection;
 - drain/resume;
 - stale-worker recovery;
-- scheduler concurrency across multiple control-plane replicas;
+- scheduler concurrency across two control-plane replicas;
+- PostgreSQL advisory-lock scheduler exclusion;
 - cross-replica SSE delivery;
-- application rollback;
-- sustained operation.
+- application rollback with a fresh verified pgBackRest backup;
+- no-build restoration of the accepted immutable image;
+- sustained operation with the complete physical fleet.
+
+The final sustained soak completed 30/30 jobs on attempt 1 with zero failures,
+while all three workers remained online, both control-plane replicas remained
+Ready, and control-plane/PostgreSQL restart counts did not increase.
+
+See `docs/security/aws-phase4d-staging-acceptance-2026-10-05.md`.
 
 ## Phase 4E — Production migration
 
-Only after the remaining staging acceptance:
+With Phase 4D staging acceptance complete, Phase 4E must:
 
 - take a final DigitalOcean backup;
 - freeze authoritative writes;

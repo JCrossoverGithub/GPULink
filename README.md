@@ -58,29 +58,31 @@ The AWS/K3s reference environment has now accepted:
 - PostgreSQL 17 on dedicated encrypted gp3 storage;
 - immutable PostgreSQL and control-plane images distributed through ECR;
 - host-side ECR authentication without exposing AWS credentials to Pods;
-- pgBackRest mutual TLS;
-- continuous WAL archival and off-host PostgreSQL backup storage;
-- isolated restore verification and named point-in-time recovery;
-- recurring backup and restore-verification automation;
-- the PostgreSQL disaster-recovery runbook;
-- a single-replica GPULink control plane backed by AWS PostgreSQL;
-- public Traefik HTTP-to-HTTPS ingress;
-- trusted public TLS and cert-manager certificate management;
-- physical JPCMAIN worker registration through the public AWS control plane;
-- a real `benchmark.gpu` CUDA workload executed on the physical RTX 3090 Ti;
-- persisted benchmark results and durable queue, lease, start, and success
-  events.
+- pgBackRest mutual TLS, continuous WAL archival, off-host backup storage,
+  isolated restore verification, and named point-in-time recovery;
+- public Traefik HTTP-to-HTTPS ingress, trusted public TLS, and cert-manager
+  steady-state certificate management;
+- physical RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 workers through the public AWS
+  control plane;
+- fleet-wide diagnostics and real CUDA benchmark acceptance;
+- heterogeneous scheduling, drain/resume, and stale-worker recovery;
+- a two-replica control plane with cross-replica scheduler exclusion and SSE
+  delivery;
+- Kubernetes-native immutable-image application rollback with a verified fresh
+  PostgreSQL backup and no build during rollback;
+- sustained three-worker staging operation with 30/30 first-attempt job
+  successes, zero failures, and no additional control-plane or PostgreSQL
+  restarts.
 
-The physical GPU fleet remains:
+The physical GPU fleet is:
 
 - MAINPC — RTX 3070 Ti 8 GB;
 - JPCMAIN — RTX 3090 Ti 24 GB;
 - laptop — RTX 4060 8 GB.
 
-AWS staging currently proves the complete JPCMAIN RTX 3090 Ti path. Remaining
-Phase 4D work expands that acceptance across the RTX 3070 Ti and RTX 4060,
-heterogeneous scheduling, drain/recovery behavior, multi-replica scheduler and
-event correctness, application rollback, and sustained operation.
+Phase 4D AWS staging acceptance is complete as of 2026-10-05. Phase 4E
+production-state migration is next. DigitalOcean remains authoritative
+production until Phase 4E migration and rollback-window acceptance are complete.
 
 See [Roadmap](docs/ROADMAP.md) for the current project plan.
 

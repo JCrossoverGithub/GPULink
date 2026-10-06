@@ -161,9 +161,10 @@ Accepted through 2026-10-01 are:
 The first accepted AWS GPU workload uses an AWS-hosted **control plane** with a
 physical JPCMAIN GPU worker. It is not an AWS-hosted GPU.
 
-Remaining Phase 4 work centers on fleet-wide staging acceptance,
-multi-replica behavior, application rollback, sustained operation, and final
-authoritative production migration from DigitalOcean.
+Phase 4D fleet-wide AWS staging acceptance is complete as of 2026-10-05,
+including multi-replica behavior, application rollback, and sustained operation.
+Remaining Phase 4 work is the Phase 4E authoritative production migration from
+DigitalOcean.
 
 The initial target deliberately remains small:
 
@@ -213,9 +214,9 @@ Accepted:
 - cert-manager steady-state certificate management;
 - single-replica control-plane staging.
 
-Remaining:
+Subsequently accepted during Phase 4D:
 
-- Kubernetes-native application rollback acceptance;
+- Kubernetes-native application rollback;
 - multi-replica scheduler-lock verification;
 - cross-replica SSE/event verification.
 
@@ -246,41 +247,38 @@ operational evidence; the automation path itself has already been accepted.
 
 ### Phase 4D — AWS staging acceptance
 
-**Status: in progress**
+**Status: accepted — 2026-10-05**
 
-Accepted through 2026-10-01:
+Accepted:
 
-- non-production GPULink control-plane deployment;
+- non-production AWS/K3s GPULink control-plane deployment;
 - public ingress and trusted TLS;
 - cert-manager steady-state certificate management;
-- PostgreSQL-backed application persistence;
-- physical JPCMAIN worker registration;
-- a real `benchmark.gpu` CUDA workload;
-- durable queue, lease, start, and success events;
-- persisted benchmark result;
-- post-run public HTTPS latency sampling;
-- workload-evidence provenance and sanitization;
-- Phase 4C backup and restore foundations.
-
-Still to prove:
-
-- RTX 3070 Ti connectivity to AWS;
-- RTX 4060 connectivity to AWS;
+- PostgreSQL-backed application persistence and Phase 4C recovery foundations;
+- RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 connectivity to AWS;
 - fleet-wide diagnostic workload coverage;
-- GPU benchmark acceptance on the remaining physical GPUs;
-- heterogeneous scheduling across multiple eligible workers;
+- real GPU benchmark acceptance across the physical fleet;
+- heterogeneous scheduling across eligible workers;
+- rejection of ineligible placement;
 - drain/resume;
-- stale-worker recovery;
-- scheduler concurrency with multiple control-plane replicas;
+- stale-worker recovery and job reassignment;
+- two control-plane replicas in the AWS overlay;
+- scheduler concurrency with PostgreSQL advisory-lock exclusion;
 - cross-replica SSE/event delivery;
-- application rollback;
-- sustained soak operation.
+- Kubernetes-native application rollback to a retained immutable image;
+- fresh verified pgBackRest backup before rollback;
+- no-build rollback and health/readiness validation;
+- sustained soak operation with 30/30 first-attempt successes, zero failures,
+  three healthy workers, two Ready control-plane replicas, and no additional
+  control-plane or PostgreSQL restarts.
+
+See `docs/security/aws-phase4d-staging-acceptance-2026-10-05.md`.
 
 ### Phase 4E — Production migration
 
-**Status: future**
+**Status: next — not started**
 
-Only after the remaining staging acceptance:
+Phase 4D staging acceptance is complete. Phase 4E must now:
 
 - take a final DigitalOcean backup;
 - freeze authoritative writes;
@@ -295,8 +293,8 @@ Only after the remaining staging acceptance:
 - complete AWS production acceptance;
 - retire DigitalOcean only after acceptance.
 
-AWS ingress and public TLS are already accepted as staging capabilities. Phase
-4E therefore focuses on authoritative state, production traffic, final worker
+AWS ingress and public TLS are already accepted staging capabilities. Phase 4E
+therefore focuses on authoritative state, production traffic, final worker
 reconnection, and rollback.
 
 ## Phase 5 — Application platform
