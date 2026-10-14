@@ -263,7 +263,7 @@ test("cached model locality is preferred after warm locality and before utilizat
             modelId: "example/model",
             revision: "main",
             adapterType:
-              "speech.streaming",
+              "diagnostic.echo",
           },
         ],
         gpus: [

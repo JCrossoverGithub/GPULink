@@ -363,6 +363,51 @@ export function choosePlacement(
       continue;
     }
 
+    if (requirements.adapter != null) {
+      const manifests = Array.isArray(worker.adapterManifests)
+        ? worker.adapterManifests
+        : [];
+
+      const matchingManifests = manifests.filter(
+        (manifest) =>
+          manifest?.schemaVersion === 2 &&
+          manifest.adapterId === requirements.adapter &&
+          manifest.executionMode === "streaming-gateway" &&
+          requiredCapabilities.has(manifest.type) &&
+          (
+            workload.capability == null ||
+            manifest.type === workload.capability
+          ),
+      );
+
+      // Ambiguous or absent implementation identity fails closed.
+      if (matchingManifests.length !== 1) {
+        continue;
+      }
+
+      const matched = matchingManifests[0];
+
+      const reports = Array.isArray(worker.adapterHealth)
+        ? worker.adapterHealth
+        : [];
+
+      const matchingHealth = reports.filter(
+        (health) =>
+          health?.schemaVersion === 2 &&
+          health.adapterId === matched.adapterId &&
+          health.type === matched.type,
+      );
+
+      // Exactly one report must confirm readiness.
+      if (
+        matchingHealth.length !== 1 ||
+        matchingHealth[0].state !== "ready" ||
+        matchingHealth[0].code !== "ready"
+      ) {
+        continue;
+      }
+    }
+
     for (const gpu of worker.gpus) {
       if (
         occupiedGpus.has(
@@ -398,7 +443,8 @@ export function choosePlacement(
         ).some(
           (entry) =>
             entry.modelId ===
-            requirements.model,
+              requirements.model &&
+              requiredCapabilities.has(entry.adapterType),
         );
 
       candidates.push({

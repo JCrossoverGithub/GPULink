@@ -883,8 +883,13 @@ function validateHeartbeat(input, now) {
 }
 
 function validateAdvertisedAdapterState(object, capabilities) {
-  const manifests = validateAdapterManifests(object.adapterManifests ?? []);
-  const health = validateAdapterHealth(object.adapterHealth ?? []);
+  const manifests = validateAdapterManifests(
+    object.adapterManifests ?? [],
+  );
+  const health = validateAdapterHealth(
+    object.adapterHealth ?? [],
+  );
+
   for (const manifest of manifests) {
     if (!capabilities.includes(manifest.type)) {
       throw new ValidationError(
@@ -892,18 +897,58 @@ function validateAdvertisedAdapterState(object, capabilities) {
       );
     }
   }
-  if (health.length === 0) return { manifests, health };
 
-  const manifestTypes = new Set(manifests.map((manifest) => manifest.type));
-  const readyTypes = new Set(
-    health.filter((report) => report.state === "ready").map((report) => report.type),
+  // Preserve legacy v1 workers without health reports.
+  // V2 implementations require explicit identity-aware health.
+  if (health.length === 0) {
+    if (manifests.some((entry) => entry.schemaVersion === 2)) {
+      throw new ValidationError(
+        "v2 adapter manifests require adapter health reports",
+      );
+    }
+    return { manifests, health };
+  }
+
+  const identityOf = (entry) =>
+    JSON.stringify([
+      entry.schemaVersion,
+      entry.type,
+      entry.adapterId ?? null,
+    ]);
+
+  const readyReports = health.filter(
+    (report) => report.state === "ready",
   );
-  if (!sameStringSet(new Set(capabilities), readyTypes)
-    || !sameStringSet(manifestTypes, readyTypes)) {
+
+  const manifestIdentities = new Set(
+    manifests.map(identityOf),
+  );
+
+  const readyIdentities = new Set(
+    readyReports.map(identityOf),
+  );
+
+  const readyTypes = new Set(
+    readyReports.map((report) => report.type),
+  );
+
+  if (
+    !sameStringSet(manifestIdentities, readyIdentities) ||
+    !sameStringSet(new Set(capabilities), readyTypes)
+  ) {
+    const usesV2Identity = manifests.some(
+      (entry) => entry.schemaVersion === 2,
+    ) || health.some(
+      (entry) => entry.schemaVersion === 2,
+    );
+
     throw new ValidationError(
-      "ready adapter health, manifests, and advertised capabilities must match",
+      usesV2Identity
+        ? "ready adapter manifests, health, and advertised capabilities must match by identity"
+        : "ready adapter health, manifests, and advertised capabilities must match",
     );
   }
+
   return { manifests, health };
 }
 
