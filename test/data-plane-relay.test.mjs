@@ -14,6 +14,9 @@ import {
   DATA_PLANE_CLOSE_CODES,
   DATA_PLANE_PATH,
   DATA_PLANE_SUBPROTOCOL,
+  DATA_PLANE_SUBPROTOCOL_V2,
+  DATA_PLANE_RELAY_READY_V2,
+  parseDataPlaneProtocols,
 } from "../src/shared/data-plane-contract.mjs";
 
 const tokens = {
@@ -1210,6 +1213,107 @@ test(
       client?.terminate();
       workerSocket?.terminate();
 
+      await app.stop();
+    }
+  },
+);
+
+
+test(
+  "v2 protocol offers require exactly one version and one grant",
+  () => {
+    const grant = "gdp1.a.b";
+    const offered = `${DATA_PLANE_SUBPROTOCOL_V2}, gpulink.grant.${grant}`;
+    assert.deepEqual(parseDataPlaneProtocols(offered), {
+      protocol: DATA_PLANE_SUBPROTOCOL_V2, grant,
+    });
+    assert.equal(parseDataPlaneProtocols(
+      `${DATA_PLANE_SUBPROTOCOL}, ${DATA_PLANE_SUBPROTOCOL_V2}, gpulink.grant.${grant}`,
+    ), null);
+    assert.equal(parseDataPlaneProtocols(
+      `${DATA_PLANE_SUBPROTOCOL_V2}, ${DATA_PLANE_SUBPROTOCOL_V2}, gpulink.grant.${grant}`,
+    ), null);
+    assert.equal(parseDataPlaneProtocols(
+      `${DATA_PLANE_SUBPROTOCOL_V2}, gpulink.grant.invalid`,
+    ), null);
+  },
+);
+
+async function withinReadyTest(promise, ms = 2000) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("relay readiness timeout")), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+test(
+  "opt-in v2 client gets ready only after pairing with an unchanged v1 worker",
+  async () => {
+    const app = createControlPlane(config());
+    const address = await app.start();
+    let client;
+    let workerSocket;
+    try {
+      const { connecting, clientGrant, workerGrant } = await setupSession(app);
+      client = new WebSocket(
+        `ws://127.0.0.1:${address.port}${DATA_PLANE_PATH}`,
+        [DATA_PLANE_SUBPROTOCOL_V2, `gpulink.grant.${clientGrant.token}`],
+      );
+      await waitForOpen(client);
+      assert.equal(client.protocol, DATA_PLANE_SUBPROTOCOL_V2);
+      assert.equal((await app.database.getSession(connecting.id)).status, "connecting");
+      const ready = nextMessage(client);
+      workerSocket = connect(address, workerGrant.token);
+      await waitForOpen(workerSocket);
+      assert.equal(workerSocket.protocol, DATA_PLANE_SUBPROTOCOL);
+      const acknowledgement = await withinReadyTest(ready);
+      assert.equal(acknowledgement.isBinary, false);
+      assert.equal(acknowledgement.data.toString(), DATA_PLANE_RELAY_READY_V2);
+      assert.equal((await app.database.getSession(connecting.id)).status, "active");
+      const received = nextMessage(workerSocket);
+      client.send(Buffer.from([1, 2, 255]), { binary: true });
+      assert.deepEqual((await withinReadyTest(received)).data, Buffer.from([1, 2, 255]));
+    } finally {
+      client?.terminate();
+      workerSocket?.terminate();
+      await app.stop();
+    }
+  },
+);
+
+test(
+  "legacy worker cannot forge a ready frame to a v2 client",
+  async () => {
+    const app = createControlPlane(config());
+    const address = await app.start();
+    let client;
+    let workerSocket;
+    try {
+      const { clientGrant, workerGrant } = await setupSession(app);
+      client = new WebSocket(
+        `ws://127.0.0.1:${address.port}${DATA_PLANE_PATH}`,
+        [DATA_PLANE_SUBPROTOCOL_V2, `gpulink.grant.${clientGrant.token}`],
+      );
+      await waitForOpen(client);
+      const ready = nextMessage(client);
+      workerSocket = connect(address, workerGrant.token);
+      await waitForOpen(workerSocket);
+      assert.equal((await withinReadyTest(ready)).data.toString(), DATA_PLANE_RELAY_READY_V2);
+      const closedClient = nextClose(client);
+      const closedWorker = nextClose(workerSocket);
+      workerSocket.send(DATA_PLANE_RELAY_READY_V2);
+      assert.equal((await withinReadyTest(closedClient)).code, DATA_PLANE_CLOSE_CODES.PROTOCOL_ERROR);
+      assert.equal((await withinReadyTest(closedWorker)).code, DATA_PLANE_CLOSE_CODES.PROTOCOL_ERROR);
+    } finally {
+      client?.terminate();
+      workerSocket?.terminate();
       await app.stop();
     }
   },

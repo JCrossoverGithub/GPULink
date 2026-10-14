@@ -15,6 +15,8 @@ import {
   DATA_PLANE_PATH,
   DATA_PLANE_PEER_WAIT_TIMEOUT_MS,
   DATA_PLANE_SUBPROTOCOL,
+  DATA_PLANE_SUBPROTOCOL_V2,
+  DATA_PLANE_RELAY_READY_V2,
   isDataPlaneBackpressured,
   parseDataPlaneProtocols,
   validateDataPlaneFrameSize,
@@ -97,10 +99,14 @@ export function createDataPlaneRelay({
         protocols,
       ) {
         return protocols.has(
-          DATA_PLANE_SUBPROTOCOL,
+          DATA_PLANE_SUBPROTOCOL_V2,
         )
-          ? DATA_PLANE_SUBPROTOCOL
-          : false;
+          ? DATA_PLANE_SUBPROTOCOL_V2
+          : protocols.has(
+              DATA_PLANE_SUBPROTOCOL,
+            )
+            ? DATA_PLANE_SUBPROTOCOL
+            : false;
       },
     });
 
@@ -221,6 +227,7 @@ export function createDataPlaneRelay({
           webSocket,
           protocolOffer.grant,
           authorization,
+          protocolOffer.protocol,
         );
       },
     );
@@ -352,6 +359,7 @@ export function createDataPlaneRelay({
     socket,
     grant,
     authorization,
+    protocol,
   ) {
     const {
       claims,
@@ -411,6 +419,7 @@ export function createDataPlaneRelay({
     const state = {
       socket,
       grant,
+      protocol,
       claims,
       role,
       entry,
@@ -480,6 +489,20 @@ export function createDataPlaneRelay({
           return;
         }
 
+        /* Do not allow a peer to impersonate the server ready ACK.
+         * Legacy v1/v1 opaque traffic is unchanged. */
+        if (
+          !isBinary &&
+          state.peer.protocol === DATA_PLANE_SUBPROTOCOL_V2 &&
+          data.toString() === DATA_PLANE_RELAY_READY_V2
+        ) {
+          closeEntry(
+            state.entry,
+            DATA_PLANE_CLOSE_CODES.PROTOCOL_ERROR,
+            "reserved relay control frame",
+          );
+          return;
+        }
         const byteLength =
           Buffer.isBuffer(data)
             ? data.length
@@ -722,6 +745,24 @@ export function createDataPlaneRelay({
       resetIdleTimers(
         entry,
       );
+      /* Only opt-in v2 peers get the server readiness frame.
+       * Link the authorized peer sockets before signaling readiness. */
+      for (const state of [entry.client, entry.worker]) {
+        if (state.protocol !== DATA_PLANE_SUBPROTOCOL_V2) continue;
+        if (state.socket.readyState !== WebSocket.OPEN) {
+          closeEntry(entry, DATA_PLANE_CLOSE_CODES.TRY_AGAIN_LATER, "relay peer unavailable");
+          break;
+        }
+        state.socket.send(
+          DATA_PLANE_RELAY_READY_V2,
+          { binary: false, compress: false },
+          (error) => {
+            if (error && !entry.closed) {
+              closeEntry(entry, DATA_PLANE_CLOSE_CODES.INTERNAL_ERROR, "relay readiness send failed");
+            }
+          },
+        );
+      }
     } catch {
       closeEntry(
         entry,
