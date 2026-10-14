@@ -127,6 +127,7 @@ test(
               'gpulink_schema_migrations',
               'workers',
               'jobs',
+              'sessions',
               'events'
             )
           ORDER BY table_name
@@ -140,6 +141,7 @@ test(
           "events",
           "gpulink_schema_migrations",
           "jobs",
+          "sessions",
           "workers",
         ],
       );
@@ -151,20 +153,22 @@ test(
           ORDER BY filename
         `);
 
-      assert.equal(
-        migrations.rowCount,
-        1,
+      assert.deepEqual(
+        migrations.rows.map(
+          (row) => row.filename,
+        ),
+        [
+          "0001-initial.sql",
+          "0002-sessions.sql",
+        ],
       );
 
-      assert.equal(
-        migrations.rows[0].filename,
-        "0001-initial.sql",
-      );
-
-      assert.match(
-        migrations.rows[0].checksum,
-        /^[0-9a-f]{64}$/u,
-      );
+      for (const migration of migrations.rows) {
+        assert.match(
+          migration.checksum,
+          /^[0-9a-f]{64}$/u,
+        );
+      }
 
     } finally {
       await inspector.end();
@@ -3577,6 +3581,1220 @@ test(
             force: true,
           },
         );
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL session lifecycle reaches active and closed",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 4,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    let now =
+      1_700_100_000_000;
+
+    const clock = () => now;
+
+    const config = {
+      tokens: {
+        client:
+          "postgres-session-client-token-at-least-32-characters",
+        worker:
+          "postgres-session-worker-token-at-least-32-characters",
+        admin:
+          "postgres-session-admin-token-at-least-32-characters",
+      },
+      heartbeatTimeoutMs:
+        60_000,
+      leaseDurationMs:
+        10_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    const scheduler =
+      new Scheduler(
+        database,
+        {
+          heartbeatTimeoutMs:
+            config.heartbeatTimeoutMs,
+          leaseDurationMs:
+            config.leaseDurationMs,
+          vramSafetyMiB:
+            config.vramSafetyMiB,
+          clock,
+        },
+      );
+
+    const service =
+      new ControlPlaneService(
+        database,
+        scheduler,
+        config,
+        {
+          clock,
+        },
+      );
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          sessions,
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const worker =
+        await service.registerWorker({
+          name:
+            "postgres-session-lifecycle-worker",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "speech.streaming",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-SESSION-LIFECYCLE",
+              index: 0,
+              name:
+                "PostgreSQL Session Lifecycle GPU",
+              memoryTotalMiB:
+                24_576,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 75,
+            },
+          ],
+        });
+
+      const submitted =
+        await service.submitSession({
+          projectId:
+            "postgres-session-lifecycle",
+          capability:
+            "speech.streaming",
+          requirements: {
+            minVramMiB:
+              16_384,
+            capabilities: [
+              "speech.streaming",
+            ],
+          },
+          metadata: {
+            protocol:
+              "transgo-v1",
+          },
+          recovery: {
+            maxInterruptions: 1,
+          },
+        });
+
+      assert.equal(
+        submitted.duplicate,
+        false,
+      );
+
+      const allocated =
+        submitted.session;
+
+      assert.equal(
+        allocated.status,
+        "allocated",
+      );
+
+      assert.equal(
+        allocated.assignedWorkerId,
+        worker.id,
+      );
+
+      assert.equal(
+        allocated.assignedGpuUuid,
+        "GPU-POSTGRES-SESSION-LIFECYCLE",
+      );
+
+      assert.match(
+        allocated.leaseId,
+        /^lease_/u,
+      );
+
+      const leaseId =
+        allocated.leaseId;
+
+      now += 100;
+
+      const connecting =
+        await service.startSession(
+          allocated.id,
+          {
+            workerId:
+              worker.id,
+            leaseId,
+          },
+        );
+
+      assert.equal(
+        connecting.status,
+        "connecting",
+      );
+
+      now += 100;
+
+      const active =
+        await service.activateSession(
+          allocated.id,
+          {
+            workerId:
+              worker.id,
+            leaseId,
+          },
+        );
+
+      assert.equal(
+        active.status,
+        "active",
+      );
+
+      now += 100;
+
+      const renewed =
+        await service.renewSession(
+          allocated.id,
+          {
+            workerId:
+              worker.id,
+            leaseId,
+          },
+        );
+
+      assert.equal(
+        renewed.status,
+        "active",
+      );
+
+      assert.equal(
+        renewed.leaseExpiresAt,
+        now +
+          config.leaseDurationMs,
+      );
+
+      const closed =
+        await service.closeSession(
+          allocated.id,
+        );
+
+      assert.equal(
+        closed.status,
+        "closed",
+      );
+
+      assert.equal(
+        closed.assignedWorkerId,
+        null,
+      );
+
+      assert.equal(
+        closed.assignedGpuUuid,
+        null,
+      );
+
+      assert.equal(
+        closed.leaseId,
+        null,
+      );
+
+      assert.equal(
+        closed.leaseExpiresAt,
+        null,
+      );
+
+      const stored =
+        await database.getSession(
+          allocated.id,
+        );
+
+      assert.deepEqual(
+        stored,
+        closed,
+      );
+
+      const events =
+        (
+          await database
+            .listEventsAfter(0)
+        ).filter(
+          (event) =>
+            event.subjectId ===
+              allocated.id ||
+            event.subjectId ===
+              worker.id,
+        );
+
+      assert.deepEqual(
+        events.map(
+          (event) =>
+            event.type,
+        ),
+        [
+          "worker.online",
+          "session.requested",
+          "session.allocated",
+          "session.connecting",
+          "session.active",
+          "session.closed",
+        ],
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            sessions,
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await database.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL expired session lease is replaced with a new lease",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 4,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    let now =
+      1_700_200_000_000;
+
+    const clock = () => now;
+
+    const config = {
+      tokens: {
+        client:
+          "postgres-replace-client-token-at-least-32-characters",
+        worker:
+          "postgres-replace-worker-token-at-least-32-characters",
+        admin:
+          "postgres-replace-admin-token-at-least-32-characters",
+      },
+      heartbeatTimeoutMs:
+        100_000,
+      leaseDurationMs:
+        1_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    const scheduler =
+      new Scheduler(
+        database,
+        {
+          heartbeatTimeoutMs:
+            config.heartbeatTimeoutMs,
+          leaseDurationMs:
+            config.leaseDurationMs,
+          vramSafetyMiB:
+            config.vramSafetyMiB,
+          clock,
+        },
+      );
+
+    const service =
+      new ControlPlaneService(
+        database,
+        scheduler,
+        config,
+        {
+          clock,
+        },
+      );
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          sessions,
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const worker =
+        await service.registerWorker({
+          name:
+            "postgres-session-replacement-worker",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "speech.streaming",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-SESSION-REPLACE",
+              index: 0,
+              name:
+                "PostgreSQL Replacement GPU",
+              memoryTotalMiB:
+                24_576,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 75,
+            },
+          ],
+        });
+
+      const initial =
+        (
+          await service.submitSession({
+            projectId:
+              "postgres-session-replacement",
+            capability:
+              "speech.streaming",
+            requirements: {
+              minVramMiB:
+                1_000,
+              capabilities: [
+                "speech.streaming",
+              ],
+            },
+            recovery: {
+              maxInterruptions: 1,
+            },
+          })
+        ).session;
+
+      assert.equal(
+        initial.status,
+        "allocated",
+      );
+
+      const oldLeaseId =
+        initial.leaseId;
+
+      now +=
+        config.leaseDurationMs +
+        1;
+
+      await scheduler.runOnce();
+
+      const replacement =
+        await database.getSession(
+          initial.id,
+        );
+
+      assert.equal(
+        replacement.status,
+        "allocated",
+      );
+
+      assert.equal(
+        replacement.interruptionCount,
+        1,
+      );
+
+      assert.equal(
+        replacement.assignedWorkerId,
+        worker.id,
+      );
+
+      assert.notEqual(
+        replacement.leaseId,
+        oldLeaseId,
+      );
+
+      assert.match(
+        replacement.leaseId,
+        /^lease_/u,
+      );
+
+      await assert.rejects(
+        () =>
+          service.startSession(
+            initial.id,
+            {
+              workerId:
+                worker.id,
+              leaseId:
+                oldLeaseId,
+            },
+          ),
+        /session lease is not valid for this worker/u,
+      );
+
+      const connecting =
+        await service.startSession(
+          initial.id,
+          {
+            workerId:
+              worker.id,
+            leaseId:
+              replacement.leaseId,
+          },
+        );
+
+      assert.equal(
+        connecting.status,
+        "connecting",
+      );
+
+      const events =
+        (
+          await database
+            .listEventsAfter(0)
+        ).filter(
+          (event) =>
+            event.subjectId ===
+            initial.id,
+        );
+
+      assert.deepEqual(
+        events.map(
+          (event) =>
+            event.type,
+        ),
+        [
+          "session.requested",
+          "session.allocated",
+          "session.interrupted",
+          "session.requeued",
+          "session.allocated",
+          "session.connecting",
+        ],
+      );
+
+      const interrupted =
+        events.find(
+          (event) =>
+            event.type ===
+            "session.interrupted",
+        );
+
+      assert.deepEqual(
+        interrupted?.payload,
+        {
+          reason:
+            "lease_expired",
+          previousStatus:
+            "allocated",
+          interruptionCount: 1,
+        },
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            sessions,
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await database.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL stale worker session is replaced on a fresh worker",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 4,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    let now =
+      1_700_300_000_000;
+
+    const clock = () => now;
+
+    const config = {
+      tokens: {
+        client:
+          "postgres-stale-session-client-token-at-least-32-characters",
+        worker:
+          "postgres-stale-session-worker-token-at-least-32-characters",
+        admin:
+          "postgres-stale-session-admin-token-at-least-32-characters",
+      },
+      heartbeatTimeoutMs:
+        1_000,
+      leaseDurationMs:
+        100_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    const scheduler =
+      new Scheduler(
+        database,
+        {
+          heartbeatTimeoutMs:
+            config.heartbeatTimeoutMs,
+          leaseDurationMs:
+            config.leaseDurationMs,
+          vramSafetyMiB:
+            config.vramSafetyMiB,
+          clock,
+        },
+      );
+
+    const service =
+      new ControlPlaneService(
+        database,
+        scheduler,
+        config,
+        {
+          clock,
+        },
+      );
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          sessions,
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      const originalWorker =
+        await service.registerWorker({
+          name:
+            "postgres-stale-session-original",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "speech.streaming",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-STALE-SESSION",
+              index: 0,
+              name:
+                "PostgreSQL Stale Session GPU",
+              memoryTotalMiB:
+                24_576,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 75,
+            },
+          ],
+        });
+
+      const initial =
+        (
+          await service.submitSession({
+            projectId:
+              "postgres-stale-session-recovery",
+            capability:
+              "speech.streaming",
+            requirements: {
+              minVramMiB:
+                1_000,
+              capabilities: [
+                "speech.streaming",
+              ],
+            },
+            recovery: {
+              maxInterruptions: 1,
+            },
+          })
+        ).session;
+
+      assert.equal(
+        initial.assignedWorkerId,
+        originalWorker.id,
+      );
+
+      const oldLeaseId =
+        initial.leaseId;
+
+      now +=
+        config.heartbeatTimeoutMs +
+        1;
+
+      assert.ok(
+        initial.leaseExpiresAt >
+        now,
+      );
+
+      const replacementWorker =
+        await service.registerWorker({
+          name:
+            "postgres-stale-session-replacement",
+          version: "test",
+          labels: {},
+          capabilities: [
+            "speech.streaming",
+          ],
+          warmModels: [],
+          modelInventory: [],
+          gpus: [
+            {
+              uuid:
+                "GPU-POSTGRES-FRESH-SESSION",
+              index: 0,
+              name:
+                "PostgreSQL Fresh Session GPU",
+              memoryTotalMiB:
+                24_576,
+              memoryUsedMiB: 0,
+              utilizationPercent: 0,
+              temperatureC: 40,
+              powerDrawWatts: 75,
+            },
+          ],
+        });
+
+      await scheduler.runOnce();
+
+      const recovered =
+        await database.getSession(
+          initial.id,
+        );
+
+      assert.equal(
+        recovered.status,
+        "allocated",
+      );
+
+      assert.equal(
+        recovered.interruptionCount,
+        1,
+      );
+
+      assert.equal(
+        recovered.assignedWorkerId,
+        replacementWorker.id,
+      );
+
+      assert.equal(
+        recovered.assignedGpuUuid,
+        "GPU-POSTGRES-FRESH-SESSION",
+      );
+
+      assert.notEqual(
+        recovered.leaseId,
+        oldLeaseId,
+      );
+
+      const originalStored =
+        await database.getWorker(
+          originalWorker.id,
+        );
+
+      assert.equal(
+        originalStored.status,
+        "offline",
+      );
+
+      const events =
+        (
+          await database
+            .listEventsAfter(0)
+        ).filter(
+          (event) =>
+            event.subjectId ===
+              initial.id,
+        );
+
+      const interruption =
+        events.find(
+          (event) =>
+            event.type ===
+            "session.interrupted",
+        );
+
+      assert.deepEqual(
+        interruption?.payload,
+        {
+          reason:
+            "heartbeat_timeout",
+          previousStatus:
+            "allocated",
+          interruptionCount: 1,
+        },
+      );
+    } finally {
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            sessions,
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
+        await database.close();
+      }
+    }
+  },
+);
+
+test(
+  "PostgreSQL HTTP session lifecycle and worker lease discovery run end-to-end",
+  {
+    skip:
+      connectionString
+        ? false
+        : "GPULINK_TEST_POSTGRES_URL is not configured",
+  },
+  async () => {
+    const database =
+      new PostgresPersistence(
+        connectionString,
+        {
+          maxConnections: 6,
+        },
+      );
+
+    const inspector =
+      new Pool({
+        connectionString,
+        max: 1,
+      });
+
+    const now =
+      1_700_400_000_000;
+
+    const clock = () => now;
+
+    const tokens = {
+      client:
+        "postgres-session-http-client-token-at-least-32-characters",
+      worker:
+        "postgres-session-http-worker-token-at-least-32-characters",
+      admin:
+        "postgres-session-http-admin-token-at-least-32-characters",
+    };
+
+    const config = {
+      host: "127.0.0.1",
+      port: 0,
+      dataPath: ":memory:",
+      tokens,
+      heartbeatTimeoutMs:
+        60_000,
+      leaseDurationMs:
+        10_000,
+      schedulerIntervalMs:
+        60_000,
+      vramSafetyMiB:
+        512,
+    };
+
+    let app = null;
+
+    try {
+      await database.initialize();
+
+      await inspector.query(`
+        TRUNCATE TABLE
+          sessions,
+          events,
+          jobs,
+          workers
+        RESTART IDENTITY CASCADE
+      `);
+
+      app =
+        createControlPlane(
+          config,
+          {
+            database,
+            clock,
+          },
+        );
+
+      const address =
+        await app.start();
+
+      const baseUrl =
+        `http://127.0.0.1:${address.port}`;
+
+      const registration =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          "/v1/workers/register",
+          {
+            name:
+              "postgres-session-http-worker",
+            version:
+              "test",
+            labels: {},
+            capabilities: [
+              "speech.streaming",
+            ],
+            warmModels: [],
+            modelInventory: [],
+            gpus: [
+              {
+                uuid:
+                  "GPU-POSTGRES-SESSION-HTTP",
+                index: 0,
+                name:
+                  "PostgreSQL Session HTTP GPU",
+                memoryTotalMiB:
+                  24_576,
+                memoryUsedMiB: 0,
+                utilizationPercent: 0,
+                temperatureC: 40,
+                powerDrawWatts: 75,
+              },
+            ],
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        registration.response.status,
+        200,
+      );
+
+      const workerId =
+        registration.body.worker.id;
+
+      const submitted =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          "/v1/sessions",
+          {
+            projectId:
+              "postgres-session-http",
+            capability:
+              "speech.streaming",
+            requirements: {
+              minVramMiB:
+                16_384,
+              capabilities: [
+                "speech.streaming",
+              ],
+            },
+            metadata: {
+              protocol:
+                "transgo-v1",
+            },
+            recovery: {
+              maxInterruptions: 1,
+            },
+          },
+          tokens.client,
+        );
+
+      assert.equal(
+        submitted.response.status,
+        201,
+      );
+
+      const session =
+        submitted.body.session;
+
+      assert.equal(
+        session.status,
+        "allocated",
+      );
+
+      assert.equal(
+        session.assignedWorkerId,
+        workerId,
+      );
+
+      const leases =
+        await postgresHttpRequest(
+          baseUrl,
+          "GET",
+          `/v1/workers/${workerId}/leases`,
+          undefined,
+          tokens.worker,
+        );
+
+      assert.equal(
+        leases.response.status,
+        200,
+      );
+
+      assert.ok(
+        Array.isArray(
+          leases.body.jobs,
+        ),
+      );
+
+      assert.equal(
+        leases.body.sessions.length,
+        1,
+      );
+
+      assert.equal(
+        leases.body.sessions[0].id,
+        session.id,
+      );
+
+      const started =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/sessions/${session.id}/start`,
+          {
+            workerId,
+            leaseId:
+              session.leaseId,
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        started.response.status,
+        200,
+      );
+
+      assert.equal(
+        started.body.session.status,
+        "connecting",
+      );
+
+      const activated =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/sessions/${session.id}/activate`,
+          {
+            workerId,
+            leaseId:
+              session.leaseId,
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        activated.response.status,
+        200,
+      );
+
+      assert.equal(
+        activated.body.session.status,
+        "active",
+      );
+
+      const renewed =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/sessions/${session.id}/renew`,
+          {
+            workerId,
+            leaseId:
+              session.leaseId,
+          },
+          tokens.worker,
+        );
+
+      assert.equal(
+        renewed.response.status,
+        200,
+      );
+
+      assert.equal(
+        renewed.body.session.status,
+        "active",
+      );
+
+      const listed =
+        await postgresHttpRequest(
+          baseUrl,
+          "GET",
+          "/v1/sessions?status=active&limit=10",
+          undefined,
+          tokens.client,
+        );
+
+      assert.equal(
+        listed.response.status,
+        200,
+      );
+
+      assert.equal(
+        listed.body.sessions.length,
+        1,
+      );
+
+      assert.equal(
+        listed.body.sessions[0].id,
+        session.id,
+      );
+
+      const closed =
+        await postgresHttpRequest(
+          baseUrl,
+          "POST",
+          `/v1/sessions/${session.id}/close`,
+          {},
+          tokens.client,
+        );
+
+      assert.equal(
+        closed.response.status,
+        200,
+      );
+
+      assert.equal(
+        closed.body.session.status,
+        "closed",
+      );
+
+      const afterClose =
+        await postgresHttpRequest(
+          baseUrl,
+          "GET",
+          `/v1/workers/${workerId}/leases`,
+          undefined,
+          tokens.worker,
+        );
+
+      assert.equal(
+        afterClose.response.status,
+        200,
+      );
+
+      assert.equal(
+        afterClose.body.sessions.length,
+        0,
+      );
+
+      const stored =
+        await database.getSession(
+          session.id,
+        );
+
+      assert.equal(
+        stored.status,
+        "closed",
+      );
+
+      const events =
+        (
+          await database
+            .listEventsAfter(0)
+        ).filter(
+          (event) =>
+            event.subjectId ===
+            session.id,
+        );
+
+      assert.deepEqual(
+        events.map(
+          (event) =>
+            event.type,
+        ),
+        [
+          "session.requested",
+          "session.allocated",
+          "session.connecting",
+          "session.active",
+          "session.closed",
+        ],
+      );
+    } finally {
+      if (app) {
+        await app.stop();
+      } else {
+        await database.close();
+      }
+
+      try {
+        await inspector.query(`
+          TRUNCATE TABLE
+            sessions,
+            events,
+            jobs,
+            workers
+          RESTART IDENTITY CASCADE
+        `);
+      } finally {
+        await inspector.end();
       }
     }
   },

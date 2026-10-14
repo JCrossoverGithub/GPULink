@@ -272,6 +272,83 @@ export class SqlitePersistence {
     );
   }
 
+  insertSession(...args) {
+    return this.#call(
+      "insertSession",
+      args,
+    );
+  }
+
+  getSession(...args) {
+    return this.#call(
+      "getSession",
+      args,
+    );
+  }
+
+  listSessions(...args) {
+    return this.#call(
+      "listSessions",
+      args,
+    );
+  }
+
+  listRequestedSessions(...args) {
+    return this.#call(
+      "listRequestedSessions",
+      args,
+    );
+  }
+
+  listOccupyingSessions(...args) {
+    return this.#call(
+      "listOccupyingSessions",
+      args,
+    );
+  }
+
+  assignSession(...args) {
+    return this.#call(
+      "assignSession",
+      args,
+    );
+  }
+
+  startSession(...args) {
+    return this.#call(
+      "startSession",
+      args,
+    );
+  }
+
+  activateSession(...args) {
+    return this.#call(
+      "activateSession",
+      args,
+    );
+  }
+
+  renewSession(...args) {
+    return this.#call(
+      "renewSession",
+      args,
+    );
+  }
+
+  closeSession(...args) {
+    return this.#call(
+      "closeSession",
+      args,
+    );
+  }
+
+  recoverInterruptedSessions(...args) {
+    return this.#call(
+      "recoverInterruptedSessions",
+      args,
+    );
+  }
+
   appendEvent(...args) {
     return this.#enqueue(() => {
       this.#assertOpen();

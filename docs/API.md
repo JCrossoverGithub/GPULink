@@ -10,8 +10,8 @@ The current API uses three independently generated credential scopes:
 
 | Credential | Environment variable | Permitted operations |
 | --- | --- | --- |
-| Client | `GPULINK_CLIENT_TOKEN` | Submit, inspect, list, and cancel jobs |
-| Worker | `GPULINK_WORKER_TOKEN` | Register, heartbeat, lease, start, renew, and finish |
+| Client | `GPULINK_CLIENT_TOKEN` | Submit, inspect, list, cancel jobs, and request or close sessions |
+| Worker | `GPULINK_WORKER_TOKEN` | Register, heartbeat, discover leases, and advance or renew assigned work |
 | Administrator | `GPULINK_ADMIN_TOKEN` | Fleet inventory, metrics, events, drain/resume, and manual reconciliation; also accepted on client and worker routes |
 
 Tokens must be at least 32 characters and all three values must differ. These
@@ -90,7 +90,12 @@ Existing jobs are not terminated by entering drain mode.
 
 ### `GET /v1/workers/{workerId}/leases`
 
-Returns the worker's active `leased` and `running` jobs.
+Returns work currently owned by the worker:
+
+- active `leased` and `running` jobs;
+- `allocated`, `connecting`, and `active` sessions.
+
+The response contains separate `jobs` and `sessions` arrays.
 
 ## Jobs
 
@@ -234,24 +239,56 @@ The existing job APIs implement this foundation.
 
 ### Sessions
 
-Sessions will represent persistent allocations for interactive or
+Sessions represent persistent allocations for interactive or
 latency-sensitive workloads.
 
-The intended application-level operations are conceptually:
+The implemented control-plane lifecycle is:
 
 ```text
-request session
-observe allocation
-connect to session data plane
-renew/observe session
-close session
-observe lifecycle events
+requested -> allocated -> connecting -> active -> closed
+                         |
+                         +-> interrupted
 ```
 
-This section defines the framework direction. Persistent session endpoints are
-not yet claimed as implemented.
+An interrupted session returns to `requested` only while its bounded
+replacement policy permits another allocation. Every replacement receives a
+new lease.
 
-The durable session request should contain scheduling metadata only.
+#### `POST /v1/sessions`
+
+Creates a durable session request. The optional `Idempotency-Key` header is
+scoped to `projectId`. Compatible capacity may be allocated immediately.
+
+#### `GET /v1/sessions`
+
+Lists sessions. Supports `status` and `limit` query parameters.
+
+#### `GET /v1/sessions/{sessionId}`
+
+Returns authoritative durable session state.
+
+#### `POST /v1/sessions/{sessionId}/start`
+
+Worker-only. Moves an unexpired assigned session from `allocated` to
+`connecting` using `workerId` and `leaseId`.
+
+#### `POST /v1/sessions/{sessionId}/activate`
+
+Worker-only. Moves an unexpired assigned session from `connecting` to
+`active` using `workerId` and `leaseId`.
+
+#### `POST /v1/sessions/{sessionId}/renew`
+
+Worker-only. Renews an unexpired `allocated`, `connecting`, or `active`
+session lease.
+
+#### `POST /v1/sessions/{sessionId}/close`
+
+Client route. Closes a `requested`, `allocated`, `connecting`, or `active`
+session and releases any owned worker/GPU lease. Terminal `interrupted`
+sessions retain their failure state.
+
+The durable session request contains scheduling metadata only.
 
 Latency-sensitive payloads such as:
 
@@ -269,7 +306,7 @@ scheduled by GPULink.
 Applications should request reusable capabilities rather than hard-code worker
 names.
 
-A future session request may express requirements such as:
+A session request may express requirements such as:
 
 ```json
 {
@@ -280,7 +317,9 @@ A future session request may express requirements such as:
 }
 ```
 
-The final wire schema may differ.
+The version 1 session request schema is validated by
+`src/shared/session-contract.mjs`. Unknown fields are rejected rather than
+silently treated as scheduler or transport controls.
 
 Worker selection remains a GPULink responsibility.
 

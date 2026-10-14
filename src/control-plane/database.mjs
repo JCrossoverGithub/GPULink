@@ -83,6 +83,54 @@ export class ControlPlaneDatabase {
       CREATE INDEX IF NOT EXISTS jobs_worker_index
         ON jobs(assigned_worker_id, status);
 
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+        project_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN (
+          'requested',
+          'allocated',
+          'connecting',
+          'active',
+          'interrupted',
+          'closed'
+        )),
+        gpu_count INTEGER NOT NULL CHECK(gpu_count = 1),
+        min_vram_mib INTEGER NOT NULL CHECK(min_vram_mib >= 0),
+        required_capabilities_json TEXT NOT NULL,
+        requested_model TEXT,
+        requested_adapter TEXT,
+        metadata_json TEXT NOT NULL,
+        max_interruptions INTEGER NOT NULL
+          CHECK(max_interruptions >= 0 AND max_interruptions <= 3),
+        interruption_count INTEGER NOT NULL DEFAULT 0
+          CHECK(interruption_count >= 0),
+        assigned_worker_id TEXT REFERENCES workers(id),
+        assigned_gpu_uuid TEXT,
+        lease_id TEXT,
+        lease_expires_at INTEGER,
+        idempotency_key TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(project_id, idempotency_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS sessions_queue_index
+        ON sessions(
+          status,
+          priority DESC,
+          created_at ASC,
+          id ASC
+        );
+
+      CREATE INDEX IF NOT EXISTS sessions_worker_index
+        ON sessions(
+          assigned_worker_id,
+          status
+        );
+
       CREATE TABLE IF NOT EXISTS events (
         sequence INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL,
@@ -382,6 +430,411 @@ export class ControlPlaneDatabase {
     return recovered;
   }
 
+  insertSession(session) {
+    try {
+      const row = this.database.prepare(`
+        INSERT INTO sessions (
+          id,
+          schema_version,
+          project_id,
+          capability,
+          priority,
+          status,
+          gpu_count,
+          min_vram_mib,
+          required_capabilities_json,
+          requested_model,
+          requested_adapter,
+          metadata_json,
+          max_interruptions,
+          interruption_count,
+          idempotency_key,
+          created_at,
+          updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, 'requested',
+          1, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?
+        )
+        RETURNING *
+      `).get(
+        session.id,
+        session.schemaVersion,
+        session.projectId,
+        session.capability,
+        session.priority,
+        session.requirements.minVramMiB,
+        stringifyJson(
+          session.requirements.capabilities,
+        ),
+        session.requirements.model,
+        session.requirements.adapter,
+        stringifyJson(session.metadata),
+        session.recovery.maxInterruptions,
+        session.idempotencyKey,
+        session.now,
+        session.now,
+      );
+
+      return {
+        session: mapSession(row),
+        duplicate: false,
+      };
+    } catch (error) {
+      if (
+        session.idempotencyKey &&
+        String(error.message)
+          .includes("UNIQUE constraint failed")
+      ) {
+        const existing =
+          this.database.prepare(`
+            SELECT *
+            FROM sessions
+            WHERE project_id = ?
+              AND idempotency_key = ?
+          `).get(
+            session.projectId,
+            session.idempotencyKey,
+          );
+
+        return {
+          session: mapSession(existing),
+          duplicate: true,
+        };
+      }
+
+      throw error;
+    }
+  }
+
+  getSession(sessionId) {
+    const row =
+      this.database.prepare(`
+        SELECT *
+        FROM sessions
+        WHERE id = ?
+      `).get(sessionId);
+
+    return row
+      ? mapSession(row)
+      : null;
+  }
+
+  listSessions({
+    status = null,
+    workerId = null,
+    limit = 100,
+  } = {}) {
+    const clauses = [];
+    const parameters = [];
+
+    if (status) {
+      clauses.push("status = ?");
+      parameters.push(status);
+    }
+
+    if (workerId) {
+      clauses.push(
+        "assigned_worker_id = ?",
+      );
+      parameters.push(workerId);
+    }
+
+    const where =
+      clauses.length > 0
+        ? `WHERE ${clauses.join(" AND ")}`
+        : "";
+
+    return this.database.prepare(`
+      SELECT *
+      FROM sessions
+      ${where}
+      ORDER BY created_at DESC, id ASC
+      LIMIT ?
+    `).all(
+      ...parameters,
+      limit,
+    ).map(mapSession);
+  }
+
+  listRequestedSessions() {
+    return this.database.prepare(`
+      SELECT *
+      FROM sessions
+      WHERE status = 'requested'
+      ORDER BY
+        priority DESC,
+        created_at ASC,
+        id ASC
+    `).all().map(mapSession);
+  }
+
+  listOccupyingSessions() {
+    return this.database.prepare(`
+      SELECT *
+      FROM sessions
+      WHERE status IN (
+        'allocated',
+        'connecting',
+        'active'
+      )
+      ORDER BY created_at ASC, id ASC
+    `).all().map(mapSession);
+  }
+
+  assignSession(
+    sessionId,
+    placement,
+    leaseId,
+    leaseExpiresAt,
+    now,
+  ) {
+    const row =
+      this.database.prepare(`
+        UPDATE sessions
+        SET
+          status = 'allocated',
+          assigned_worker_id = ?,
+          assigned_gpu_uuid = ?,
+          lease_id = ?,
+          lease_expires_at = ?,
+          updated_at = ?
+        WHERE id = ?
+          AND status = 'requested'
+        RETURNING *
+      `).get(
+        placement.workerId,
+        placement.gpuUuid,
+        leaseId,
+        leaseExpiresAt,
+        now,
+        sessionId,
+      );
+
+    return row
+      ? mapSession(row)
+      : null;
+  }
+
+  startSession(
+    sessionId,
+    workerId,
+    leaseId,
+    leaseExpiresAt,
+    now,
+  ) {
+    const row =
+      this.database.prepare(`
+        UPDATE sessions
+        SET
+          status = 'connecting',
+          lease_expires_at = ?,
+          updated_at = ?
+        WHERE id = ?
+          AND status = 'allocated'
+          AND assigned_worker_id = ?
+          AND lease_id = ?
+          AND lease_expires_at > ?
+        RETURNING *
+      `).get(
+        leaseExpiresAt,
+        now,
+        sessionId,
+        workerId,
+        leaseId,
+        now,
+      );
+
+    return row
+      ? mapSession(row)
+      : null;
+  }
+
+  activateSession(
+    sessionId,
+    workerId,
+    leaseId,
+    leaseExpiresAt,
+    now,
+  ) {
+    const row =
+      this.database.prepare(`
+        UPDATE sessions
+        SET
+          status = 'active',
+          lease_expires_at = ?,
+          updated_at = ?
+        WHERE id = ?
+          AND status = 'connecting'
+          AND assigned_worker_id = ?
+          AND lease_id = ?
+          AND lease_expires_at > ?
+        RETURNING *
+      `).get(
+        leaseExpiresAt,
+        now,
+        sessionId,
+        workerId,
+        leaseId,
+        now,
+      );
+
+    return row
+      ? mapSession(row)
+      : null;
+  }
+
+  renewSession(
+    sessionId,
+    workerId,
+    leaseId,
+    leaseExpiresAt,
+    now,
+  ) {
+    const row =
+      this.database.prepare(`
+        UPDATE sessions
+        SET
+          lease_expires_at = ?,
+          updated_at = ?
+        WHERE id = ?
+          AND status IN (
+            'allocated',
+            'connecting',
+            'active'
+          )
+          AND assigned_worker_id = ?
+          AND lease_id = ?
+          AND lease_expires_at > ?
+        RETURNING *
+      `).get(
+        leaseExpiresAt,
+        now,
+        sessionId,
+        workerId,
+        leaseId,
+        now,
+      );
+
+    return row
+      ? mapSession(row)
+      : null;
+  }
+
+  closeSession(
+    sessionId,
+    now,
+  ) {
+    const row =
+      this.database.prepare(`
+        UPDATE sessions
+        SET
+          status = 'closed',
+          assigned_worker_id = NULL,
+          assigned_gpu_uuid = NULL,
+          lease_id = NULL,
+          lease_expires_at = NULL,
+          updated_at = ?
+        WHERE id = ?
+          AND status IN (
+            'requested',
+            'allocated',
+            'connecting',
+            'active'
+          )
+        RETURNING *
+      `).get(
+        now,
+        sessionId,
+      );
+
+    return row
+      ? mapSession(row)
+      : null;
+  }
+
+  recoverInterruptedSessions(
+    now,
+    offlineWorkerIds = [],
+  ) {
+    const offlineWorkerIdSet =
+      new Set(offlineWorkerIds);
+
+    const active =
+      this.listOccupyingSessions()
+        .filter(
+          (session) =>
+            (
+              session.leaseExpiresAt !== null &&
+              session.leaseExpiresAt <= now
+            ) ||
+            offlineWorkerIdSet.has(
+              session.assignedWorkerId,
+            ),
+        );
+
+    const recovered = [];
+
+    for (const session of active) {
+      const reason =
+        offlineWorkerIdSet.has(
+          session.assignedWorkerId,
+        )
+          ? "heartbeat_timeout"
+          : "lease_expired";
+
+      const previousStatus =
+        session.status;
+
+      const interruptionCount =
+        session.interruptionCount + 1;
+
+      const replacementAllowed =
+        interruptionCount <=
+        session.recovery
+          .maxInterruptions;
+
+      const status =
+        replacementAllowed
+          ? "requested"
+          : "interrupted";
+
+      const row =
+        this.database.prepare(`
+          UPDATE sessions
+          SET
+            status = ?,
+            interruption_count = ?,
+            assigned_worker_id = NULL,
+            assigned_gpu_uuid = NULL,
+            lease_id = NULL,
+            lease_expires_at = NULL,
+            updated_at = ?
+          WHERE id = ?
+            AND status IN (
+              'allocated',
+              'connecting',
+              'active'
+            )
+          RETURNING *
+        `).get(
+          status,
+          interruptionCount,
+          now,
+          session.id,
+        );
+
+      if (row) {
+        recovered.push({
+          session: mapSession(row),
+          reason,
+          previousStatus,
+        });
+      }
+    }
+
+    return recovered;
+  }
+
   appendEvent(type, subjectId, payload, now) {
     const row = this.database.prepare(`
       INSERT INTO events(type, subject_id, payload_json, created_at)
@@ -457,6 +910,53 @@ function mapJob(row) {
     idempotencyKey: row.idempotency_key,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapSession(row) {
+  return {
+    id: row.id,
+    schemaVersion: row.schema_version,
+    projectId: row.project_id,
+    capability: row.capability,
+    priority: row.priority,
+    status: row.status,
+    requirements: {
+      gpuCount: row.gpu_count,
+      minVramMiB: row.min_vram_mib,
+      capabilities:
+        parseJson(
+          row.required_capabilities_json,
+          [],
+        ),
+      model: row.requested_model,
+      adapter: row.requested_adapter,
+    },
+    metadata:
+      parseJson(
+        row.metadata_json,
+        {},
+      ),
+    recovery: {
+      maxInterruptions:
+        row.max_interruptions,
+    },
+    interruptionCount:
+      row.interruption_count,
+    assignedWorkerId:
+      row.assigned_worker_id,
+    assignedGpuUuid:
+      row.assigned_gpu_uuid,
+    leaseId:
+      row.lease_id,
+    leaseExpiresAt:
+      row.lease_expires_at,
+    idempotencyKey:
+      row.idempotency_key,
+    createdAt:
+      row.created_at,
+    updatedAt:
+      row.updated_at,
   };
 }
 

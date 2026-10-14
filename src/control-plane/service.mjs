@@ -4,6 +4,7 @@ import { validateAdapterHealth } from "../shared/adapter-health.mjs";
 import { validateAdapterManifests } from "../shared/adapter-manifest.mjs";
 import { validateModelInventory } from "../shared/model-inventory.mjs";
 import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
+import { validateSessionRequest } from "../shared/session-contract.mjs";
 import {
   boundedInteger,
   optionalObject,
@@ -187,6 +188,236 @@ export class ControlPlaneService {
       ...inserted,
       job: storedJob,
     };
+  }
+
+  async submitSession(
+    input,
+    idempotencyHeader = null,
+  ) {
+    const request =
+      validateSessionRequest(input);
+
+    const now = this.clock();
+
+    const session = {
+      id: createId("session"),
+      ...request,
+      idempotencyKey:
+        optionalString(
+          idempotencyHeader,
+          "idempotencyKey",
+          null,
+          { maximum: 200 },
+        ),
+      now,
+    };
+
+    const inserted =
+      await this.database.transaction(
+        async (transaction) => {
+          const result =
+            await transaction
+              .insertSession(session);
+
+          if (!result.duplicate) {
+            await transaction.appendEvent(
+              "session.requested",
+              result.session.id,
+              {
+                projectId:
+                  result.session.projectId,
+                capability:
+                  result.session.capability,
+                priority:
+                  result.session.priority,
+              },
+              now,
+            );
+          }
+
+          return result;
+        },
+      );
+
+    await this.scheduler.runOnce();
+
+    const storedSession =
+      await this.database.getSession(
+        inserted.session.id,
+      );
+
+    return {
+      ...inserted,
+      session: storedSession,
+    };
+  }
+
+  async startSession(
+    sessionId,
+    input,
+  ) {
+    const lease =
+      validateLeaseAction(input);
+
+    const now = this.clock();
+
+    return this.database.transaction(
+      async (transaction) => {
+        const session =
+          await transaction
+            .startSession(
+              sessionId,
+              lease.workerId,
+              lease.leaseId,
+              now +
+                this.config
+                  .leaseDurationMs,
+              now,
+            );
+
+        if (!session) {
+          throw new ConflictError(
+            "session lease is not valid for this worker",
+          );
+        }
+
+        await transaction.appendEvent(
+          "session.connecting",
+          session.id,
+          {
+            workerId:
+              lease.workerId,
+          },
+          now,
+        );
+
+        return session;
+      },
+    );
+  }
+
+  async activateSession(
+    sessionId,
+    input,
+  ) {
+    const lease =
+      validateLeaseAction(input);
+
+    const now = this.clock();
+
+    return this.database.transaction(
+      async (transaction) => {
+        const session =
+          await transaction
+            .activateSession(
+              sessionId,
+              lease.workerId,
+              lease.leaseId,
+              now +
+                this.config
+                  .leaseDurationMs,
+              now,
+            );
+
+        if (!session) {
+          throw new ConflictError(
+            "connecting session lease is not valid for this worker",
+          );
+        }
+
+        await transaction.appendEvent(
+          "session.active",
+          session.id,
+          {
+            workerId:
+              lease.workerId,
+          },
+          now,
+        );
+
+        return session;
+      },
+    );
+  }
+
+  async renewSession(
+    sessionId,
+    input,
+  ) {
+    const lease =
+      validateLeaseAction(input);
+
+    const now = this.clock();
+
+    const session =
+      await this.database
+        .renewSession(
+          sessionId,
+          lease.workerId,
+          lease.leaseId,
+          now +
+            this.config
+              .leaseDurationMs,
+          now,
+        );
+
+    if (!session) {
+      throw new ConflictError(
+        "session lease is not valid for this worker",
+      );
+    }
+
+    return session;
+  }
+
+  async closeSession(sessionId) {
+    const now = this.clock();
+
+    const session =
+      await this.database.transaction(
+        async (transaction) => {
+          const existing =
+            await transaction
+              .getSession(
+                sessionId,
+              );
+
+          if (!existing) {
+            throw new NotFoundError(
+              "session not found",
+            );
+          }
+
+          const closed =
+            await transaction
+              .closeSession(
+                sessionId,
+                now,
+              );
+
+          if (!closed) {
+            throw new ConflictError(
+              `session cannot be closed from ${existing.status}`,
+            );
+          }
+
+          await transaction.appendEvent(
+            "session.closed",
+            sessionId,
+            {
+              previousStatus:
+                existing.status,
+            },
+            now,
+          );
+
+          return closed;
+        },
+      );
+
+    await this.scheduler.runOnce();
+
+    return session;
   }
 
   async startJob(jobId, input) {

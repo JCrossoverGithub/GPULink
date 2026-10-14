@@ -70,7 +70,16 @@ export function createHttpServer({ service, database, scheduler }) {
         }
         const jobs = (await database.listJobs({ workerId: workerLeases.id, limit: 100 }))
           .filter((job) => job.status === "leased" || job.status === "running");
-        return sendJson(response, 200, { jobs });
+        const sessions = (await database.listSessions({
+          workerId: workerLeases.id,
+          limit: 100,
+        })).filter(
+          (session) =>
+            session.status === "allocated" ||
+            session.status === "connecting" ||
+            session.status === "active",
+        );
+        return sendJson(response, 200, { jobs, sessions });
       }
 
       if (request.method === "POST" && url.pathname === "/v1/jobs") {
@@ -128,6 +137,178 @@ export function createHttpServer({ service, database, scheduler }) {
         const job = await service.cancelJob(jobCancel.id);
         await broadcastNewEvents(database, eventClients);
         return sendJson(response, 200, { job });
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/sessions") {
+        if (!authorize(service, request, response, ["client"])) return;
+        const result = await service.submitSession(
+          await readJson(request),
+          request.headers["idempotency-key"],
+        );
+        await broadcastNewEvents(database, eventClients);
+        return sendJson(response, result.duplicate ? 200 : 201, result);
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/sessions") {
+        if (!authorize(service, request, response, ["client"])) return;
+        const status = url.searchParams.get("status");
+        const limit = parseLimit(url.searchParams.get("limit"));
+        return sendJson(response, 200, {
+          sessions: await database.listSessions({
+            status,
+            limit,
+          }),
+        });
+      }
+
+      const sessionPath =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id",
+        );
+
+      if (
+        request.method === "GET" &&
+        sessionPath
+      ) {
+        if (!authorize(service, request, response, ["client"])) return;
+
+        const session =
+          await database.getSession(
+            sessionPath.id,
+          );
+
+        return session
+          ? sendJson(
+              response,
+              200,
+              { session },
+            )
+          : sendJson(
+              response,
+              404,
+              {
+                error: {
+                  code: "not_found",
+                  message:
+                    "session not found",
+                },
+              },
+            );
+      }
+
+      const sessionStart =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id/start",
+        );
+
+      if (
+        request.method === "POST" &&
+        sessionStart
+      ) {
+        if (!authorize(service, request, response, ["worker"])) return;
+
+        const session =
+          await service.startSession(
+            sessionStart.id,
+            await readJson(request),
+          );
+
+        await broadcastNewEvents(
+          database,
+          eventClients,
+        );
+
+        return sendJson(
+          response,
+          200,
+          { session },
+        );
+      }
+
+      const sessionActivate =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id/activate",
+        );
+
+      if (
+        request.method === "POST" &&
+        sessionActivate
+      ) {
+        if (!authorize(service, request, response, ["worker"])) return;
+
+        const session =
+          await service.activateSession(
+            sessionActivate.id,
+            await readJson(request),
+          );
+
+        await broadcastNewEvents(
+          database,
+          eventClients,
+        );
+
+        return sendJson(
+          response,
+          200,
+          { session },
+        );
+      }
+
+      const sessionRenew =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id/renew",
+        );
+
+      if (
+        request.method === "POST" &&
+        sessionRenew
+      ) {
+        if (!authorize(service, request, response, ["worker"])) return;
+
+        const session =
+          await service.renewSession(
+            sessionRenew.id,
+            await readJson(request),
+          );
+
+        return sendJson(
+          response,
+          200,
+          { session },
+        );
+      }
+
+      const sessionClose =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id/close",
+        );
+
+      if (
+        request.method === "POST" &&
+        sessionClose
+      ) {
+        if (!authorize(service, request, response, ["client"])) return;
+
+        const session =
+          await service.closeSession(
+            sessionClose.id,
+          );
+
+        await broadcastNewEvents(
+          database,
+          eventClients,
+        );
+
+        return sendJson(
+          response,
+          200,
+          { session },
+        );
       }
 
       if (request.method === "POST" && url.pathname === "/v1/scheduler/run") {

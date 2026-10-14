@@ -616,6 +616,83 @@ export class PostgresPersistence {
     );
   }
 
+  insertSession(...args) {
+    return this.#call(
+      "insertSession",
+      args,
+    );
+  }
+
+  getSession(...args) {
+    return this.#call(
+      "getSession",
+      args,
+    );
+  }
+
+  listSessions(...args) {
+    return this.#call(
+      "listSessions",
+      args,
+    );
+  }
+
+  listRequestedSessions(...args) {
+    return this.#call(
+      "listRequestedSessions",
+      args,
+    );
+  }
+
+  listOccupyingSessions(...args) {
+    return this.#call(
+      "listOccupyingSessions",
+      args,
+    );
+  }
+
+  assignSession(...args) {
+    return this.#call(
+      "assignSession",
+      args,
+    );
+  }
+
+  startSession(...args) {
+    return this.#call(
+      "startSession",
+      args,
+    );
+  }
+
+  activateSession(...args) {
+    return this.#call(
+      "activateSession",
+      args,
+    );
+  }
+
+  renewSession(...args) {
+    return this.#call(
+      "renewSession",
+      args,
+    );
+  }
+
+  closeSession(...args) {
+    return this.#call(
+      "closeSession",
+      args,
+    );
+  }
+
+  recoverInterruptedSessions(...args) {
+    return this.#call(
+      "recoverInterruptedSessions",
+      args,
+    );
+  }
+
   appendEvent(...args) {
     return this.#call(
       "appendEvent",
@@ -783,6 +860,72 @@ export class PostgresPersistence {
 
       case "recoverExpiredJobs":
         return postgresRecoverExpiredJobs(
+          queryable,
+          ...args,
+        );
+
+      case "insertSession":
+        return postgresInsertSession(
+          queryable,
+          ...args,
+        );
+
+      case "getSession":
+        return postgresGetSession(
+          queryable,
+          ...args,
+        );
+
+      case "listSessions":
+        return postgresListSessions(
+          queryable,
+          ...args,
+        );
+
+      case "listRequestedSessions":
+        return postgresListRequestedSessions(
+          queryable,
+          ...args,
+        );
+
+      case "listOccupyingSessions":
+        return postgresListActiveSessions(
+          queryable,
+          ...args,
+        );
+
+      case "assignSession":
+        return postgresAssignSession(
+          queryable,
+          ...args,
+        );
+
+      case "startSession":
+        return postgresStartSession(
+          queryable,
+          ...args,
+        );
+
+      case "activateSession":
+        return postgresActivateSession(
+          queryable,
+          ...args,
+        );
+
+      case "renewSession":
+        return postgresRenewSession(
+          queryable,
+          ...args,
+        );
+
+      case "closeSession":
+        return postgresCloseSession(
+          queryable,
+          ...args,
+        );
+
+      case "recoverInterruptedSessions":
+        return postgresRecoverInterruptedSessions(
           queryable,
           ...args,
         );
@@ -1133,6 +1276,569 @@ function mapPostgresWorker(row) {
   };
 }
 
+
+async function postgresInsertSession(
+  queryable,
+  session,
+) {
+  const result =
+    await queryable.query(
+      `
+        INSERT INTO sessions (
+          id,
+          schema_version,
+          project_id,
+          capability,
+          priority,
+          status,
+          gpu_count,
+          min_vram_mib,
+          required_capabilities_json,
+          requested_model,
+          requested_adapter,
+          metadata_json,
+          max_interruptions,
+          interruption_count,
+          idempotency_key,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          'requested',
+          1,
+          $6,
+          $7::jsonb,
+          $8,
+          $9,
+          $10::jsonb,
+          $11,
+          0,
+          $12,
+          $13,
+          $14
+        )
+        ON CONFLICT (
+          project_id,
+          idempotency_key
+        )
+        DO NOTHING
+        RETURNING *
+      `,
+      [
+        session.id,
+        session.schemaVersion,
+        session.projectId,
+        session.capability,
+        session.priority,
+        session.requirements.minVramMiB,
+        JSON.stringify(
+          session.requirements.capabilities,
+        ),
+        session.requirements.model,
+        session.requirements.adapter,
+        JSON.stringify(session.metadata),
+        session.recovery.maxInterruptions,
+        session.idempotencyKey,
+        session.now,
+        session.now,
+      ],
+    );
+
+  if (result.rowCount > 0) {
+    return {
+      session:
+        mapPostgresSession(
+          result.rows[0],
+        ),
+      duplicate: false,
+    };
+  }
+
+  if (session.idempotencyKey !== null) {
+    const existing =
+      await queryable.query(
+        `
+          SELECT *
+          FROM sessions
+          WHERE project_id = $1
+            AND idempotency_key = $2
+        `,
+        [
+          session.projectId,
+          session.idempotencyKey,
+        ],
+      );
+
+    if (existing.rowCount > 0) {
+      return {
+        session:
+          mapPostgresSession(
+            existing.rows[0],
+          ),
+        duplicate: true,
+      };
+    }
+  }
+
+  throw new Error(
+    "PostgreSQL session insert returned no row",
+  );
+}
+
+async function postgresGetSession(
+  queryable,
+  sessionId,
+) {
+  const result =
+    await queryable.query(
+      `
+        SELECT *
+        FROM sessions
+        WHERE id = $1
+      `,
+      [sessionId],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresSession(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresListSessions(
+  queryable,
+  {
+    status = null,
+    workerId = null,
+    limit = 100,
+  } = {},
+) {
+  const clauses = [];
+  const parameters = [];
+
+  if (status) {
+    parameters.push(status);
+    clauses.push(
+      `status = $${parameters.length}`,
+    );
+  }
+
+  if (workerId) {
+    parameters.push(workerId);
+    clauses.push(
+      `assigned_worker_id = $${parameters.length}`,
+    );
+  }
+
+  const where =
+    clauses.length > 0
+      ? `WHERE ${clauses.join(" AND ")}`
+      : "";
+
+  parameters.push(limit);
+
+  const result =
+    await queryable.query(
+      `
+        SELECT *
+        FROM sessions
+        ${where}
+        ORDER BY created_at DESC, id ASC
+        LIMIT $${parameters.length}
+      `,
+      parameters,
+    );
+
+  return result.rows.map(
+    mapPostgresSession,
+  );
+}
+
+async function postgresListRequestedSessions(
+  queryable,
+) {
+  const result =
+    await queryable.query(`
+      SELECT *
+      FROM sessions
+      WHERE status = 'requested'
+      ORDER BY
+        priority DESC,
+        created_at ASC,
+        id ASC
+    `);
+
+  return result.rows.map(
+    mapPostgresSession,
+  );
+}
+
+async function postgresListActiveSessions(
+  queryable,
+) {
+  const result =
+    await queryable.query(`
+      SELECT *
+      FROM sessions
+      WHERE status IN (
+        'allocated',
+        'connecting',
+        'active'
+      )
+      ORDER BY created_at ASC, id ASC
+    `);
+
+  return result.rows.map(
+    mapPostgresSession,
+  );
+}
+
+function mapPostgresSession(row) {
+  return {
+    id: row.id,
+    schemaVersion:
+      Number(row.schema_version),
+    projectId:
+      row.project_id,
+    capability:
+      row.capability,
+    priority:
+      Number(row.priority),
+    status:
+      row.status,
+    requirements: {
+      gpuCount:
+        Number(row.gpu_count),
+      minVramMiB:
+        Number(row.min_vram_mib),
+      capabilities:
+        row.required_capabilities_json ??
+        [],
+      model:
+        row.requested_model,
+      adapter:
+        row.requested_adapter,
+    },
+    metadata:
+      row.metadata_json ?? {},
+    recovery: {
+      maxInterruptions:
+        Number(row.max_interruptions),
+    },
+    interruptionCount:
+      Number(row.interruption_count),
+    assignedWorkerId:
+      row.assigned_worker_id,
+    assignedGpuUuid:
+      row.assigned_gpu_uuid,
+    leaseId:
+      row.lease_id,
+    leaseExpiresAt:
+      row.lease_expires_at === null
+        ? null
+        : Number(
+            row.lease_expires_at,
+          ),
+    idempotencyKey:
+      row.idempotency_key,
+    createdAt:
+      Number(row.created_at),
+    updatedAt:
+      Number(row.updated_at),
+  };
+}
+
+async function postgresAssignSession(
+  queryable,
+  sessionId,
+  placement,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE sessions
+        SET
+          status = 'allocated',
+          assigned_worker_id = $1,
+          assigned_gpu_uuid = $2,
+          lease_id = $3,
+          lease_expires_at = $4,
+          updated_at = $5
+        WHERE id = $6
+          AND status = 'requested'
+        RETURNING *
+      `,
+      [
+        placement.workerId,
+        placement.gpuUuid,
+        leaseId,
+        leaseExpiresAt,
+        now,
+        sessionId,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresSession(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresStartSession(
+  queryable,
+  sessionId,
+  workerId,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE sessions
+        SET
+          status = 'connecting',
+          lease_expires_at = $1,
+          updated_at = $2
+        WHERE id = $3
+          AND status = 'allocated'
+          AND assigned_worker_id = $4
+          AND lease_id = $5
+          AND lease_expires_at > $6
+        RETURNING *
+      `,
+      [
+        leaseExpiresAt,
+        now,
+        sessionId,
+        workerId,
+        leaseId,
+        now,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresSession(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresActivateSession(
+  queryable,
+  sessionId,
+  workerId,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE sessions
+        SET
+          status = 'active',
+          lease_expires_at = $1,
+          updated_at = $2
+        WHERE id = $3
+          AND status = 'connecting'
+          AND assigned_worker_id = $4
+          AND lease_id = $5
+          AND lease_expires_at > $6
+        RETURNING *
+      `,
+      [
+        leaseExpiresAt,
+        now,
+        sessionId,
+        workerId,
+        leaseId,
+        now,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresSession(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresRenewSession(
+  queryable,
+  sessionId,
+  workerId,
+  leaseId,
+  leaseExpiresAt,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE sessions
+        SET
+          lease_expires_at = $1,
+          updated_at = $2
+        WHERE id = $3
+          AND status IN (
+            'allocated',
+            'connecting',
+            'active'
+          )
+          AND assigned_worker_id = $4
+          AND lease_id = $5
+          AND lease_expires_at > $6
+        RETURNING *
+      `,
+      [
+        leaseExpiresAt,
+        now,
+        sessionId,
+        workerId,
+        leaseId,
+        now,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresSession(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresCloseSession(
+  queryable,
+  sessionId,
+  now,
+) {
+  const result =
+    await queryable.query(
+      `
+        UPDATE sessions
+        SET
+          status = 'closed',
+          assigned_worker_id = NULL,
+          assigned_gpu_uuid = NULL,
+          lease_id = NULL,
+          lease_expires_at = NULL,
+          updated_at = $1
+        WHERE id = $2
+          AND status IN (
+            'requested',
+            'allocated',
+            'connecting',
+            'active'
+          )
+        RETURNING *
+      `,
+      [
+        now,
+        sessionId,
+      ],
+    );
+
+  return result.rowCount > 0
+    ? mapPostgresSession(
+        result.rows[0],
+      )
+    : null;
+}
+
+async function postgresRecoverInterruptedSessions(
+  queryable,
+  now,
+  offlineWorkerIds = [],
+) {
+  const result =
+    await queryable.query(
+      `
+        WITH candidates AS (
+          SELECT
+            id,
+            status AS previous_status,
+            interruption_count + 1
+              AS next_interruption_count,
+            CASE
+              WHEN assigned_worker_id =
+                ANY($2::text[])
+              THEN 'heartbeat_timeout'
+              ELSE 'lease_expired'
+            END AS recovery_reason
+          FROM sessions
+          WHERE
+            status IN (
+              'allocated',
+              'connecting',
+              'active'
+            )
+            AND (
+              (
+                lease_expires_at IS NOT NULL
+                AND lease_expires_at <= $1
+              )
+              OR assigned_worker_id =
+                ANY($2::text[])
+            )
+          FOR UPDATE
+        )
+        UPDATE sessions AS session
+        SET
+          status =
+            CASE
+              WHEN
+                candidates.next_interruption_count
+                  <= session.max_interruptions
+              THEN 'requested'
+              ELSE 'interrupted'
+            END,
+          interruption_count =
+            candidates.next_interruption_count,
+          assigned_worker_id = NULL,
+          assigned_gpu_uuid = NULL,
+          lease_id = NULL,
+          lease_expires_at = NULL,
+          updated_at = $1
+        FROM candidates
+        WHERE
+          session.id = candidates.id
+          AND session.status IN (
+            'allocated',
+            'connecting',
+            'active'
+          )
+        RETURNING
+          session.*,
+          candidates.recovery_reason,
+          candidates.previous_status
+      `,
+      [
+        now,
+        offlineWorkerIds,
+      ],
+    );
+
+  return result.rows.map(
+    (row) => ({
+      session:
+        mapPostgresSession(row),
+      reason:
+        row.recovery_reason,
+      previousStatus:
+        row.previous_status,
+    }),
+  );
+}
 
 async function postgresAppendEvent(
   queryable,

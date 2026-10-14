@@ -10,9 +10,12 @@ export class Scheduler {
     clock = () => Date.now(),
   }) {
     this.database = database;
-    this.heartbeatTimeoutMs = heartbeatTimeoutMs;
-    this.leaseDurationMs = leaseDurationMs;
-    this.vramSafetyMiB = vramSafetyMiB;
+    this.heartbeatTimeoutMs =
+      heartbeatTimeoutMs;
+    this.leaseDurationMs =
+      leaseDurationMs;
+    this.vramSafetyMiB =
+      vramSafetyMiB;
     this.clock = clock;
   }
 
@@ -31,136 +34,305 @@ export class Scheduler {
   }
 
   async #runOnce() {
-    return this.database.transaction(async (transaction) => {
-      const acquired =
-        await transaction
-          .tryAcquireSchedulerLock();
+    return this.database.transaction(
+      async (transaction) => {
+        const acquired =
+          await transaction
+            .tryAcquireSchedulerLock();
 
-      if (!acquired) {
-        return {
-          acquired: false,
-          staleWorkerIds: [],
-          recoveredJobs: [],
-          assigned: [],
-        };
-      }
+        if (!acquired) {
+          return {
+            acquired: false,
+            staleWorkerIds: [],
+            recoveredJobs: [],
+            assigned: [],
+          };
+        }
 
-      const now = this.clock();
+        const now = this.clock();
 
-      const staleWorkerIds =
-        await transaction.markStaleWorkersOffline(
-          now - this.heartbeatTimeoutMs,
-          now,
-        );
+        const staleWorkerIds =
+          await transaction
+            .markStaleWorkersOffline(
+              now -
+                this.heartbeatTimeoutMs,
+              now,
+            );
 
-      for (const workerId of staleWorkerIds) {
-        await transaction.appendEvent(
-          "worker.offline",
-          workerId,
-          { reason: "heartbeat_timeout" },
-          now,
-        );
-      }
-
-      const recoveries =
-        await transaction.recoverExpiredJobs(
-          now,
-          staleWorkerIds,
-        );
-
-      for (const { job, reason } of recoveries) {
-        await transaction.appendEvent(
-          job.status === "queued"
-            ? "job.requeued"
-            : "job.failed",
-          job.id,
-          {
-            reason,
-            attempt: job.attempt,
-          },
-          now,
-        );
-      }
-
-      const workers =
-        await transaction.listWorkers();
-
-      const activeJobs =
-        await transaction.listActiveJobs();
-
-      const occupiedGpus = new Set(
-        activeJobs
-          .map((job) => job.assignedGpuUuid)
-          .filter(Boolean),
-      );
-
-      const assigned = [];
-
-      const queuedJobs =
-        await transaction.listQueuedJobs();
-
-      for (const job of queuedJobs) {
-        const placement = choosePlacement(
-          job,
-          workers,
-          occupiedGpus,
-          {
+        for (
+          const workerId
+          of staleWorkerIds
+        ) {
+          await transaction.appendEvent(
+            "worker.offline",
+            workerId,
+            {
+              reason:
+                "heartbeat_timeout",
+            },
             now,
-            heartbeatTimeoutMs:
-              this.heartbeatTimeoutMs,
-            vramSafetyMiB:
-              this.vramSafetyMiB,
-          },
-        );
+          );
+        }
 
-        if (!placement) continue;
+        const recoveries =
+          await transaction
+            .recoverExpiredJobs(
+              now,
+              staleWorkerIds,
+            );
 
-        const leaseId = createId("lease");
-
-        const leasedJob =
-          await transaction.assignJob(
+        for (
+          const { job, reason }
+          of recoveries
+        ) {
+          await transaction.appendEvent(
+            job.status === "queued"
+              ? "job.requeued"
+              : "job.failed",
             job.id,
-            placement,
-            leaseId,
-            now + this.leaseDurationMs,
+            {
+              reason,
+              attempt: job.attempt,
+            },
+            now,
+          );
+        }
+
+        const sessionRecoveries =
+          await transaction
+            .recoverInterruptedSessions(
+              now,
+              staleWorkerIds,
+            );
+
+        for (
+          const {
+            session,
+            reason,
+            previousStatus,
+          }
+          of sessionRecoveries
+        ) {
+          await transaction.appendEvent(
+            "session.interrupted",
+            session.id,
+            {
+              reason,
+              previousStatus,
+              interruptionCount:
+                session.interruptionCount,
+            },
             now,
           );
 
-        if (!leasedJob) continue;
+          if (
+            session.status ===
+            "requested"
+          ) {
+            await transaction.appendEvent(
+              "session.requeued",
+              session.id,
+              {
+                reason,
+                interruptionCount:
+                  session.interruptionCount,
+              },
+              now,
+            );
+          }
+        }
 
-        occupiedGpus.add(placement.gpuUuid);
-        assigned.push(leasedJob);
+        const workers =
+          await transaction
+            .listWorkers();
 
-        await transaction.appendEvent(
-          "job.leased",
-          leasedJob.id,
-          {
-            workerId: placement.workerId,
-            gpuUuid: placement.gpuUuid,
-            attempt: leasedJob.attempt,
-          },
-          now,
-        );
-      }
+        const activeJobs =
+          await transaction
+            .listActiveJobs();
 
-      return {
-        acquired: true,
-        staleWorkerIds,
-        recoveredJobs:
-          recoveries.map(({ job }) => job),
-        assigned,
-      };
-    });
+        const occupyingSessions =
+          await transaction
+            .listOccupyingSessions();
+
+        const occupiedGpus =
+          new Set(
+            [
+              ...activeJobs,
+              ...occupyingSessions,
+            ]
+              .map(
+                (workload) =>
+                  workload
+                    .assignedGpuUuid,
+              )
+              .filter(Boolean),
+          );
+
+        const queuedJobs =
+          await transaction
+            .listQueuedJobs();
+
+        const requestedSessions =
+          await transaction
+            .listRequestedSessions();
+
+        const pending = [
+          ...queuedJobs.map(
+            (item) => ({
+              kind: "job",
+              item,
+            }),
+          ),
+          ...requestedSessions.map(
+            (item) => ({
+              kind: "session",
+              item,
+            }),
+          ),
+        ].sort(comparePendingWork);
+
+        const assigned = [];
+
+        for (
+          const entry of pending
+        ) {
+          const placement =
+            choosePlacement(
+              entry.item,
+              workers,
+              occupiedGpus,
+              {
+                now,
+                heartbeatTimeoutMs:
+                  this
+                    .heartbeatTimeoutMs,
+                vramSafetyMiB:
+                  this.vramSafetyMiB,
+              },
+            );
+
+          if (!placement) {
+            continue;
+          }
+
+          const leaseId =
+            createId("lease");
+
+          const leaseExpiresAt =
+            now +
+            this.leaseDurationMs;
+
+          if (entry.kind === "job") {
+            const leasedJob =
+              await transaction
+                .assignJob(
+                  entry.item.id,
+                  placement,
+                  leaseId,
+                  leaseExpiresAt,
+                  now,
+                );
+
+            if (!leasedJob) {
+              continue;
+            }
+
+            occupiedGpus.add(
+              placement.gpuUuid,
+            );
+
+            assigned.push(
+              leasedJob,
+            );
+
+            await transaction
+              .appendEvent(
+                "job.leased",
+                leasedJob.id,
+                {
+                  workerId:
+                    placement.workerId,
+                  gpuUuid:
+                    placement.gpuUuid,
+                  attempt:
+                    leasedJob.attempt,
+                },
+                now,
+              );
+
+            continue;
+          }
+
+          const allocatedSession =
+            await transaction
+              .assignSession(
+                entry.item.id,
+                placement,
+                leaseId,
+                leaseExpiresAt,
+                now,
+              );
+
+          if (!allocatedSession) {
+            continue;
+          }
+
+          occupiedGpus.add(
+            placement.gpuUuid,
+          );
+
+          await transaction
+            .appendEvent(
+              "session.allocated",
+              allocatedSession.id,
+              {
+                workerId:
+                  placement.workerId,
+                gpuUuid:
+                  placement.gpuUuid,
+              },
+              now,
+            );
+        }
+
+        return {
+          acquired: true,
+          staleWorkerIds,
+          recoveredJobs:
+            recoveries.map(
+              ({ job }) => job,
+            ),
+          assigned,
+        };
+      },
+    );
   }
 }
 
-export function choosePlacement(job, workers, occupiedGpus, {
-  now,
-  heartbeatTimeoutMs,
-  vramSafetyMiB,
-}) {
+export function choosePlacement(
+  workload,
+  workers,
+  occupiedGpus,
+  {
+    now,
+    heartbeatTimeoutMs,
+    vramSafetyMiB,
+  },
+) {
+  const requirements =
+    workload.constraints ??
+    workload.requirements;
+
+  if (!requirements) {
+    throw new TypeError(
+      "workload must contain constraints or requirements",
+    );
+  }
+
   const requiredCapabilities =
-    new Set(job.constraints.capabilities);
+    new Set(
+      requirements.capabilities,
+    );
 
   const candidates = [];
 
@@ -168,26 +340,37 @@ export function choosePlacement(job, workers, occupiedGpus, {
     if (
       worker.status !== "online" ||
       worker.drainMode ||
-      now - worker.lastSeenAt > heartbeatTimeoutMs
+      now - worker.lastSeenAt >
+        heartbeatTimeoutMs
     ) {
       continue;
     }
 
     const capabilities =
-      new Set(worker.capabilities);
+      new Set(
+        worker.capabilities,
+      );
 
     if (
       [...requiredCapabilities]
         .some(
           (capability) =>
-            !capabilities.has(capability),
+            !capabilities.has(
+              capability,
+            ),
         )
     ) {
       continue;
     }
 
     for (const gpu of worker.gpus) {
-      if (occupiedGpus.has(gpu.uuid)) continue;
+      if (
+        occupiedGpus.has(
+          gpu.uuid,
+        )
+      ) {
+        continue;
+      }
 
       const freeVramMiB =
         gpu.memoryTotalMiB -
@@ -196,25 +379,27 @@ export function choosePlacement(job, workers, occupiedGpus, {
 
       if (
         freeVramMiB <
-        job.constraints.minVramMiB
+        requirements.minVramMiB
       ) {
         continue;
       }
 
       const warmModel =
-        job.constraints.model !== null &&
+        requirements.model !== null &&
         worker.warmModels.includes(
-          job.constraints.model,
+          requirements.model,
         );
 
       const cachedModel =
-        job.constraints.model !== null &&
-        (worker.modelInventory ?? [])
-          .some(
-            (entry) =>
-              entry.modelId ===
-              job.constraints.model,
-          );
+        requirements.model !== null &&
+        (
+          worker.modelInventory ??
+          []
+        ).some(
+          (entry) =>
+            entry.modelId ===
+            requirements.model,
+        );
 
       candidates.push({
         workerId: worker.id,
@@ -225,26 +410,46 @@ export function choosePlacement(job, workers, occupiedGpus, {
           gpu.utilizationPercent,
         headroomMiB:
           freeVramMiB -
-          job.constraints.minVramMiB,
+          requirements.minVramMiB,
       });
     }
   }
 
-  candidates.sort((left, right) =>
-    Number(right.warmModel) -
-      Number(left.warmModel) ||
-    Number(right.cachedModel) -
-      Number(left.cachedModel) ||
-    left.utilizationPercent -
-      right.utilizationPercent ||
-    left.headroomMiB -
-      right.headroomMiB ||
-    left.workerId.localeCompare(
-      right.workerId,
-    ) ||
-    left.gpuUuid.localeCompare(
-      right.gpuUuid,
-    ));
+  candidates.sort(
+    (left, right) =>
+      Number(right.warmModel) -
+        Number(left.warmModel) ||
+      Number(right.cachedModel) -
+        Number(left.cachedModel) ||
+      left.utilizationPercent -
+        right.utilizationPercent ||
+      left.headroomMiB -
+        right.headroomMiB ||
+      left.workerId.localeCompare(
+        right.workerId,
+      ) ||
+      left.gpuUuid.localeCompare(
+        right.gpuUuid,
+      ),
+  );
 
   return candidates[0] ?? null;
+}
+
+function comparePendingWork(
+  left,
+  right,
+) {
+  return (
+    right.item.priority -
+      left.item.priority ||
+    left.item.createdAt -
+      right.item.createdAt ||
+    left.item.id.localeCompare(
+      right.item.id,
+    ) ||
+    left.kind.localeCompare(
+      right.kind,
+    )
+  );
 }
