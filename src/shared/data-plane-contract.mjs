@@ -6,6 +6,13 @@ export const DATA_PLANE_PATH =
 export const DATA_PLANE_SUBPROTOCOL =
   "gpulink.data-plane.v1";
 
+export const DATA_PLANE_SUBPROTOCOL_V2 =
+  "gpulink.data-plane.v2";
+
+/* Reserved server-origin text frame, only on opt-in v2 sockets. */
+export const DATA_PLANE_RELAY_READY_V2 =
+  "gpulink.relay.ready.v2";
+
 export const DATA_PLANE_GRANT_SUBPROTOCOL_PREFIX =
   "gpulink.grant.";
 
@@ -68,12 +75,17 @@ export function parseDataPlaneProtocols(
       )
       .filter(Boolean);
 
+  const protocol =
+    values.find(
+      (value) =>
+        value === DATA_PLANE_SUBPROTOCOL ||
+        value === DATA_PLANE_SUBPROTOCOL_V2,
+    );
+
   if (
     values.length !== 2 ||
     new Set(values).size !== 2 ||
-    !values.includes(
-      DATA_PLANE_SUBPROTOCOL,
-    )
+    !protocol
   ) {
     return null;
   }
@@ -104,8 +116,7 @@ export function parseDataPlaneProtocols(
   }
 
   return Object.freeze({
-    protocol:
-      DATA_PLANE_SUBPROTOCOL,
+    protocol,
     grant,
   });
 }
