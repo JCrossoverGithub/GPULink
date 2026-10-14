@@ -1,4 +1,7 @@
 /** Client-scoped GPULink v1 HTTP SDK. No imports from private Core modules. */
+import { GPULinkDataPlane, openDataPlaneSocket, validateConnectTimeout } from './data-plane.js';
+export { GPULinkDataPlane, GPULINK_DATA_PLANE_PROTOCOL, GPULINK_MAX_FRAME_BYTES, GPULINK_MAX_BUFFERED_BYTES } from './data-plane.js';
+export type { DataPlaneConnectOptions, DataPlaneCloseInfo, DataPlaneMessage } from './data-plane.js';
 export type JsonObject = Record<string, unknown>;
 export interface JobSubmission {
   projectId: string;
@@ -98,6 +101,33 @@ export class GPULinkClient {
   }
   async requestClientGrant(id: string): Promise<{ grant: ClientGrant }> {
     return this.#request('POST', `/v1/sessions/${part(id)}/data-plane/client-grant`);
+  }
+  /** Obtain a short-lived grant; return only after a worker pairs and session becomes active. */
+  async connectSession(id: string, options: { connectTimeoutMs?: number } = {}): Promise<GPULinkDataPlane> {
+    const timeoutMs = validateConnectTimeout(options.connectTimeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    const { grant } = await this.requestClientGrant(id);
+    const stream = await openDataPlaneSocket(this.#baseUrl, grant, deadline - Date.now());
+    try {
+      for (;;) {
+        if (!stream.isOpen) throw new Error('data-plane socket closed before session became active');
+        if (Date.now() >= deadline) throw new Error('data-plane peer activation timed out');
+        const { session } = await this.getSession(id);
+        if (session.status === 'active') {
+          // The relay commits activation before linking peer sockets; avoid sending immediately.
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          if (!stream.isOpen) throw new Error('data plane closed during pairing');
+          return stream;
+        }
+        if (session.status !== 'allocated' && session.status !== 'connecting') {
+          throw new Error('session is no longer eligible for data-plane activation');
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.min(40, Math.max(1, deadline - Date.now()))));
+      }
+    } catch (error) {
+      stream.close();
+      throw error;
+    }
   }
   async #request<T>(method: 'GET' | 'POST', path: string, body?: unknown, options: SubmitOptions = {}): Promise<T> {
     const headers: Record<string, string> = {

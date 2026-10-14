@@ -47,3 +47,23 @@ PostgreSQL directly or drive the scheduler.
 The SDK uses TypeScript source, emits Node ESM and `.d.ts` declarations, and
 will remain independent of internal GPULink modules. C# and Python clients
 will consume this same HTTP/WebSocket protocol without importing TypeScript.
+
+## Phase 5E-2: first public streaming SDK implementation
+
+The Node.js SDK uses the native `WebSocket` interface, offers exactly the
+`gpulink.data-plane.v1` and `gpulink.grant.<short-lived-token>` subprotocols,
+then checks that the negotiated protocol is the expected data-plane version.
+It never puts grants in URL paths/query strings and does not invent a second
+control-plane authentication scheme.
+
+`connectSession()` waits until the authorized session record reaches `active`
+before returning an application stream. Only the allocated worker can activate
+the pair; the SDK does not call worker `start`, `activate`, or `renew` routes.
+The v1 relay has no explicit data-plane-ready acknowledgment, so readiness is
+based on control-plane session state plus connection liveness and validated
+end-to-end relay tests. Clients must not assume an `open` WebSocket is paired.
+
+The first SDK provides bounded sends, binary and text events, close notification,
+and a bounded peer wait. It does not silently reconnect or reserve buffer space
+for user callbacks. Receipt of data-plane messages does not imply durable
+persistence of audio/tokens or arbitrary stream payloads.
