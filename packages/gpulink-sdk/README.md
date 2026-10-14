@@ -51,3 +51,9 @@ No automatic reconnect is performed, and cancelling a connection does not close
 or release the GPULink session lease itself. Use `closeSession()` separately.
 Pairing readiness still relies on control-plane state and a compatibility delay;
 v1 does not provide a protocol-level ready acknowledgment.
+
+## Opt-in relay readiness v2 (experimental)
+
+`connectSession(id, { protocolVersion: 2 })` requests the exact `gpulink.data-plane.v2` WebSocket subprotocol and waits for the server-origin `gpulink.relay.ready.v2` text frame before returning. The SDK consumes the control frame; it is not application data. Both the short-lived grant and the entire readiness wait are covered by `connectTimeoutMs` and `signal` cancellation. v2 does not poll session status or use the v1 30 ms delay.
+
+The default remains protocol v1 for compatibility with already-deployed relays. A v2 request **never silently falls back to v1**. Roll out the compatible relay before opting in to v2. The ready frame means the authorized relay is paired, **not** that a GPU model is initialized. No automatic reconnection, grant reuse, or lease recovery is implemented.

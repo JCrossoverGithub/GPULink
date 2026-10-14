@@ -17,3 +17,9 @@ The ready message proves transport authorization, pairing, and forwarding activa
 ## No fallback and deployment coordination
 
 When an SDK later opts into v2, it must verify v2 negotiation and the readiness frame, failing closed when either is missing. It must never silently downgrade from v2 to v1. Existing clients may explicitly continue on v1 until rollout completes. No deployment or restart is performed by this development step.
+
+## TypeScript SDK opt-in (Phase 5E-3F2)
+
+The experimental TypeScript client supports `connectSession(id, { protocolVersion: 2 })`. It offers only `gpulink.data-plane.v2` plus the existing short-lived grant and does not offer or silently downgrade to v1. It waits for the exact server-origin `gpulink.relay.ready.v2` text control frame, bounded by the connection deadline and optional abort signal. The control frame is consumed by the SDK and never emitted as application payload; bounded early peer data is preserved for the first message listener. The default remains the legacy v1 path to avoid breaking existing servers and clients.
+
+No model-ready assertion, automatic reconnect, reuse of expired grants, worker lease operations, or production rollout is included.

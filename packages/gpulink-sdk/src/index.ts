@@ -1,6 +1,6 @@
 /** Client-scoped GPULink v1 HTTP SDK. No imports from private Core modules. */
-import { GPULinkDataPlane, openDataPlaneSocket, validateConnectTimeout } from './data-plane.js';
-export { GPULinkDataPlane, GPULINK_DATA_PLANE_PROTOCOL, GPULINK_MAX_FRAME_BYTES, GPULINK_MAX_BUFFERED_BYTES } from './data-plane.js';
+import { GPULinkDataPlane, openDataPlaneSocket, validateConnectTimeout, validateProtocolVersion } from './data-plane.js';
+export { GPULinkDataPlane, GPULINK_DATA_PLANE_PROTOCOL, GPULINK_DATA_PLANE_PROTOCOL_V2, GPULINK_RELAY_READY_V2, GPULINK_MAX_FRAME_BYTES, GPULINK_MAX_BUFFERED_BYTES } from './data-plane.js';
 import type { DataPlaneConnectOptions } from './data-plane.js';
 export type { DataPlaneConnectOptions, DataPlaneCloseInfo, DataPlaneMessage } from './data-plane.js';
 export type JsonObject = Record<string, unknown>;
@@ -106,6 +106,7 @@ export class GPULinkClient {
   /** Obtain a client grant and wait for relay pairing within a single deadline. */
   async connectSession(id: string, options: DataPlaneConnectOptions = {}): Promise<GPULinkDataPlane> {
     const timeoutMs = validateConnectTimeout(options.connectTimeoutMs);
+    const protocolVersion = validateProtocolVersion(options.protocolVersion === undefined ? 1 : options.protocolVersion);
     if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) {
       throw new TypeError('signal must be an AbortSignal');
     }
@@ -121,12 +122,18 @@ export class GPULinkClient {
       : controller.signal;
     let stream: GPULinkDataPlane | undefined;
     try {
-      // All HTTP calls, the WebSocket handshake, and the pairing poll share this deadline.
+      // All HTTP requests, the handshake, and v2 readiness share this deadline.
       const { grant } = await this.#request<{ grant: ClientGrant }>(
         'POST', `/v1/sessions/${part(id)}/data-plane/client-grant`, undefined, { signal },
       );
       signal.throwIfAborted();
-      stream = await openDataPlaneSocket(this.#baseUrl, grant, deadline - Date.now(), signal);
+      stream = await openDataPlaneSocket(this.#baseUrl, grant, deadline - Date.now(), signal, protocolVersion);
+      if (protocolVersion === 2) {
+        // Explicit relay ACK occurs after authorization, activation, and pairing.
+        signal.throwIfAborted();
+        if (!stream.isOpen) throw new Error('data-plane closed after relay readiness');
+        return stream;
+      }
       for (;;) {
         signal.throwIfAborted();
         if (!stream.isOpen) throw new Error('data-plane socket closed before session became active');
@@ -135,7 +142,7 @@ export class GPULinkClient {
         );
         signal.throwIfAborted();
         if (session.status === 'active') {
-          // Relay v1 has no ready-ACK; retain the compatibility delay until its separate upgrade.
+          // Legacy v1 has no readiness ACK; preserve its compatibility delay.
           await waitForPairing(30, signal);
           signal.throwIfAborted();
           if (!stream.isOpen) throw new Error('data plane closed during pairing');
