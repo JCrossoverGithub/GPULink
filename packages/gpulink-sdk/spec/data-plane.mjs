@@ -134,7 +134,7 @@ test('SDK times out safely if a grant is accepted but no worker pairs', async ()
     const { client, connecting } = await prepare(app, `http://127.0.0.1:${address.port}`);
     await assert.rejects(
       client.connectSession(connecting.id, { connectTimeoutMs: 300 }),
-      /timed out|closed before session became active/,
+      /timed out|closed before session became active|data-plane connection deadline exceeded/,
     );
     const { session } = await client.getSession(connecting.id);
     assert.equal(session.status, 'connecting');
@@ -155,6 +155,29 @@ test('SDK rejects client-grant request for an unallocated session and rejects ti
     assert.equal(session.status, 'requested');
     await assert.rejects(client.connectSession(session.id), (error) => error.status === 409);
     await assert.rejects(client.connectSession(session.id, { connectTimeoutMs: 10 }), /connectTimeoutMs/);
+  } finally {
+    await app.stop();
+  }
+});
+
+test('SDK caller cancellation interrupts unmatched real relay without activating a lease', async () => {
+  const app = createControlPlane(config());
+  const address = await app.start();
+  try {
+    const { client, connecting } = await prepare(app, `http://127.0.0.1:${address.port}`);
+    const controller = new AbortController();
+    const pending = client.connectSession(connecting.id, {
+      signal: controller.signal,
+      connectTimeoutMs: 5_000,
+    });
+    const timer = setTimeout(() => controller.abort(new Error('caller stopped waiting')), 120);
+    try {
+      await assert.rejects(pending, /caller stopped waiting/);
+    } finally {
+      clearTimeout(timer);
+    }
+    const { session } = await client.getSession(connecting.id);
+    assert.equal(session.status, 'connecting');
   } finally {
     await app.stop();
   }

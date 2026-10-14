@@ -6,6 +6,8 @@ export const GPULINK_MAX_BUFFERED_BYTES = 4_194_304;
 export interface DataPlaneConnectOptions {
   /** Includes WebSocket handshake and waiting for the worker to pair. Default 8s. */
   connectTimeoutMs?: number;
+  /** Cancels grant acquisition, WebSocket handshake, or session pairing. */
+  signal?: AbortSignal;
 }
 
 export interface DataPlaneCloseInfo {
@@ -118,6 +120,7 @@ export async function openDataPlaneSocket(
   baseUrl: URL,
   grant: { token: string; expiresAt: number },
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<GPULinkDataPlane> {
   if (!grant || typeof grant.token !== 'string' ||
       !/^gdp1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(grant.token) ||
@@ -126,6 +129,7 @@ export async function openDataPlaneSocket(
     throw new Error('invalid or expired data-plane grant');
   }
   if (timeoutMs < 1) throw new Error('data-plane connection deadline exceeded');
+  signal?.throwIfAborted();
 
   const socketUrl = new URL('/v1/data-plane', baseUrl);
   socketUrl.protocol = socketUrl.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -142,19 +146,29 @@ export async function openDataPlaneSocket(
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;
-      const finish = (error?: Error) => {
+      const finish = (error?: unknown) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener('abort', aborted);
         socket.removeEventListener('open', opened);
         socket.removeEventListener('error', failed);
         socket.removeEventListener('close', closed);
-        if (error) reject(error);
-        else resolve();
+        if (error !== undefined) {
+          // Native WebSocket.close() may reject while CONNECTING. Close on any
+          // later successful open so an abandoned handshake cannot leak a live socket.
+          if (socket.readyState === WebSocket.CONNECTING) {
+            socket.addEventListener('open', () => {
+              try { socket.close(1000, 'connection cancelled'); } catch { /* already closed */ }
+            }, { once: true });
+          }
+          reject(error);
+        } else resolve();
       };
       const opened = () => finish();
       const failed = () => finish(new Error('data-plane WebSocket handshake failed'));
       const closed = () => finish(new Error('data-plane WebSocket closed during handshake'));
+      const aborted = () => finish(signal?.reason ?? new Error('data-plane connection cancelled'));
       const timer = setTimeout(
         () => finish(new Error('data-plane WebSocket handshake timed out')),
         timeoutMs,
@@ -162,7 +176,10 @@ export async function openDataPlaneSocket(
       socket.addEventListener('open', opened);
       socket.addEventListener('error', failed);
       socket.addEventListener('close', closed);
+      signal?.addEventListener('abort', aborted, { once: true });
+      if (signal?.aborted) aborted();
     });
+    signal?.throwIfAborted();
     if (socket.protocol !== GPULINK_DATA_PLANE_PROTOCOL) {
       throw new Error('data-plane subprotocol negotiation failed');
     }

@@ -1,6 +1,7 @@
 /** Client-scoped GPULink v1 HTTP SDK. No imports from private Core modules. */
 import { GPULinkDataPlane, openDataPlaneSocket, validateConnectTimeout } from './data-plane.js';
 export { GPULinkDataPlane, GPULINK_DATA_PLANE_PROTOCOL, GPULINK_MAX_FRAME_BYTES, GPULINK_MAX_BUFFERED_BYTES } from './data-plane.js';
+import type { DataPlaneConnectOptions } from './data-plane.js';
 export type { DataPlaneConnectOptions, DataPlaneCloseInfo, DataPlaneMessage } from './data-plane.js';
 export type JsonObject = Record<string, unknown>;
 export interface JobSubmission {
@@ -102,34 +103,58 @@ export class GPULinkClient {
   async requestClientGrant(id: string): Promise<{ grant: ClientGrant }> {
     return this.#request('POST', `/v1/sessions/${part(id)}/data-plane/client-grant`);
   }
-  /** Obtain a short-lived grant; return only after a worker pairs and session becomes active. */
-  async connectSession(id: string, options: { connectTimeoutMs?: number } = {}): Promise<GPULinkDataPlane> {
+  /** Obtain a client grant and wait for relay pairing within a single deadline. */
+  async connectSession(id: string, options: DataPlaneConnectOptions = {}): Promise<GPULinkDataPlane> {
     const timeoutMs = validateConnectTimeout(options.connectTimeoutMs);
+    if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) {
+      throw new TypeError('signal must be an AbortSignal');
+    }
+    options.signal?.throwIfAborted();
     const deadline = Date.now() + timeoutMs;
-    const { grant } = await this.requestClientGrant(id);
-    const stream = await openDataPlaneSocket(this.#baseUrl, grant, deadline - Date.now());
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error('data-plane connection deadline exceeded')),
+      timeoutMs,
+    );
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal;
+    let stream: GPULinkDataPlane | undefined;
     try {
+      // All HTTP calls, the WebSocket handshake, and the pairing poll share this deadline.
+      const { grant } = await this.#request<{ grant: ClientGrant }>(
+        'POST', `/v1/sessions/${part(id)}/data-plane/client-grant`, undefined, { signal },
+      );
+      signal.throwIfAborted();
+      stream = await openDataPlaneSocket(this.#baseUrl, grant, deadline - Date.now(), signal);
       for (;;) {
+        signal.throwIfAborted();
         if (!stream.isOpen) throw new Error('data-plane socket closed before session became active');
-        if (Date.now() >= deadline) throw new Error('data-plane peer activation timed out');
-        const { session } = await this.getSession(id);
+        const { session } = await this.#request<{ session: SessionRecord }>(
+          'GET', `/v1/sessions/${part(id)}`, undefined, { signal },
+        );
+        signal.throwIfAborted();
         if (session.status === 'active') {
-          // The relay commits activation before linking peer sockets; avoid sending immediately.
-          await new Promise((resolve) => setTimeout(resolve, 30));
+          // Relay v1 has no ready-ACK; retain the compatibility delay until its separate upgrade.
+          await waitForPairing(30, signal);
+          signal.throwIfAborted();
           if (!stream.isOpen) throw new Error('data plane closed during pairing');
           return stream;
         }
         if (session.status !== 'allocated' && session.status !== 'connecting') {
           throw new Error('session is no longer eligible for data-plane activation');
         }
-        await new Promise((resolve) => setTimeout(resolve, Math.min(40, Math.max(1, deadline - Date.now()))));
+        await waitForPairing(Math.min(40, Math.max(1, deadline - Date.now())), signal);
       }
     } catch (error) {
-      stream.close();
+      stream?.close();
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
-  async #request<T>(method: 'GET' | 'POST', path: string, body?: unknown, options: SubmitOptions = {}): Promise<T> {
+  async #request<T>(method: 'GET' | 'POST', path: string, body?: unknown, options: SubmitOptions & { signal?: AbortSignal } = {}): Promise<T> {
+    options.signal?.throwIfAborted();
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.#token}`,
       Accept: 'application/json',
@@ -146,10 +171,13 @@ export class GPULinkClient {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(this.#timeoutMs),
+      signal: options.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(this.#timeoutMs)])
+        : AbortSignal.timeout(this.#timeoutMs),
       redirect: 'error',
     });
     const payload: unknown = await response.json().catch(() => null);
+    options.signal?.throwIfAborted();
     if (!response.ok) {
       const error = object(payload) ? payload.error : null;
       const code = object(error) && typeof error.code === 'string' ? error.code : 'http_error';
@@ -181,4 +209,22 @@ function query(options: ListOptions): string {
     params.set('limit', String(options.limit));
   }
   return params.size > 0 ? `?${params}` : '';
+}
+
+/** Interruptible delay used only by the session pairing loop. */
+function waitForPairing(delayMs: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', aborted);
+      resolve();
+    }, delayMs);
+    const aborted = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', aborted);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', aborted, { once: true });
+    if (signal.aborted) aborted();
+  });
 }

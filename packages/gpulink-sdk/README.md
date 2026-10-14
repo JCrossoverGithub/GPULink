@@ -36,3 +36,18 @@ and `close`. Incoming binary frames are `Uint8Array`; text is a string.
   contract can add stronger ready acknowledgement if needed.
 - No automatic retry or reconnect is performed. Callers must inspect the
   current session/lease and request a fresh grant before reconnecting.
+
+## Phase 5E-3B connection deadlines and cancellation
+
+`connectSession(id, { connectTimeoutMs, signal })` applies one connection
+budget across grant acquisition, WebSocket negotiation, and session polling.
+Use an `AbortController` to cancel an in-progress connection. The SDK closes
+an opened stream if cancellation or timeout happens before connection returns.
+On a native WebSocket still in CONNECTING state, cancellation rejects promptly;
+if the handshake later succeeds, the SDK closes that late-opened socket.
+The underlying native handshake may not be physically interruptible.
+
+No automatic reconnect is performed, and cancelling a connection does not close
+or release the GPULink session lease itself. Use `closeSession()` separately.
+Pairing readiness still relies on control-plane state and a compatibility delay;
+v1 does not provide a protocol-level ready acknowledgment.

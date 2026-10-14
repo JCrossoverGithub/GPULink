@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test --test-concurrency=1 spec/client.mjs spec/data-plane.mjs"
+    "test": "node --test --test-concurrency=1 spec/client.mjs spec/data-plane.mjs spec/reliability.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"

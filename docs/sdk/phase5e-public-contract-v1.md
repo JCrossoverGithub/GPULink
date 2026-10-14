@@ -67,3 +67,11 @@ The first SDK provides bounded sends, binary and text events, close notification
 and a bounded peer wait. It does not silently reconnect or reserve buffer space
 for user callbacks. Receipt of data-plane messages does not imply durable
 persistence of audio/tokens or arbitrary stream payloads.
+
+## Phase 5E-3B: client connection budget and cancellation
+
+The optional client `AbortSignal` and `connectTimeoutMs` apply to the full
+connection attempt, including grant issuance, WebSocket negotiation, and session
+status polling. No client cancellation or timeout mutates authoritative lease
+state. There is no automatic grant reuse or retry. A later, separately versioned
+relay readiness acknowledgment remains outside this patch.
