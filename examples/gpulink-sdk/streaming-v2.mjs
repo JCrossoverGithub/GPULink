@@ -17,25 +17,26 @@ const { session } = await client.requestSession({
   },
   recovery: { maxInterruptions: 1 },
 });
-assert.equal(session.status, 'allocated');
-
-// Test harness coordinates its synthetic worker before the client grant request.
-// In a deployed application, a worker agent independently starts the session.
-if (process.env.GPULINK_EXAMPLE_HARNESS === '1') {
-  const ready = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('example worker setup timed out')), 5_000);
-    process.stdin.once('data', (data) => {
-      clearTimeout(timeout);
-      if (String(data).trim() === 'WORKER_STARTED') resolve();
-      else reject(new Error('unexpected example harness response'));
-    });
-  });
-  console.log(JSON.stringify({ event: 'session_allocated', sessionId: session.id }));
-  await ready;
-}
-
 let stream;
+let sessionClosed = false;
 try {
+  assert.equal(session.status, 'allocated');
+
+  // Test harness coordinates its synthetic worker before the client grant request.
+  // In a deployed application, a worker agent independently starts the session.
+  if (process.env.GPULINK_EXAMPLE_HARNESS === '1') {
+    const ready = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('example worker setup timed out')), 5_000);
+      process.stdin.once('data', (data) => {
+        clearTimeout(timeout);
+        if (String(data).trim() === 'WORKER_STARTED') resolve();
+        else reject(new Error('unexpected example harness response'));
+      });
+    });
+    console.log(JSON.stringify({ event: 'session_allocated', sessionId: session.id }));
+    await ready;
+  }
+
   stream = await client.connectSession(session.id, {
     protocolVersion: 2,
     connectTimeoutMs: 6_000,
@@ -58,8 +59,13 @@ try {
   stream.sendBinary(Uint8Array.from([21, 22, 23]));
   assert.equal(await response, 'example-worker-response');
   const closed = await client.closeSession(session.id);
-  assert.equal(closed.session.status, 'closed');
+  sessionClosed = closed.session.status === 'closed';
+  assert.equal(sessionClosed, true);
   console.log(JSON.stringify({ event: 'stream_complete', sessionId: session.id }));
 } finally {
   stream?.close();
+  if (!sessionClosed) {
+    // Release the authoritative session even when setup or streaming fails.
+    await client.closeSession(session.id);
+  }
 }

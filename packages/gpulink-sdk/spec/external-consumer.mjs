@@ -205,7 +205,31 @@ test('packed SDK works in independent finite-job and v2 streaming applications',
     assert.match(stream.stdout, /"event":"stream_complete"/);
     assert.equal(framesReceived, 1, 'expected one application binary frame');
     assert.equal(workerFault, null, 'synthetic worker must not fail');
-    console.log('PASS: installed npm tarball, external TypeScript, finite job, v2 streaming');
+
+    // Failure after allocation must release the server-side session too.
+    let failedSessionId;
+    await assert.rejects(
+      execNode([join(consumerDir, 'streaming-v2.mjs')], {
+        cwd: consumerDir,
+        env: { ...env, GPULINK_EXAMPLE_HARNESS: '1' },
+        onEvent: (event, child) => {
+          if (event.event !== 'session_allocated') return;
+          failedSessionId = event.sessionId;
+          child.stdin.end('INVALID_WORKER_SIGNAL\n');
+        },
+      }),
+      /unexpected example harness response/,
+    );
+    assert.equal(typeof failedSessionId, 'string');
+    const failedResponse = await fetch(
+      `${baseUrl}/v1/sessions/${encodeURIComponent(failedSessionId)}`,
+      { headers: { Authorization: `Bearer ${fixtureTokens.client}` } },
+    );
+    assert.equal(failedResponse.status, 200);
+    const { session: failedSession } = await failedResponse.json();
+    assert.equal(failedSession.status, 'closed', 'failed stream setup must release the session');
+
+    console.log('PASS: installed npm tarball, external TypeScript, finite job, v2 streaming and failed-session cleanup');
   } finally {
     workerSocket?.terminate();
     if (app) await app.stop();

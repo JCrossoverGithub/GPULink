@@ -7,8 +7,9 @@ Experimental application client for GPULink's existing `/v1` HTTP contract.
 - Uses HTTPS except for local loopback development.
 - Rejects HTTP redirects to avoid forwarding bearer credentials to another origin.
 - Does not expose worker lease renewal, administrator events, or scheduler internals.
-- WebSocket streaming, capability discovery, richer runtime schemas, packaging policy,
-  and C# / Python bindings follow in subsequent Phase 5E slices.
+- Authenticated WebSocket streaming supports legacy v1 and opt-in relay readiness v2.
+- Capability discovery, richer runtime schemas, publication policy, and C# / Python
+  bindings remain future work.
 
 Run `npm ci --ignore-scripts && npm run build && npm test` inside this package.
 This package is private until compatibility and security acceptance are complete.
@@ -31,9 +32,8 @@ and `close`. Incoming binary frames are `Uint8Array`; text is a string.
   after 30 seconds; a client must arrange its own traffic/keepalive policy.
 - `connectSession` polls the authorized session until `active`; it cannot
   manufacture an allocation or override lease expiration/worker loss.
-- Peer pairing has no explicit application-level ready-ACK in v1; integration
-  tests validate successful exchange against the actual relay. A later wire
-  contract can add stronger ready acknowledgement if needed.
+- Legacy v1 has no explicit ready-ACK and retains a compatibility delay.
+  Opt-in v2 requires the server-origin readiness frame described below.
 - No automatic retry or reconnect is performed. Callers must inspect the
   current session/lease and request a fresh grant before reconnecting.
 
