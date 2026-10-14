@@ -135,7 +135,7 @@ production deployment until Phase 4E migration.
 
 ## Phase 4 — AWS + K3s platform
 
-**Status: in progress**
+**Status: complete — production acceptance 2026-10-13**
 
 Accepted through 2026-10-01 are:
 
@@ -161,10 +161,13 @@ Accepted through 2026-10-01 are:
 The first accepted AWS GPU workload uses an AWS-hosted **control plane** with a
 physical JPCMAIN GPU worker. It is not an AWS-hosted GPU.
 
-Phase 4D fleet-wide AWS staging acceptance is complete as of 2026-10-05,
+Phase 4D fleet-wide AWS staging acceptance completed on 2026-10-05,
 including multi-replica behavior, application rollback, and sustained operation.
-Remaining Phase 4 work is the Phase 4E authoritative production migration from
-DigitalOcean.
+
+Phase 4E authoritative production migration completed on 2026-10-13. AWS/K3s
+is now authoritative production. The former DigitalOcean production deployment
+remains frozen only as a rollback target until an explicit operator retirement
+decision.
 
 The initial target deliberately remains small:
 
@@ -276,30 +279,45 @@ See `docs/security/aws-phase4d-staging-acceptance-2026-10-05.md`.
 
 ### Phase 4E — Production migration
 
-**Status: next — not started**
+**Status: accepted — 2026-10-13**
 
-Phase 4D staging acceptance is complete. Phase 4E must now:
+Accepted:
 
-- take a final DigitalOcean backup;
-- freeze authoritative writes;
-- capture final PostgreSQL production state;
-- transfer and restore that state into AWS;
-- verify worker, job, event, and migration-history counts;
-- make the restored AWS state authoritative;
-- reconnect and verify the physical worker fleet;
-- run final real-workload acceptance;
-- activate authoritative production traffic on the already-accepted AWS ingress;
-- retain a defined rollback window;
-- complete AWS production acceptance;
-- retire DigitalOcean only after acceptance.
+- final DigitalOcean PostgreSQL backup and authoritative write freeze;
+- capture of the final production state;
+- verified transfer and isolated restore into AWS;
+- validation of worker, job, event, migration-history, schema, constraint, and
+  index state before promotion;
+- promotion of the restored database to authoritative AWS production state;
+- preservation of the previous AWS staging database for rollback;
+- fresh post-promotion pgBackRest backup;
+- two-replica AWS control-plane activation;
+- preservation of all three worker identities;
+- JPCMAIN reconnection on its restored production worker identity;
+- monotonic continuation of the durable event sequence;
+- final real CUDA workload through the public AWS production endpoint;
+- first-attempt workload success on the restored JPCMAIN identity;
+- healthy public production readiness after workload completion.
 
-AWS ingress and public TLS are already accepted staging capabilities. Phase 4E
-therefore focuses on authoritative state, production traffic, final worker
-reconnection, and rollback.
+Final accepted state after the production workload:
+
+    workers:             3
+    jobs:                21
+    active jobs:         0
+    events:              327
+    max event sequence:  327
+
+AWS/K3s is now authoritative production.
+
+The DigitalOcean control plane remains stopped while the rollback window is
+open. DigitalOcean retirement requires a separate explicit operator decision.
+
+See docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the
+migration and final-workload evidence.
 
 ## Phase 5 — Application platform
 
-**Status: future — begins after Phase 4 production acceptance**
+**Status: next — Phase 4 production acceptance complete**
 
 Goal: turn the proven GPULink compute fabric into a stable framework that
 independent applications can consume without knowing GPULink's deployment

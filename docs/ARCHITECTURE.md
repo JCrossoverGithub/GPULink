@@ -195,40 +195,42 @@ GPULink's scheduling or identity model.
 
 ## Current deployment topology
 
-The current production deployment uses a DigitalOcean Ubuntu host as a
-transitional control-plane platform.
+AWS/K3s is the authoritative GPULink production platform as of 2026-10-13.
 
-The host runs:
+The production platform runs:
 
-- Nginx as the public HTTPS boundary;
-- the GPULink control plane in Docker;
-- PostgreSQL 17 in Docker;
-- systemd-managed backup and restore-verification jobs.
+- Traefik as the public HTTPS ingress boundary;
+- two GPULink control-plane replicas;
+- PostgreSQL 17 on dedicated encrypted gp3 storage;
+- pgBackRest with S3-backed backup and continuous WAL archival;
+- cert-manager for steady-state public certificate management.
 
-Docker publishes the control plane only on `127.0.0.1:8088`. PostgreSQL has no
-host-published port.
-
-The current physical worker fleet consists of:
+The configured physical worker fleet consists of:
 
 - MAINPC — RTX 3070 Ti 8 GB;
 - JPCMAIN — RTX 3090 Ti 24 GB;
 - laptop — RTX 4060 8 GB.
 
 Each Windows GPU host runs the worker under WSL2 and initiates outbound HTTPS
-requests to the control plane. No GPULink worker port is exposed to the
-Internet.
+requests to the AWS production control plane. Individual workers may be offline
+when their host is unavailable; worker identity remains durable in PostgreSQL.
+
+No GPULink worker port is exposed to the Internet.
 
 Workers can be drained before gaming, maintenance, or desktop-heavy work and
 resumed without changing their identity.
 
-The AWS/K3s reference platform is now deployed and undergoing Phase 4
-acceptance. It has accepted PostgreSQL recovery, a single-replica control plane,
-public Traefik/TLS ingress, cert-manager certificate management, and the first
-physical JPCMAIN RTX 3090 Ti workload. The transitional DigitalOcean deployment
-remains authoritative production until the Phase 4E state migration is
-accepted.
-That migration changes the infrastructure layer, not the worker/control-plane
-contracts.
+The former DigitalOcean production deployment is frozen and retained only as a
+rollback target. Its control plane is stopped and must not run concurrently
+with the authoritative AWS control plane.
+
+The Phase 4E acceptance workload traversed the public AWS endpoint, the
+two-replica control plane, authoritative PostgreSQL, the scheduler, and the
+restored JPCMAIN worker identity before executing real CUDA on the physical
+RTX 3090 Ti.
+
+The infrastructure migration changed the production authority without changing
+the worker/control-plane application contract.
 
 ## Operations console
 
@@ -314,14 +316,15 @@ backup.
 The disposable restore never mounts the production PostgreSQL volume and is
 removed after verification.
 
-Backups for the transitional DigitalOcean production deployment remain on
-that same host.
+AWS production now uses the accepted Phase 4 off-host recovery architecture:
+pgBackRest backup to S3, continuous WAL archival, isolated restore verification,
+recurring recovery automation, and named point-in-time recovery.
 
-The AWS/K3s reference environment has accepted the Phase 4 off-host recovery
-architecture: pgBackRest backup to S3, continuous WAL archival, isolated restore
-verification, recurring recovery automation, and named point-in-time recovery.
-That AWS recovery path becomes the authoritative production recovery boundary
-only after the Phase 4E state migration.
+Phase 4E made the AWS recovery path the authoritative production recovery
+boundary.
+
+The frozen DigitalOcean deployment is retained only as a temporary migration
+rollback target until an explicit operator retirement decision.
 
 ## Durable state machine
 
@@ -408,9 +411,9 @@ requiring changes to the existing CaptionLink clients during the first migration
 
 ## AWS Phase 4 acceptance status
 
-As of 2026-10-05, Phase 4D AWS/K3s staging acceptance is complete.
+Phase 4 production acceptance is complete as of 2026-10-13.
 
-The accepted staging architecture includes:
+Phase 4D staging acceptance established:
 
 - PostgreSQL persistence and off-host recovery;
 - public Traefik HTTPS ingress and cert-manager certificate management;
@@ -419,17 +422,34 @@ The accepted staging architecture includes:
 - drain/resume and stale-worker recovery;
 - two control-plane replicas;
 - PostgreSQL advisory-lock scheduler exclusion across replicas;
-- cross-replica durable event/SSE delivery;
+- cross-replica durable event and SSE delivery;
 - Kubernetes-native immutable-image application rollback;
 - verified PostgreSQL backup before rollback;
 - sustained three-worker operation with stable control-plane and PostgreSQL
   Pods.
 
-AWS hosts the control plane and persistence tier; the accepted GPUs remain
-physical GPULink workers outside AWS.
+Phase 4E then migrated the frozen authoritative DigitalOcean PostgreSQL state
+into AWS, preserved the three worker identities and durable event sequence,
+activated the two-replica AWS writer path, reconnected JPCMAIN on its restored
+identity, and completed a first-attempt real CUDA production workload through
+the public AWS endpoint.
 
-The remaining Phase 4 architecture boundary is Phase 4E authoritative
-production-state migration and rollback-window acceptance. Until that migration
-is accepted, DigitalOcean remains authoritative production.
+Final accepted post-workload state:
 
-See `docs/security/aws-phase4d-staging-acceptance-2026-10-05.md`.
+    workers:             3
+    jobs:                21
+    active jobs:         0
+    events:              327
+    max event sequence:  327
+
+AWS hosts the authoritative production control-plane and persistence tier.
+
+The accepted GPUs remain physical GPULink workers outside AWS.
+
+DigitalOcean remains frozen only as a rollback target and must not run a
+competing control-plane writer.
+
+See:
+
+- docs/security/aws-phase4d-staging-acceptance-2026-10-05.md
+- docs/security/aws-phase4e-production-acceptance-2026-10-13.md
