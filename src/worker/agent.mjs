@@ -13,6 +13,12 @@ import {
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
 import { discoverModelInventory } from "./model-cache.mjs";
+
+import {
+  createSessionAdapterRegistry,
+  probeSessionAdapters,
+  selectSessionHandler,
+} from "./session-adapters.mjs";
 import {
   executeJob,
   hasAdapter,
@@ -28,6 +34,12 @@ export class WorkerAgent {
     this.sessionLeaseHandler =
       options.sessionLeaseHandler ??
       null;
+
+    this.sessionAdapters = createSessionAdapterRegistry(
+      options.sessionAdapters ?? [],
+    );
+
+    this.readySessionAdapters = new Set();
     this.resolveAdapterHealth = options.resolveAdapterHealth ?? resolveAdapterHealth;
     this.discoverModelInventory = options.discoverModelInventory ?? (() =>
       discoverModelInventory({
@@ -209,24 +221,23 @@ export class WorkerAgent {
             }
           }
 
-          if (
-            this.sessionLeaseHandler
-          ) {
-            for (
-              const session
-              of response.sessions ?? []
+          for (const session of response.sessions ?? []) {
+            if (
+              session.status !== "allocated" ||
+              this.sessionLeases.has(session.id)
             ) {
-              if (
-                session.status ===
-                  "allocated" &&
-                !this.sessionLeases.has(
-                  session.id,
-                )
-              ) {
-                this.#runSession(
-                  session,
-                );
-              }
+              continue;
+            }
+
+            const handler = selectSessionHandler({
+              session,
+              registry: this.sessionAdapters,
+              readyIds: this.readySessionAdapters,
+              legacyHandler: this.sessionLeaseHandler,
+            });
+
+            if (handler) {
+              this.#runSession(session, handler);
             }
           }
         } catch (error) {
@@ -253,9 +264,71 @@ export class WorkerAgent {
       benchmark: this.config.benchmark,
       gpus: this.gpus,
     }, now);
-    this.capabilities = report.capabilities;
-    this.adapterManifests = report.adapterManifests;
-    this.adapterHealth = report.adapterHealth;
+    // Generic health resolvers cannot certify v2 handlers.
+    const v1Manifests = report.adapterManifests.filter(
+      (manifest) => manifest.schemaVersion === 1,
+    );
+
+    const v1Types = new Set(
+      v1Manifests.map((manifest) => manifest.type),
+    );
+
+    const sessionTypes = new Set(
+      [...this.sessionAdapters.values()].map(
+        (adapter) => adapter.manifest.type,
+      ),
+    );
+
+    for (const type of v1Types) {
+      if (sessionTypes.has(type)) {
+        throw new Error(
+          `session adapter conflicts with v1 capability ${type}`,
+        );
+      }
+    }
+
+    const sessionReport = await probeSessionAdapters(
+      this.sessionAdapters,
+      {
+        ...this.adapterContext,
+        gpus: this.gpus,
+      },
+      now,
+    );
+
+    const v1Capabilities = report.capabilities.filter(
+      (capability) => v1Types.has(capability),
+    );
+
+    const v1Health = report.adapterHealth.filter(
+      (health) =>
+        health.schemaVersion === 1 &&
+        !sessionTypes.has(health.type),
+    );
+
+    this.capabilities = [
+      ...new Set([
+        ...v1Capabilities,
+        ...sessionReport.capabilities,
+      ]),
+    ].sort();
+
+    this.adapterManifests = [
+      ...v1Manifests,
+      ...sessionReport.adapterManifests,
+    ];
+
+    this.adapterHealth = [
+      ...v1Health,
+      ...sessionReport.adapterHealth,
+    ];
+
+    this.readySessionAdapters = new Set(
+      sessionReport.adapterHealth
+        .filter((entry) => entry.state === "ready")
+        .map((entry) => entry.adapterId),
+    );
+
     this.capabilitiesCheckedAt = now;
   }
 
@@ -276,15 +349,16 @@ export class WorkerAgent {
     }
   }
 
-  #runSession(session) {
+  #runSession(session, handler) {
     const controller =
       new AbortController();
 
     const promise =
-      this.#maintainSessionLease(
-        session,
-        controller,
-      )
+        this.#maintainSessionLease(
+          session,
+          controller,
+          handler,
+        )
         .catch((error) => {
           if (
             !controller.signal
@@ -323,6 +397,7 @@ export class WorkerAgent {
   async #maintainSessionLease(
     session,
     controller,
+    handler,
   ) {
     const signal =
       controller.signal;
@@ -385,7 +460,7 @@ export class WorkerAgent {
 
     const handlerPromise =
       Promise.resolve(
-        this.sessionLeaseHandler(
+        handler(
           connecting,
           {
             ...this.adapterContext,

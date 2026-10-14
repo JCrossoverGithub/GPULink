@@ -22,6 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check
       - if: runner.os == 'Linux'
         run: docker build -f deploy/digitalocean/Dockerfile -t gpulink-control-plane:test .
