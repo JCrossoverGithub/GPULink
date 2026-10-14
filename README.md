@@ -44,35 +44,33 @@ infrastructure.
 
 ## Current status
 
-Phases 0 through 3 of the current architecture rework are complete. Phase 4,
-the AWS + K3s platform migration, is actively in progress.
+Phases 0 through 4 of the current architecture rework are complete.
 
-The transitional DigitalOcean deployment remains the authoritative production
-environment until the Phase 4E production-state migration and rollback window
-are accepted.
+AWS/K3s is the authoritative GPULink production environment as of 2026-10-13.
 
-The AWS/K3s reference environment has now accepted:
+Accepted production capabilities include:
 
-- Terraform-managed AWS infrastructure in `us-east-1`;
+- Terraform-managed AWS infrastructure in us-east-1;
 - a pinned K3s host on Ubuntu 24.04;
 - PostgreSQL 17 on dedicated encrypted gp3 storage;
 - immutable PostgreSQL and control-plane images distributed through ECR;
 - host-side ECR authentication without exposing AWS credentials to Pods;
-- pgBackRest mutual TLS, continuous WAL archival, off-host backup storage,
-  isolated restore verification, and named point-in-time recovery;
-- public Traefik HTTP-to-HTTPS ingress, trusted public TLS, and cert-manager
+- pgBackRest continuous WAL archival, off-host S3 backup storage, isolated
+  restore verification, and named point-in-time recovery;
+- public Traefik HTTPS ingress, trusted public TLS, and cert-manager
   steady-state certificate management;
-- physical RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 workers through the public AWS
-  control plane;
+- physical RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 worker identities;
 - fleet-wide diagnostics and real CUDA benchmark acceptance;
 - heterogeneous scheduling, drain/resume, and stale-worker recovery;
-- a two-replica control plane with cross-replica scheduler exclusion and SSE
-  delivery;
-- Kubernetes-native immutable-image application rollback with a verified fresh
-  PostgreSQL backup and no build during rollback;
-- sustained three-worker staging operation with 30/30 first-attempt job
-  successes, zero failures, and no additional control-plane or PostgreSQL
-  restarts.
+- a two-replica control plane with cross-replica scheduler exclusion and
+  durable event delivery;
+- Kubernetes-native immutable-image application rollback;
+- sustained Phase 4D staging acceptance;
+- authoritative DigitalOcean-to-AWS PostgreSQL migration;
+- preservation of worker identities and durable event ordering across the
+  migration;
+- final first-attempt production CUDA execution through the public AWS
+  endpoint.
 
 The physical GPU fleet is:
 
@@ -80,11 +78,18 @@ The physical GPU fleet is:
 - JPCMAIN — RTX 3090 Ti 24 GB;
 - laptop — RTX 4060 8 GB.
 
-Phase 4D AWS staging acceptance is complete as of 2026-10-05. Phase 4E
-production-state migration is next. DigitalOcean remains authoritative
-production until Phase 4E migration and rollback-window acceptance are complete.
+The former DigitalOcean deployment is frozen and retained only as a rollback
+target. Its control plane must remain stopped while AWS is authoritative.
 
-See [Roadmap](docs/ROADMAP.md) for the current project plan.
+Phase 5, the application-platform phase, is next.
+
+The first important Phase 5 target is the generic persistent-session and
+real-time data-plane functionality required for applications such as
+CaptionLink to consume speech.streaming.
+
+See docs/ROADMAP.md for the current project plan and
+docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the
+production-migration evidence.
 
 ## What GPULink does
 
@@ -162,25 +167,26 @@ boundary and execution model.
 
 ## Current architecture
 
-GPULink currently has two intentionally distinct infrastructure roles:
+GPULink production uses AWS/K3s for the authoritative control-plane and
+persistence tier.
 
-1. the transitional DigitalOcean deployment remains the authoritative
-   production environment until Phase 4E migration acceptance;
-2. the AWS/K3s reference environment is the active Phase 4 staging platform and
-   has independently passed infrastructure, recovery, public-ingress,
-   single-replica control-plane, and first-GPU-workload acceptance.
+The former DigitalOcean deployment is frozen and retained only as a rollback
+target. Its control plane remains stopped while AWS is authoritative.
+
+The physical GPU workers remain outside AWS and initiate outbound HTTPS
+connections to the public AWS control plane.
 
 ```mermaid
 flowchart TD
     Client["Application / Product / CLI"]
 
-    subgraph DO["Authoritative production — transitional DigitalOcean"]
-        Nginx["Nginx + TLS"]
-        DOControl["GPULink Control Plane"]
-        DOPostgres[("PostgreSQL 17")]
+    subgraph DO["Frozen rollback target — DigitalOcean"]
+        Nginx["Nginx + TLS — rollback only"]
+        DOControl["GPULink Control Plane — stopped"]
+        DOPostgres[("PostgreSQL 17 — frozen state")]
     end
 
-    subgraph AWS["AWS/K3s reference environment — Phase 4 staging"]
+    subgraph AWS["Authoritative production — AWS/K3s"]
         Traefik["Traefik + HTTPS"]
         AWSControl["GPULink Control Plane"]
         AWSPostgres[("PostgreSQL 17 on gp3")]
@@ -194,35 +200,33 @@ flowchart TD
         GPU3["Laptop\nRTX 4060 8 GB"]
     end
 
-    Client -->|"production HTTPS"| Nginx
+    Client -->|"production HTTPS"| Traefik
+
     Nginx --> DOControl
     DOControl --> DOPostgres
-
-    Client -.->|"AWS staging HTTPS"| Traefik
     Traefik --> AWSControl
     AWSControl --> AWSPostgres
     AWSPostgres --> Recovery
     Recovery --> S3
 
-    GPU1 -->|"outbound HTTPS"| Nginx
-    GPU2 -->|"outbound HTTPS"| Nginx
-    GPU3 -->|"outbound HTTPS"| Nginx
-
-    GPU2 -.->|"accepted AWS workload path"| Traefik
+    GPU1 -->|"outbound HTTPS"| Traefik
+    GPU2 -->|"outbound HTTPS"| Traefik
+    GPU3 -->|"outbound HTTPS"| Traefik
 ```
 
-The DigitalOcean control plane remains loopback-published behind its HTTPS
-reverse proxy and PostgreSQL has no public host port.
-
-The AWS reference environment runs the control plane and PostgreSQL inside K3s.
-Traefik provides the accepted public HTTPS boundary while PostgreSQL remains
-internal. Deployment-specific TLS material stays outside the public repository;
-cert-manager owns steady-state public-certificate renewal.
+PostgreSQL in AWS remains internal. pgBackRest provides off-host S3 backup and
+continuous WAL archival, while cert-manager owns steady-state public certificate
+management.
 
 Workers initiate outbound connections, so GPULink does not require inbound
-worker ports on personal GPU computers. JPCMAIN has completed this path through
-the public AWS control plane and executed a real CUDA workload on its RTX 3090
-Ti.
+worker ports on personal GPU computers.
+
+Phase 4E proved the post-migration production path through the public AWS
+endpoint and executed real CUDA on JPCMAIN's physical RTX 3090 Ti while
+preserving its migrated worker identity.
+
+The DigitalOcean components shown above are not live production writers. They
+are retained only for rollback until an explicit retirement decision.
 
 See [Architecture](docs/ARCHITECTURE.md) for the detailed design.
 

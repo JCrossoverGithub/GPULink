@@ -3,36 +3,38 @@
 This document describes the current GPULink production deployment and its
 operational safety mechanisms.
 
-The current DigitalOcean deployment is transitional infrastructure. It remains
-the authoritative production environment until the Phase 4E AWS/K3s
-production-state migration and rollback window are accepted.
+AWS/K3s is the authoritative GPULink production environment as of 2026-10-13.
 
-The AWS/K3s reference environment has completed Phase 4D staging acceptance,
-including PostgreSQL recovery, public HTTPS ingress, all three physical GPU
-workers, the two-replica control plane, cross-replica scheduler/event behavior,
-application rollback, and sustained operation. Those staging milestones do not
-change the authoritative-production designation of this document; DigitalOcean
-remains authoritative until Phase 4E migration and rollback-window acceptance.
+Phase 4E migrated the final authoritative PostgreSQL state from the
+transitional DigitalOcean deployment into AWS, preserved worker identities and
+durable event ordering, reconnected the physical GPU path, and completed a real
+CUDA workload through the public AWS production endpoint.
+
+The former DigitalOcean deployment is frozen and retained only as a rollback
+target. Its control plane must remain stopped while AWS is authoritative.
 
 ## Production topology
 
-The current host runs:
+The authoritative production control plane runs on AWS/K3s.
 
-- Nginx for public TLS termination;
-- the GPULink control plane in Docker;
-- PostgreSQL 17 in Docker;
-- systemd timers for PostgreSQL backup and restore verification.
+The production platform includes:
 
-The control plane is published only on `127.0.0.1:8088`.
+- Traefik as the public HTTP/HTTPS ingress boundary;
+- trusted public TLS with cert-manager certificate management;
+- two GPULink control-plane replicas;
+- PostgreSQL 17 on dedicated encrypted gp3 storage;
+- pgBackRest backup and continuous WAL archival to off-host S3 storage;
+- recurring restore verification;
+- outbound-only physical GPU workers.
 
-Nginx is the public HTTPS boundary.
+PostgreSQL has no public endpoint.
 
-PostgreSQL has no host-published port.
+Physical GPU workers initiate outbound HTTPS connections to the public GPULink
+endpoint. GPULink does not require inbound worker listeners on the personal GPU
+machines.
 
-The authoritative installed deployment is under `/opt/gpulink`.
-
-Release archives and extracted release directories are retained separately
-under root-controlled paths.
+The former DigitalOcean host is not an active writer. Its control plane remains
+stopped and the retained state exists only for migration rollback.
 
 ## Sensitive configuration
 
@@ -234,14 +236,15 @@ Legacy release artifacts are not interpreted as valid rollback targets.
 
 ## Current recovery boundary
 
-The current backup and restore system provides a tested recovery path for
-logical and database failures.
+The authoritative AWS backup and restore system provides the accepted
+production recovery boundary.
 
-It does not provide complete host-loss disaster recovery because completed
-backups currently live on the same DigitalOcean host.
+Production PostgreSQL uses S3-backed pgBackRest backup, continuous WAL
+archival, isolated restore verification, recurring recovery automation, and
+named point-in-time recovery.
 
-The AWS/K3s staging environment has accepted an off-host recovery boundary using S3-backed PostgreSQL backup
-and WAL archiving.
+The frozen DigitalOcean environment is retained only as an additional migration
+rollback asset while the rollback window remains open.
 
 ## Worker safety boundary
 
