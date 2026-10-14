@@ -282,6 +282,79 @@ export function createHttpServer({ service, database, scheduler }) {
         );
       }
 
+      const sessionClientGrant =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id/data-plane/client-grant",
+        );
+
+      if (
+        request.method === "POST" &&
+        sessionClientGrant
+      ) {
+        if (
+          !authorize(
+            service,
+            request,
+            response,
+            ["client"],
+          )
+        ) {
+          return;
+        }
+
+        const grant =
+          await service
+            .issueDataPlaneGrant(
+              sessionClientGrant.id,
+              "client",
+            );
+
+        return sendJson(
+          response,
+          200,
+          { grant },
+        );
+      }
+
+      const sessionWorkerGrant =
+        matchPath(
+          url.pathname,
+          "/v1/sessions/:id/data-plane/worker-grant",
+        );
+
+      if (
+        request.method === "POST" &&
+        sessionWorkerGrant
+      ) {
+        if (
+          !authorize(
+            service,
+            request,
+            response,
+            ["worker"],
+          )
+        ) {
+          return;
+        }
+
+        const grant =
+          await service
+            .issueDataPlaneGrant(
+              sessionWorkerGrant.id,
+              "worker",
+              await readJson(
+                request,
+              ),
+            );
+
+        return sendJson(
+          response,
+          200,
+          { grant },
+        );
+      }
+
       const sessionClose =
         matchPath(
           url.pathname,

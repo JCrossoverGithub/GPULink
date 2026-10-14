@@ -282,6 +282,47 @@ Worker-only. Moves an unexpired assigned session from `connecting` to
 Worker-only. Renews an unexpired `allocated`, `connecting`, or `active`
 session lease.
 
+#### `POST /v1/sessions/{sessionId}/data-plane/client-grant`
+
+Client-only. Returns a short-lived signed data-plane grant bound to the
+session's current `sessionId`, `workerId`, and `leaseId`.
+
+The session must currently be `allocated`, `connecting`, or `active`, and its
+lease must still be valid.
+
+#### `POST /v1/sessions/{sessionId}/data-plane/worker-grant`
+
+Worker-only. Requires the current `workerId` and `leaseId` in the JSON request
+body and returns a worker-role data-plane grant for that exact allocation.
+
+A stale worker or stale lease cannot obtain a replacement grant.
+
+Data-plane grants:
+
+- use a dedicated signing secret rather than the client, worker, or
+  administrator bootstrap credentials;
+- expire after a short bounded lifetime;
+- never outlive the current session lease;
+- are not persisted in PostgreSQL;
+- are not written to durable lifecycle events;
+- must be revalidated against authoritative session state when a data-plane
+  connection is established.
+
+A worker replacement changes the authoritative lease ID, so an old grant is
+rejected even if its cryptographic expiry time has not yet elapsed.
+
+Worker agents advance an allocated session to `connecting` only when a
+session-lease handler is explicitly installed in that worker runtime. A worker
+without a session runtime leaves the allocation in `allocated` rather than
+claiming that a data plane exists.
+
+While the handler remains attached, the worker renews the exact current
+`workerId` + `leaseId`. If lease discovery removes the session or reports a
+different lease, the handler is aborted and the old lease stops renewing.
+
+The worker does not mark the session `active` at this stage. `active` is
+reserved for the later data-plane establishment step.
+
 #### `POST /v1/sessions/{sessionId}/close`
 
 Client route. Closes a `requested`, `allocated`, `connecting`, or `active`
@@ -346,3 +387,139 @@ The current accessibility application is CaptionLink.
 Existing lowercase protocol identifiers such as `transgo-v1` remain unchanged
 where they are part of an established compatibility contract. Product naming
 does not silently change an on-wire protocol version.
+
+### Session data-plane WebSocket contract
+
+The first GPULink session data plane uses a relayed WebSocket boundary at:
+
+```text
+/v1/data-plane
+```
+
+The relay protocol is versioned independently from application payload
+protocols.
+
+A connection offers exactly two WebSocket subprotocol values:
+
+```text
+gpulink.data-plane.v1
+gpulink.grant.<short-lived-session-grant>
+```
+
+The relay selects only `gpulink.data-plane.v1`; the grant-bearing protocol is
+authentication material and must never be echoed back as the selected
+subprotocol, written to durable events, or stored in PostgreSQL.
+
+The grant determines the connection role (`client` or `worker`) and binds the
+connection to one exact:
+
+```text
+sessionId
+workerId
+leaseId
+```
+
+Pairing is therefore scoped to one current allocation. A client connection from
+one lease can never pair with the worker connection from another lease.
+
+#### Transport bounds
+
+Version 1 uses the following hard relay limits:
+
+- maximum WebSocket message/frame payload: 1 MiB;
+- maximum peer-side buffered amount before overload handling: 4 MiB;
+- maximum time waiting for the opposite role to connect: 10 seconds;
+- idle connection timeout: 30 seconds.
+
+Applications must chunk payloads larger than the maximum frame size.
+
+The relay is payload-neutral. Text and binary application frames are forwarded
+without interpreting application semantics. For example, GPULink Core does not
+parse PCM audio, caption JSON, video frames, token streams, or tensors merely
+because they pass through the relay.
+
+#### Backpressure
+
+The relay must not build an unbounded in-memory queue.
+
+If the receiving WebSocket has exceeded the bounded buffered-byte threshold,
+the relay fails closed instead of continuing to enqueue application frames.
+
+This deliberately favors bounded memory and explicit reconnect/recovery over
+unbounded latency growth.
+
+#### Lifecycle boundary
+
+A session remains `connecting` while only one side of the relay exists.
+
+The transition to `active` occurs only after both authenticated roles for the
+same current lease have established the data plane.
+
+The relay must revalidate authoritative session/lease state before accepting
+each side. Lease replacement invalidates the previous pairing identity.
+
+High-rate application payloads are never persisted to PostgreSQL.
+
+#### Worker relay lifecycle
+
+When a worker runtime has a session handler installed, the worker agent:
+
+1. advances its exact current allocation to `connecting`;
+2. requests a worker-role data-plane grant using the current
+   `workerId + leaseId`;
+3. opens `/v1/data-plane` using the versioned relay subprotocol;
+4. passes the authenticated socket to the installed session handler;
+5. renews the durable session lease independently of data-plane payload flow;
+6. closes the relay socket and aborts the handler if ownership is lost or the
+   worker stops.
+
+The worker handler never receives the long-lived worker bearer token or the
+short-lived signed grant. It receives only the established socket and
+session/runtime context.
+
+The relay remains responsible for changing the durable state from `connecting`
+to `active` after both current-lease roles pair.
+
+#### Live relay invalidation
+
+Pair-time authorization is not the final authority for the lifetime of a relay.
+
+The relay subscribes to committed GPULink lifecycle-event notifications.
+Whenever authoritative control-plane state changes, active relay pairs are
+revalidated against the current session allocation.
+
+A connection is torn down if its signed identity no longer matches the current:
+
+```text
+sessionId
+workerId
+leaseId
+```
+
+This closes active stale connections after session closure, interruption, or
+replacement without performing a PostgreSQL lookup for every high-rate
+application frame.
+
+Relay payload forwarding itself remains an in-memory data-plane operation.
+
+#### Grant expiry versus established sessions
+
+A data-plane grant is a short-lived connection-admission credential.
+
+Its expiry determines whether a new WebSocket connection or pending pair may
+be established. Grant expiry does not, by itself, terminate a data plane that
+was already authenticated and paired.
+
+After establishment, live authorization is based on the previously verified
+claims plus authoritative current session state:
+
+```text
+sessionId
+workerId
+leaseId
+lease expiry
+session lifecycle state
+```
+
+This permits a session to live longer than the short admission-grant TTL while
+still failing closed when durable allocation ownership changes.

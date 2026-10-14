@@ -1,3 +1,15 @@
+import { setTimeout as delay } from "node:timers/promises";
+
+import {
+  WebSocket,
+} from "ws";
+
+import {
+  createDataPlaneProtocols,
+  DATA_PLANE_MAX_FRAME_BYTES,
+  DATA_PLANE_PATH,
+} from "../shared/data-plane-contract.mjs";
+
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
 import { discoverModelInventory } from "./model-cache.mjs";
@@ -13,6 +25,9 @@ export class WorkerAgent {
     this.client = options.client ?? new ControlPlaneClient(config.controlPlaneUrl, config.token);
     this.discoverGpus = options.discoverGpus ?? (() => discoverGpus({ fakeGpus: config.fakeGpus }));
     this.executeJob = options.executeJob ?? executeJob;
+    this.sessionLeaseHandler =
+      options.sessionLeaseHandler ??
+      null;
     this.resolveAdapterHealth = options.resolveAdapterHealth ?? resolveAdapterHealth;
     this.discoverModelInventory = options.discoverModelInventory ?? (() =>
       discoverModelInventory({
@@ -32,6 +47,8 @@ export class WorkerAgent {
     this.heartbeatTimer = null;
     this.assignmentTimer = null;
     this.inFlight = new Map();
+    this.sessionLeases =
+      new Map();
     this.pendingOperations = new Set();
   }
 
@@ -73,6 +90,19 @@ export class WorkerAgent {
       entry.controller.abort(new Error("worker stopping"));
       return entry.promise;
     }));
+
+    await Promise.allSettled(
+      [...this.sessionLeases.values()]
+        .map((entry) => {
+          entry.controller.abort(
+            new Error(
+              "worker stopping",
+            ),
+          );
+
+          return entry.promise;
+        }),
+    );
   }
 
   #scheduleHeartbeat() {
@@ -108,15 +138,95 @@ export class WorkerAgent {
       const operation = (async () => {
         try {
           const response = await this.client.leases(this.workerId);
-          const activeJobIds = new Set(response.jobs.map((job) => job.id));
-          for (const [jobId, entry] of this.inFlight) {
-            if (!activeJobIds.has(jobId)) {
-              entry.controller.abort(new Error("job lease is no longer active"));
+
+          const activeJobIds =
+            new Set(
+              response.jobs
+                .map((job) => job.id),
+            );
+
+          for (
+            const [jobId, entry]
+            of this.inFlight
+          ) {
+            if (
+              !activeJobIds.has(
+                jobId,
+              )
+            ) {
+              entry.controller.abort(
+                new Error(
+                  "job lease is no longer active",
+                ),
+              );
             }
           }
+
           for (const job of response.jobs) {
-            if (job.status === "leased" && !this.inFlight.has(job.id)) {
+            if (
+              job.status === "leased" &&
+              !this.inFlight.has(
+                job.id,
+              )
+            ) {
               this.#runJob(job);
+            }
+          }
+
+          const sessionsById =
+            new Map(
+              (response.sessions ?? [])
+                .map(
+                  (session) => [
+                    session.id,
+                    session,
+                  ],
+                ),
+            );
+
+          for (
+            const [
+              sessionId,
+              entry,
+            ]
+            of this.sessionLeases
+          ) {
+            const current =
+              sessionsById.get(
+                sessionId,
+              );
+
+            if (
+              !current ||
+              current.leaseId !==
+                entry.leaseId
+            ) {
+              entry.controller.abort(
+                new Error(
+                  "session lease is no longer active",
+                ),
+              );
+            }
+          }
+
+          if (
+            this.sessionLeaseHandler
+          ) {
+            for (
+              const session
+              of response.sessions ?? []
+            ) {
+              if (
+                session.status ===
+                  "allocated" &&
+                !this.sessionLeases.has(
+                  session.id,
+                )
+              ) {
+                this.#runSession(
+                  session,
+                );
+              }
             }
           }
         } catch (error) {
@@ -163,6 +273,560 @@ export class WorkerAgent {
       }));
     } finally {
       this.modelInventoryCheckedAt = now;
+    }
+  }
+
+  #runSession(session) {
+    const controller =
+      new AbortController();
+
+    const promise =
+      this.#maintainSessionLease(
+        session,
+        controller,
+      )
+        .catch((error) => {
+          if (
+            !controller.signal
+              .aborted
+          ) {
+            console.error(
+              JSON.stringify({
+                event:
+                  "session_lease_failed",
+                sessionId:
+                  session.id,
+                message:
+                  error.message,
+              }),
+            );
+          }
+        })
+        .finally(() => {
+          this.sessionLeases
+            .delete(
+              session.id,
+            );
+        });
+
+    this.sessionLeases.set(
+      session.id,
+      {
+        controller,
+        promise,
+        leaseId:
+          session.leaseId,
+      },
+    );
+  }
+
+  async #maintainSessionLease(
+    session,
+    controller,
+  ) {
+    const signal =
+      controller.signal;
+
+    const lease = {
+      workerId:
+        this.workerId,
+      leaseId:
+        session.leaseId,
+    };
+
+    const startResponse =
+      await this.client
+        .startSession(
+          session.id,
+          lease,
+        );
+
+    const connecting =
+      startResponse.session;
+
+    console.log(
+      JSON.stringify({
+        event:
+          "session_connecting",
+        sessionId:
+          session.id,
+        capability:
+          session.capability,
+      }),
+    );
+
+    const gpu =
+      this.gpus.find(
+        (candidate) =>
+          candidate.uuid ===
+          connecting
+            .assignedGpuUuid,
+      ) ??
+      null;
+
+    const dataPlane =
+      await this
+        .#openSessionDataPlane(
+          connecting,
+          lease,
+          signal,
+        );
+
+    console.log(
+      JSON.stringify({
+        event:
+          "session_data_plane_connected",
+        sessionId:
+          session.id,
+        capability:
+          session.capability,
+      }),
+    );
+
+    const handlerPromise =
+      Promise.resolve(
+        this.sessionLeaseHandler(
+          connecting,
+          {
+            ...this.adapterContext,
+            signal,
+            gpu,
+            dataPlaneSocket:
+              dataPlane.socket,
+          },
+        ),
+      );
+
+    const renewalPromise =
+      this.#renewSessionLease(
+        connecting,
+        lease,
+        controller,
+      );
+
+    try {
+      const completed =
+        await Promise.race([
+          handlerPromise.then(
+            () => "handler",
+          ),
+          renewalPromise.then(
+            () => "renewal",
+          ),
+          dataPlane.closed.then(
+            () => "data-plane",
+          ),
+        ]);
+
+      if (
+        !signal.aborted
+      ) {
+        controller.abort(
+          new Error(
+            completed ===
+              "handler"
+              ? "session handler stopped"
+              : completed ===
+                  "renewal"
+                ? "session lease renewal stopped"
+                : "session data plane closed",
+          ),
+        );
+      }
+    } catch (error) {
+      if (
+        !signal.aborted
+      ) {
+        controller.abort(
+          error,
+        );
+      }
+
+      throw error;
+    } finally {
+      dataPlane.close();
+
+      await Promise.allSettled([
+        handlerPromise,
+        renewalPromise,
+      ]);
+    }
+  }
+
+  async #openSessionDataPlane(
+    session,
+    lease,
+    signal,
+  ) {
+    const grantResponse =
+      await this.client
+        .workerDataPlaneGrant(
+          session.id,
+          lease,
+        );
+
+    const grant =
+      grantResponse?.grant;
+
+    if (
+      !grant ||
+      typeof grant.token !==
+        "string"
+    ) {
+      throw new Error(
+        "control plane did not return a worker data-plane grant",
+      );
+    }
+
+    const url =
+      new URL(
+        this.config
+          .controlPlaneUrl,
+      );
+
+    if (
+      url.protocol ===
+      "http:"
+    ) {
+      url.protocol =
+        "ws:";
+    } else if (
+      url.protocol ===
+      "https:"
+    ) {
+      url.protocol =
+        "wss:";
+    } else {
+      throw new Error(
+        "control-plane URL must use http or https for data-plane relay",
+      );
+    }
+
+    url.pathname =
+      DATA_PLANE_PATH;
+
+    url.search = "";
+    url.hash = "";
+
+    const socket =
+      new WebSocket(
+        url,
+        createDataPlaneProtocols(
+          grant.token,
+        ),
+        {
+          maxPayload:
+            DATA_PLANE_MAX_FRAME_BYTES,
+          perMessageDeflate:
+            false,
+          handshakeTimeout:
+            10_000,
+        },
+      );
+
+    let resolveClosed;
+
+    const closed =
+      new Promise(
+        (resolve) => {
+          resolveClosed =
+            resolve;
+        },
+      );
+
+    socket.once(
+      "close",
+      (
+        code,
+        reason,
+      ) => {
+        resolveClosed({
+          code,
+          reason:
+            reason.toString(),
+        });
+      },
+    );
+
+    const abortSocket =
+      () => {
+        if (
+          socket.readyState ===
+            WebSocket.CLOSED
+        ) {
+          return;
+        }
+
+        if (
+          socket.readyState ===
+            WebSocket.OPEN
+        ) {
+          try {
+            socket.close(
+              1000,
+              "worker session stopped",
+            );
+
+            return;
+          } catch {
+            // Fall through to terminate.
+          }
+        }
+
+        socket.terminate();
+      };
+
+    signal.addEventListener(
+      "abort",
+      abortSocket,
+      {
+        once: true,
+      },
+    );
+
+    try {
+      await new Promise(
+        (
+          resolve,
+          reject,
+        ) => {
+          if (
+            signal.aborted
+          ) {
+            reject(
+              signal.reason ??
+              new Error(
+                "session aborted before data-plane connection",
+              ),
+            );
+
+            return;
+          }
+
+          const onOpen =
+            () => {
+              cleanup();
+              resolve();
+            };
+
+          const onError =
+            (error) => {
+              cleanup();
+              reject(
+                error,
+              );
+            };
+
+          const onClose =
+            (
+              code,
+              reason,
+            ) => {
+              cleanup();
+
+              reject(
+                new Error(
+                  `data-plane connection closed before open (${code}: ${reason.toString()})`,
+                ),
+              );
+            };
+
+          const onAbort =
+            () => {
+              cleanup();
+
+              reject(
+                signal.reason ??
+                new Error(
+                  "session aborted before data-plane connection",
+                ),
+              );
+            };
+
+          const cleanup =
+            () => {
+              socket.off(
+                "open",
+                onOpen,
+              );
+
+              socket.off(
+                "error",
+                onError,
+              );
+
+              socket.off(
+                "close",
+                onClose,
+              );
+
+              signal
+                .removeEventListener(
+                  "abort",
+                  onAbort,
+                );
+            };
+
+          socket.once(
+            "open",
+            onOpen,
+          );
+
+          socket.once(
+            "error",
+            onError,
+          );
+
+          socket.once(
+            "close",
+            onClose,
+          );
+
+          signal
+            .addEventListener(
+              "abort",
+              onAbort,
+              {
+                once: true,
+              },
+            );
+        },
+      );
+    } catch (error) {
+      abortSocket();
+
+      await closed.catch(
+        () => {},
+      );
+
+      throw error;
+    }
+
+    return {
+      socket,
+      closed,
+
+      close() {
+        signal
+          .removeEventListener(
+            "abort",
+            abortSocket,
+          );
+
+        if (
+          socket.readyState ===
+            WebSocket.OPEN
+        ) {
+          try {
+            socket.close(
+              1000,
+              "worker session stopped",
+            );
+          } catch {
+            socket.terminate();
+          }
+        } else if (
+          socket.readyState !==
+            WebSocket.CLOSED
+        ) {
+          socket.terminate();
+        }
+
+        /*
+         * Keep the promise referenced so socket close
+         * completion remains observable to callers.
+         */
+        void resolveClosed;
+      },
+    };
+  }
+
+  async #renewSessionLease(
+    session,
+    lease,
+    controller,
+  ) {
+    const signal =
+      controller.signal;
+
+    let leaseExpiresAt =
+      session.leaseExpiresAt;
+
+    while (!signal.aborted) {
+      const remainingMs =
+        Math.max(
+          1,
+          leaseExpiresAt -
+            Date.now(),
+        );
+
+      const renewDelayMs =
+        Math.max(
+          100,
+          Math.min(
+            this.config
+              .heartbeatIntervalMs,
+            Math.floor(
+              remainingMs /
+                3,
+            ),
+          ),
+        );
+
+      try {
+        await delay(
+          renewDelayMs,
+          undefined,
+          {
+            signal,
+          },
+        );
+      } catch (error) {
+        if (
+          signal.aborted ||
+          error.name ===
+            "AbortError"
+        ) {
+          return;
+        }
+
+        throw error;
+      }
+
+      if (signal.aborted) {
+        return;
+      }
+
+      try {
+        const response =
+          await this.client
+            .renewSession(
+              session.id,
+              lease,
+            );
+
+        leaseExpiresAt =
+          response.session
+            .leaseExpiresAt;
+      } catch (error) {
+        if (
+          error.statusCode ===
+            409
+        ) {
+          return;
+        }
+
+        console.error(
+          JSON.stringify({
+            event:
+              "session_lease_renewal_failed",
+            sessionId:
+              session.id,
+            message:
+              error.message,
+          }),
+        );
+      }
     }
   }
 

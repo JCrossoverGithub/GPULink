@@ -6,6 +6,13 @@ import { validateModelInventory } from "../shared/model-inventory.mjs";
 import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
 import { validateSessionRequest } from "../shared/session-contract.mjs";
 import {
+  DATA_PLANE_GRANT_AUDIENCE,
+  DATA_PLANE_GRANT_SCHEMA_VERSION,
+  signDataPlaneGrant,
+  validateDataPlaneGrantClaims,
+  verifyDataPlaneGrant,
+} from "../shared/data-plane-grant.mjs";
+import {
   boundedInteger,
   optionalObject,
   optionalString,
@@ -249,6 +256,240 @@ export class ControlPlaneService {
     return {
       ...inserted,
       session: storedSession,
+    };
+  }
+
+  async issueDataPlaneGrant(
+    sessionId,
+    role,
+    input = null,
+  ) {
+    if (
+      role !== "client" &&
+      role !== "worker"
+    ) {
+      throw new ValidationError(
+        "data-plane grant role must be client or worker",
+      );
+    }
+
+    const now =
+      this.clock();
+
+    const session =
+      await this.database
+        .getSession(
+          sessionId,
+        );
+
+    if (!session) {
+      throw new NotFoundError(
+        "session not found",
+      );
+    }
+
+    if (
+      session.status !== "allocated" &&
+      session.status !== "connecting" &&
+      session.status !== "active"
+    ) {
+      throw new ConflictError(
+        "session does not own an active allocation",
+      );
+    }
+
+    if (
+      !session.assignedWorkerId ||
+      !session.leaseId ||
+      !Number.isSafeInteger(
+        session.leaseExpiresAt,
+      ) ||
+      session.leaseExpiresAt <= now
+    ) {
+      throw new ConflictError(
+        "session lease is not currently valid",
+      );
+    }
+
+    if (role === "worker") {
+      const lease =
+        validateLeaseAction(
+          input,
+        );
+
+      if (
+        lease.workerId !==
+          session.assignedWorkerId ||
+        lease.leaseId !==
+          session.leaseId
+      ) {
+        throw new ConflictError(
+          "session lease is not valid for this worker",
+        );
+      }
+    }
+
+    const configuredTtlMs =
+      this.config
+        .dataPlaneGrantTtlMs;
+
+    if (
+      !Number.isSafeInteger(
+        configuredTtlMs,
+      ) ||
+      configuredTtlMs <= 0
+    ) {
+      throw new Error(
+        "data-plane grant TTL is not configured",
+      );
+    }
+
+    const expiresAt =
+      Math.min(
+        now +
+          configuredTtlMs,
+        session.leaseExpiresAt,
+      );
+
+    if (expiresAt <= now) {
+      throw new ConflictError(
+        "session lease is not currently valid",
+      );
+    }
+
+    const claims = {
+      schemaVersion:
+        DATA_PLANE_GRANT_SCHEMA_VERSION,
+      audience:
+        DATA_PLANE_GRANT_AUDIENCE,
+      role,
+      sessionId:
+        session.id,
+      workerId:
+        session.assignedWorkerId,
+      leaseId:
+        session.leaseId,
+      issuedAt: now,
+      expiresAt,
+      nonce:
+        createId("grant"),
+    };
+
+    return {
+      token:
+        signDataPlaneGrant(
+          claims,
+          this.config
+            .dataPlaneSigningKey,
+        ),
+      expiresAt,
+    };
+  }
+
+  async authorizeDataPlaneGrant(
+    token,
+    expectedRole,
+  ) {
+    validateDataPlaneRole(
+      expectedRole,
+    );
+
+    const now =
+      this.clock();
+
+    const claims =
+      verifyDataPlaneGrant(
+        token,
+        this.config
+          .dataPlaneSigningKey,
+        {
+          now,
+        },
+      );
+
+    if (!claims) {
+      return null;
+    }
+
+    return this
+      .authorizeDataPlaneAllocation(
+        claims,
+        expectedRole,
+      );
+  }
+
+  async authorizeDataPlaneAllocation(
+    claims,
+    expectedRole,
+  ) {
+    validateDataPlaneRole(
+      expectedRole,
+    );
+
+    let normalizedClaims;
+
+    try {
+      /*
+       * Validate schema, audience, role vocabulary,
+       * identity fields, and bounded signed lifetime.
+       *
+       * Deliberately do not check whether expiresAt
+       * is before the current wall clock here.
+       * Cryptographic expiry is an admission rule;
+       * established relay lifetime is governed by
+       * current allocation ownership.
+       */
+      normalizedClaims =
+        validateDataPlaneGrantClaims(
+          claims,
+        );
+    } catch {
+      return null;
+    }
+
+    if (
+      normalizedClaims.role !==
+        expectedRole
+    ) {
+      return null;
+    }
+
+    const now =
+      this.clock();
+
+    const session =
+      await this.database
+        .getSession(
+          normalizedClaims
+            .sessionId,
+        );
+
+    if (
+      !session ||
+      (
+        session.status !==
+          "allocated" &&
+        session.status !==
+          "connecting" &&
+        session.status !==
+          "active"
+      ) ||
+      session.assignedWorkerId !==
+        normalizedClaims.workerId ||
+      session.leaseId !==
+        normalizedClaims.leaseId ||
+      !Number.isSafeInteger(
+        session.leaseExpiresAt,
+      ) ||
+      session.leaseExpiresAt <= now
+    ) {
+      return null;
+    }
+
+    return {
+      claims:
+        normalizedClaims,
+      session,
     };
   }
 
@@ -753,6 +994,21 @@ function validateLeaseAction(input) {
     workerId: requireString(object.workerId, "workerId", { maximum: 100 }),
     leaseId: requireString(object.leaseId, "leaseId", { maximum: 100 }),
   };
+}
+
+function validateDataPlaneRole(
+  role,
+) {
+  if (
+    role !== "client" &&
+    role !== "worker"
+  ) {
+    throw new TypeError(
+      "expected data-plane role must be client or worker",
+    );
+  }
+
+  return role;
 }
 
 export class NotFoundError extends Error {

@@ -28,6 +28,30 @@ export class ControlPlaneClient {
     return this.request("POST", `/v1/jobs/${encodeURIComponent(jobId)}/finish`, body);
   }
 
+  startSession(sessionId, body) {
+    return this.request(
+      "POST",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/start`,
+      body,
+    );
+  }
+
+  renewSession(sessionId, body) {
+    return this.request(
+      "POST",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/renew`,
+      body,
+    );
+  }
+
+  workerDataPlaneGrant(sessionId, body) {
+    return this.request(
+      "POST",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/data-plane/worker-grant`,
+      body,
+    );
+  }
+
   async request(method, path, body = undefined) {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,

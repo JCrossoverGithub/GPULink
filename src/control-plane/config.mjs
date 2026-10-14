@@ -9,12 +9,48 @@ function positiveInteger(value, fallback, name) {
   return parsed;
 }
 
+function boundedPositiveInteger(
+  value,
+  fallback,
+  name,
+  maximum,
+) {
+  const parsed =
+    positiveInteger(
+      value,
+      fallback,
+      name,
+    );
+
+  if (parsed > maximum) {
+    throw new Error(
+      `${name} must be at most ${maximum}`,
+    );
+  }
+
+  return parsed;
+}
+
 export function loadControlPlaneConfig(environment = process.env) {
   const clientToken = requireToken(environment.GPULINK_CLIENT_TOKEN, "GPULINK_CLIENT_TOKEN");
   const workerToken = requireToken(environment.GPULINK_WORKER_TOKEN, "GPULINK_WORKER_TOKEN");
   const adminToken = requireToken(environment.GPULINK_ADMIN_TOKEN, "GPULINK_ADMIN_TOKEN");
-  if (new Set([clientToken, workerToken, adminToken]).size !== 3) {
-    throw new Error("GPUlink client, worker, and admin tokens must be different");
+  const dataPlaneSigningKey = requireToken(
+    environment.GPULINK_DATA_PLANE_SIGNING_KEY,
+    "GPULINK_DATA_PLANE_SIGNING_KEY",
+  );
+
+  if (
+    new Set([
+      clientToken,
+      workerToken,
+      adminToken,
+      dataPlaneSigningKey,
+    ]).size !== 4
+  ) {
+    throw new Error(
+      "GPUlink control-plane tokens and data-plane signing key must all be different",
+    );
   }
 
   const database =
@@ -55,6 +91,14 @@ export function loadControlPlaneConfig(environment = process.env) {
       environment.GPULINK_CONTROL_DATA_PATH?.trim() || "./data/control-plane.sqlite",
     ),
     tokens: Object.freeze({ client: clientToken, worker: workerToken, admin: adminToken }),
+    dataPlaneSigningKey,
+    dataPlaneGrantTtlMs:
+      boundedPositiveInteger(
+        environment.GPULINK_DATA_PLANE_GRANT_TTL_MS,
+        15_000,
+        "GPULINK_DATA_PLANE_GRANT_TTL_MS",
+        60_000,
+      ),
     heartbeatTimeoutMs: positiveInteger(
       environment.GPULINK_CONTROL_HEARTBEAT_TIMEOUT_MS,
       15_000,

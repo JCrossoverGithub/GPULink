@@ -613,3 +613,100 @@ recovery, and the application SDK remain future implementation work.
 
 This document defines the architectural direction without claiming those
 features are already complete.
+
+## Phase 5C relay contract
+
+The initial session data plane is a bounded relay rather than a direct
+application-to-worker connection.
+
+```text
+Application
+    |
+    | authenticated WebSocket
+    v
+GPULink relay
+    |
+    | authenticated WebSocket
+    v
+Allocated worker
+```
+
+Both sides authenticate with separate short-lived grants for the same
+`sessionId + workerId + leaseId`.
+
+GPULink treats the application payload as opaque transport data. Application
+protocols remain owned by adapters and applications.
+
+The version 1 relay contract uses:
+
+- `/v1/data-plane`;
+- WebSocket protocol `gpulink.data-plane.v1`;
+- a 1 MiB maximum frame/message payload;
+- a 4 MiB buffered-byte ceiling;
+- a 10 second peer-pairing deadline;
+- a 30 second idle timeout.
+
+These are transport safety limits, not application semantics.
+
+The session becomes `active` only when both sides of the current allocation
+have established the relay. A stale lease cannot pair with a replacement
+allocation.
+
+PostgreSQL remains control-plane storage only.
+
+### Worker relay integration
+
+A worker with an installed session runtime now joins the generic GPULink relay
+as part of its session lease lifecycle.
+
+The worker flow is:
+
+```text
+discover allocation
+start session -> connecting
+request worker-role data-plane grant
+open authenticated relay WebSocket
+invoke session handler with dataPlaneSocket
+renew session lease while handler is attached
+abort handler and close socket when lease ownership is lost
+```
+
+The worker session handler receives an already-authenticated
+`dataPlaneSocket`. It does not receive the worker bootstrap credential or the
+short-lived relay grant.
+
+The relay, not the worker adapter, owns the durable `connecting -> active`
+transition after both authenticated roles for the same current allocation have
+paired.
+
+Workers with no installed `sessionLeaseHandler` continue to fail closed and
+leave session allocations in `allocated`.
+
+### Live allocation invalidation
+
+An established relay connection does not permanently authorize an allocation.
+
+Committed control-plane lifecycle events cause active relay pairs to revalidate
+their session, worker, and lease identity. A session closure or replacement
+therefore invalidates an already-open data-plane pair.
+
+This preserves the architectural boundary:
+
+- durable lifecycle changes wake the relay;
+- revalidation reads authoritative control-plane state;
+- high-rate payload frames do not perform database reads;
+- stale data-plane connections fail closed.
+
+### Connection grant lifetime
+
+Short-lived relay grants are admission credentials, not session-duration
+credentials.
+
+A grant must still be cryptographically valid when a side connects and when
+the pair is established. Once an authenticated pair is active, GPULink retains
+the verified allocation identity and revalidates that identity against current
+durable session ownership.
+
+An unrelated lifecycle event after the original grant TTL therefore does not
+disconnect a healthy long-lived session. Session closure, replacement, worker
+loss, or lease expiry still invalidates the relay.

@@ -4,6 +4,7 @@ import { SchedulerRunner } from "./scheduler-runner.mjs";
 import { Scheduler } from "./scheduler.mjs";
 import { ControlPlaneService } from "./service.mjs";
 import { createHttpServer } from "./http-server.mjs";
+import { createDataPlaneRelay } from "./data-plane-relay.mjs";
 
 export function createControlPlane(
   config,
@@ -53,6 +54,18 @@ export function createControlPlane(
       scheduler: schedulerRunner,
     });
 
+  const dataPlaneRelay =
+    createDataPlaneRelay({
+      server,
+      service,
+      database,
+      ...(
+        options
+          .dataPlaneRelayOptions ??
+        {}
+      ),
+    });
+
   let schedulerTimer = null;
   let stopping = false;
 
@@ -84,6 +97,7 @@ export function createControlPlane(
     schedulerRunner,
     service,
     server,
+    dataPlaneRelay,
 
     async start() {
       stopping = false;
@@ -97,6 +111,9 @@ export function createControlPlane(
 
       await server
         .startEventNotifications();
+
+      await dataPlaneRelay
+        .start();
 
       await schedulerRunner.trigger();
 
@@ -133,6 +150,24 @@ export function createControlPlane(
         schedulerTimer = null;
       }
 
+      /*
+       * Signal SchedulerRunner shutdown before
+       * awaiting any other asynchronous teardown.
+       *
+       * stop() marks the runner as stopping
+       * synchronously, preventing a pending
+       * coalesced trigger from becoming another
+       * scheduler pass while the relay drains.
+       *
+       * Persistence remains open until both the
+       * scheduler and relay have finished.
+       */
+      const schedulerStopPromise =
+        schedulerRunner.stop();
+
+      await dataPlaneRelay
+        .stop();
+
       server.closeEventStreams();
 
       if (server.listening) {
@@ -145,7 +180,7 @@ export function createControlPlane(
         );
       }
 
-      await schedulerRunner.stop();
+      await schedulerStopPromise;
 
       await server
         .stopEventNotifications();
