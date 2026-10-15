@@ -198,3 +198,29 @@ and negative protocol tests before live inference.
 
 No service changes, deployment, model installation,
 GPU workload, or npm publication is authorized here.
+
+## Phase 6A-3A executable parser prototype (not wired to a worker)
+
+The standalone parser in `src/shared/asr-protocol-v1.mjs` rejects unknown
+message fields, duplicate JSON keys, invalid message directions, invalid
+PCM16 frame lengths, sample discontinuities, sequence gaps, and attempts
+to override a worker-selected model through client messages.
+
+Its provisional bounds are:
+- control JSON frame: 16 KiB
+- network audio frame: 3,200 samples / 200 ms maximum
+- outstanding unconsumed input: 32,000 samples / 2 seconds maximum
+- total session audio: 28,800,000 samples / 30 minutes maximum
+- transcript text: 4 KiB maximum per partial or final message
+
+The caller must deliver WebSocket text only to the control parser and binary
+messages only to the audio parser. The ingress tracker accounts for queued
+samples but does not own a queue: the runtime must retain audio and call
+`releaseSamples` only when input has actually been consumed. On queue limit,
+the runtime must fail or exert transport backpressure; silently discarding
+audio is prohibited. Worker socket buffering and timer deadlines remain
+independently bounded by their existing data-plane contracts.
+
+The parser does not implement inference, adapter registration, transcript
+revision ordering, or session completion. No model readiness, model loading,
+relay integration, or production deployment is claimed by these tests.
