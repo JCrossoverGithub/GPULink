@@ -318,3 +318,34 @@ actual IPC consumption before returning coordinator credits; add an ASR-specific
 subprocess implementation and artifact verification; test complete lease loss,
 network backpressure, and model lifecycle. This synthetic harness authorizes
 no production worker change or live GPU workload.
+
+
+## Synthetic session integration (Phase 6A-4D)
+
+The local `launchSyntheticAsrSession` harness binds `createAsrSessionCoordinator`
+to `launchSyntheticAsrRuntime` without any authenticated socket or registered
+worker adapter. It accepts the supervisor's pinned synthetic startup ACK before
+emitting `asr.model_ready.v1`; this is **not** evidence that real model weights
+have been loaded or warmed.
+
+A caller starts the test session, admits strict ASR1 PCM frames, and receives
+supervisor ACK promises. Only a successfully validated, FIFO, sample-matched
+Python `asr.ipc.consumed.v1` ACK may call `onSamplesConsumed` to release the
+corresponding coordinator credit. Sending bytes to stdin does not release credit.
+An admitted-but-unforwardable frame is terminal: the bridge fails closed and
+never retries a potentially transmitted sequence.
+
+End-of-input is validated against the actual admitted last sequence. Successful
+completion awaits all consumption ACK callbacks, verified Python completion,
+normal subprocess exit, and zero outstanding coordinator audio. Cancellation,
+lease-style external AbortSignal, malformed ACK, stalled runtime, and unexpected
+subprocess exit must not be reported as successful completion. The harness
+preserves intentional cancellation as `cancelled` rather than relabeling it as
+an unexpected interruption when pending audio promises reject during shutdown.
+
+This remains **synthetic-only**: it does not produce transcript hypotheses,
+run ASR inference, provide a production adapter, connect WebSockets, advertise
+capability, provision model artifacts, or deploy worker services. Its Python
+ACK means that a deterministic test loop has decoded and accepted PCM bytes;
+it does not establish that a real inference engine consumed them. The later
+real-model adapter must define a truthful inference-consumption boundary.
