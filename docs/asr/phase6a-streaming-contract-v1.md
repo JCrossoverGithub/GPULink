@@ -275,3 +275,46 @@ The future worker runtime must bind its callbacks to the authenticated
 session and acknowledge samples only after sequential actual consumption.
 Run-side failure must stop frame delivery, terminate the supervised runtime,
 and close the allocated session without reporting success.
+
+## Phase 6A-4B — synthetic Python IPC supervisor (test-only)
+
+Status: EXPERIMENTAL / NOT WIRED INTO WORKER.
+
+`src/worker/asr-synthetic-supervisor.mjs` supervises the deterministic,
+stdlib-only process `scripts/asr/synthetic_runtime.py` for test coverage.
+It does not register an adapter, issue a GPU lease, download any model, or
+perform inference. It does not replace `runBoundedProcess` for finite jobs.
+
+The private Node/Python transport uses UTF-8 NDJSON over dedicated stdin/stdout,
+with at most 16 KiB per line and the following **internal-only** message types:
+
+- Node to Python: `asr.ipc.start.v1`, `asr.ipc.audio.v1`, `asr.ipc.end.v1`
+- Python to Node: `asr.ipc.ready.v1`, `asr.ipc.consumed.v1`, `asr.ipc.completed.v1`
+
+Audio is contiguous PCM16LE at mono 16 kHz; the IPC audio payload is strict
+base64. At most 3,200 samples are accepted per chunk and 32,000 unacknowledged
+samples may be in flight. The supervisor accepts FIFO acknowledgments only when
+both the sequence and end-sample offset match the oldest pending chunk. Writing
+to stdin does NOT release audio credit; only a validated ACK does.
+
+`asr.ipc.ready.v1` is a synthetic-process startup acknowledgment, **not**
+`asr.model_ready.v1` and not `gpulink.relay.ready.v2`.
+
+The synthetic runtime acknowledges after decoding and validating the fake input.
+It **does not prove** that real inference accepted or processed audio. A future
+actual model runtime must define the consumed boundary at the inference engine
+and bind each ACK to that boundary before `onSamplesConsumed` is called.
+
+The supervisor uses an explicit minimal subprocess environment (no inherited
+secrets), no shell, and bounded startup, ACK, and shutdown deadlines. POSIX
+termination is directed at the isolated process group with a SIGKILL fallback;
+Windows uses child termination instead. Raw stderr is never surfaced to the
+client. A missing/incorrect readiness message, invalid/oversized output,
+incorrect FIFO ACK, subprocess crash, or deadline violation must fail closed.
+Cancellation and unexpected exit must not be converted to successful ASR.
+
+**Remaining work:** integrate into the authenticated session adapter; validate
+actual IPC consumption before returning coordinator credits; add an ASR-specific
+subprocess implementation and artifact verification; test complete lease loss,
+network backpressure, and model lifecycle. This synthetic harness authorizes
+no production worker change or live GPU workload.
