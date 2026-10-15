@@ -349,3 +349,36 @@ capability, provision model artifacts, or deploy worker services. Its Python
 ACK means that a deterministic test loop has decoded and accepted PCM bytes;
 it does not establish that a real inference engine consumed them. The later
 real-model adapter must define a truthful inference-consumption boundary.
+
+### Test-only authenticated-worker adapter (Phase 6A-5B)
+
+A standalone `createSyntheticAsrTestAdapter()` factory adapts the synthetic
+coordinator/Python pipeline to the existing `handleSession(session, { signal,
+ dataPlaneSocket })` interface. It is intentionally **not imported or registered
+by `src/worker/main.mjs`**. Calling the factory requires `testOnly: true`, and
+its manifest uses the distinct capability `speech.streaming.synthetic` and the
+adapter identity `gpulink.asr.synthetic-test.v1`. It must never be treated as
+real `speech.streaming.single` model readiness or eligible for real-ASR work.
+
+The existing GPULink relay is responsible for authentication, allocation,
+worker pairing, and current-lease enforcement. This adapter does not create
+any authentication routes or network listeners. Relay authorization/ready ACK
+is not ASR readiness: `asr.model_ready.v1` is sent only after the synthetic
+Python fixture has started and validated its pinned identity.
+
+The adapter parses bounded text controls and binary audio using the existing
+ASR contract, accepts inbound frames in their WebSocket event order, and lets
+the bridge release consumed-audio credit only after validated Python ACKs.
+A valid end may generate `asr.completed.v1` only after the sidecar finishes
+and is reaped; cancellation can generate `asr.cancelled.v1` only after the
+sidecar is reaped. Unexpected runtime failures, malformed input, lease loss,
+and socket closure must never become successful completion. Raw Python stderr
+and local paths are not sent to clients. Outgoing WebSocket sends have a
+bounded callback deadline and outbound buffered-byte guard.
+
+Phase 6A-5B tests include an in-memory WebSocket stub, an injected subprocess
+fixture, and a real local synthetic Python fixture where available. They do
+**not** establish a successful authenticated control-plane relay end-to-end
+session. That is a separate Phase 6A-5C acceptance gate. Full PostgreSQL
+regression, real-model verification, CUDA inference, and production
+registration/deployment also remain separate gates.
