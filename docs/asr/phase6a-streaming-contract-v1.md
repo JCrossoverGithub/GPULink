@@ -224,3 +224,32 @@ independently bounded by their existing data-plane contracts.
 The parser does not implement inference, adapter registration, transcript
 revision ordering, or session completion. No model readiness, model loading,
 relay integration, or production deployment is claimed by these tests.
+
+## Phase 6A-3C worker-output validation prototype (not wired to a worker)
+
+`src/shared/asr-worker-output-v1.mjs` enforces application-level worker
+output ordering and a terminal-state lifecycle independently of the GPULink
+relay handshake. It requires the expected pinned model ID and immutable
+40-character revision in `asr.model_ready.v1` before accepting transcripts.
+Only one single-speaker transcript segment may be active at a time.
+Segment IDs are contiguous starting at one and bounded to 10,000; the next
+segment may start only at or after the previous finalized segment's end.
+Within an active segment, revisions strictly increase, its start boundary
+cannot change, and its end boundary cannot decrease. A finalized segment
+cannot be revised. Implementations must validate that emitted sample ranges
+refer only to audio actually accepted by the client ingress tracker; this
+cross-direction link is a **remaining runtime integration requirement**.
+
+A successful `asr.completed.v1` requires a separately validated client
+`asr.end.v1`, a matching lastSequence, and no unfinished segment. Empty
+transcripts are permitted for silent audio. Client cancellation enters a
+cancelling state in which only cancellation acknowledgment or a terminal
+error is accepted. Unexpected socket closure before a terminal status yields
+`interrupted`, never success. A terminal state rejects later messages.
+
+`onClientEnd` and `onClientCancel` are **integration callbacks**, not network
+parsers: the future worker must call them only after its established client
+message parser has accepted the corresponding client message. In particular,
+`onClientEnd` must receive the sequence number checked by the ingress state.
+These tests do not implement cross-direction coupling, authentication,
+subprocess control, streaming inference, or service deployment.
