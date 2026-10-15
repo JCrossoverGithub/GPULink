@@ -253,3 +253,25 @@ message parser has accepted the corresponding client message. In particular,
 `onClientEnd` must receive the sequence number checked by the ingress state.
 These tests do not implement cross-direction coupling, authentication,
 subprocess control, streaming inference, or service deployment.
+
+## Cross-direction coordinator (Phase 6A-3F)
+
+The protocol-only `createAsrSessionCoordinator` composes the accepted
+client-ingress and worker-output validators. For this initial protocol,
+`asr.model_ready.v1` must precede `asr.start.v1` and any binary audio frame;
+early-audio buffering is deliberately unsupported.
+
+Transcript `endSample` must not exceed the contiguous prefix of accepted
+**and acknowledged-consumed** audio (`nextSampleOffset - queuedSamples`).
+A terminal `asr.completed.v1` requires validated `asr.end.v1` and zero
+outstanding audio. A cancelled, failed, or interrupted session cannot be
+converted into success. Input samples are acknowledged only through the
+runtime's consumption callback, not on admission into the bounded queue.
+
+This coordinator does **not** prove that a physical inference process has
+consumed audio, and it does not own a FIFO, verify grant authentication,
+manage sockets, spawn Python, verify model artifacts, or release GPU leases.
+The future worker runtime must bind its callbacks to the authenticated
+session and acknowledge samples only after sequential actual consumption.
+Run-side failure must stop frame delivery, terminate the supervised runtime,
+and close the allocated session without reporting success.
