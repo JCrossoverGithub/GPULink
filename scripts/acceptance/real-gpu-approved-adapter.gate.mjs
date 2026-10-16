@@ -6,22 +6,27 @@
  *
  * Operator must supply GPULINK_ACCEPTED_GPU_PYTHON as an absolute path to an
  * existing GPU-enabled Python environment. Its dependent packages are NOT pinned.
+ * Optional GPULINK_REAL_GPU_PACKAGE_ACCEPTANCE=YES_PACKAGED_LOCAL_OPERATOR_TRUSTED
+ * exercises a standalone npm Adapter SDK tarball and executes its bundled CUDA
+ * program via the same existing operator-trusted catalog/Client SDK path.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHash} from 'node:crypto';
 import {spawn,spawnSync} from 'node:child_process';
 import {existsSync,realpathSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import {mkdtemp,mkdir,copyFile,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createControlPlane} from '../../src/control-plane/app.mjs';
 import {WorkerAgent} from '../../src/worker/agent.mjs';
 import {loadApprovedSubprocessSessionAdapters} from '../../src/worker/approved-subprocess-adapters.mjs';
 
 const root = fileURLToPath(new URL('../../',import.meta.url));
 const sdkDir = path.join(root,'packages/gpulink-sdk');
+const adapterSdkDir = path.join(root,'packages/gpulink-adapter-sdk');
 const tokens = Object.freeze({
   client:'real-gpu-client-test-token-at-least-32-characters',
   worker:'real-gpu-worker-test-token-at-least-32-characters',
@@ -64,6 +69,7 @@ test('physical GPU: independently packed Client SDK reaches approved CUDA adapte
   if (process.env.GPULINK_REAL_GPU_ACCEPTANCE !== 'YES_LOCAL_OPERATOR_TRUSTED') {
     throw new Error('Set GPULINK_REAL_GPU_ACCEPTANCE=YES_LOCAL_OPERATOR_TRUSTED explicitly');
   }
+  const packagedMode=process.env.GPULINK_REAL_GPU_PACKAGE_ACCEPTANCE === 'YES_PACKAGED_LOCAL_OPERATOR_TRUSTED';
   const py=process.env.GPULINK_ACCEPTED_GPU_PYTHON;
   if (!py || !path.isAbsolute(py) || !existsSync(py) || py.includes('\n') || py.includes('\r')) {
     throw new Error('Set GPULINK_ACCEPTED_GPU_PYTHON to existing absolute GPU-enabled Python');
@@ -80,11 +86,67 @@ test('physical GPU: independently packed Client SDK reaches approved CUDA adapte
     const consumerDir=path.join(tmp,'client-author');
     const adapterDir=path.join(tmp,'adapter-author');
     await Promise.all([mkdir(packDir),mkdir(consumerDir),mkdir(adapterDir)]);
-    const script=path.join(adapterDir,'cuda-inference-subprocess.py');
+    const sourceProgram=path.join(adapterDir,'cuda-inference-subprocess.py');
     const scriptBytes=await readFile(path.join(root,'examples/external-adapter/cuda-inference-subprocess.py'));
-    await writeFile(script,scriptBytes,{mode:0o600});
+    await writeFile(sourceProgram,scriptBytes,{mode:0o600});
     const clientApp=path.join(consumerDir,'client.mjs');
     await copyFile(path.join(root,'examples/gpulink-sdk/real-gpu-inference-client.mjs'),clientApp);
+    assert.ok(existsSync(path.join(sdkDir,'dist/index.js')),
+      'First run: npm --prefix packages/gpulink-sdk run build');
+    const packed=JSON.parse(command('npm',[
+      'pack','--offline','--ignore-scripts','--json','--pack-destination',packDir,
+    ],sdkDir));
+    assert.equal(packed[0].name,'@gpulink/client');
+    await writeFile(path.join(consumerDir,'package.json'),
+      '{"name":"gpulink-real-gpu-consumer","private":true,"type":"module"}\n');
+    command('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',
+      path.join(packDir,packed[0].filename)],consumerDir);
+
+    let script=sourceProgram;
+    const selectedManifest={schemaVersion:2,type:'example.cuda.inference',
+      adapterId:'example.cuda.inference.v1',version:'1.0.0',executionMode:'streaming-gateway'};
+    if (packagedMode) {
+      // This optional gate uses ONLY an independently installed Adapter SDK
+      // npm tarball to prepare the external CUDA program package. The operator
+      // still owns the launcher and trust decision, never the client.
+      const sdkPacked=JSON.parse(command('npm',[
+        'pack','--offline','--ignore-scripts','--json','--pack-destination',packDir,
+      ],adapterSdkDir));
+      assert.equal(sdkPacked[0].name,'@gpulink/adapter-sdk');
+      command('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',
+        path.join(packDir,sdkPacked[0].filename)],consumerDir);
+      const consumerRequire=createRequire(path.join(consumerDir,'package.json'));
+      const {assertAdapterCompatibility}=await import(pathToFileURL(
+        consumerRequire.resolve('@gpulink/adapter-sdk/contract')).href);
+      assert.equal(assertAdapterCompatibility({
+        protocol:'gpulink.adapter.ipc',ipcVersion:1,manifestSchemaVersion:2,
+        packageSchemaVersion:1,executionMode:'streaming-gateway',
+        completionMode:'explicit-text-v1',
+      }).compatible,true);
+      await writeFile(path.join(adapterDir,'gpulink.adapter.json'),JSON.stringify({
+        schemaVersion:1,manifest:selectedManifest,
+        entry:'cuda-inference-subprocess.py',completionMode:'explicit-text-v1',
+      }));
+      const bundleDir=path.join(tmp,'portable-cuda-bundle');
+      const cli=path.join(consumerDir,'node_modules/@gpulink/adapter-sdk/bin/package.mjs');
+      assert.match(command(process.execPath,[cli,'pack','--source',adapterDir,
+        '--out',bundleDir],consumerDir),/PASS: created portable package/u);
+      const {inspectAdapter,operatorCatalogCandidate}=await import(pathToFileURL(
+        consumerRequire.resolve('@gpulink/adapter-sdk/package')).href);
+      const inspected=await inspectAdapter({bundleDir});
+      assert.deepEqual(inspected.lock.manifest,selectedManifest);
+      assert.equal(inspected.lock.completionMode,'explicit-text-v1');
+      assert.equal(inspected.lock.sha256,sha256(scriptBytes));
+      // SDK preview is reviewable evidence, not an automatic installation.
+      // This test's operator-approved launcher separately supplies WSL's CUDA
+      // driver location and the selected venv, with its unpinned dependencies.
+      const preview=await operatorCatalogCandidate({bundleDir,interpreter:py});
+      assert.deepEqual(preview.adapters[0].manifest,selectedManifest);
+      assert.equal(preview.adapters[0].command.assets[0].sha256,inspected.lock.sha256);
+      script=inspected.programPath;
+      assert.deepEqual(await readFile(script),scriptBytes);
+      console.log('PASS: independent Adapter SDK tarball -> pinned CUDA program bundle');
+    }
 
     // Operator-owned development launcher: direct exec replaces the shell PID.
     // The verified bash executable and launcher/adapter source are hash-pinned.
@@ -99,8 +161,7 @@ test('physical GPU: independently packed Client SDK reaches approved CUDA adapte
     const catalogFile=path.join(adapterDir,'approved.json');
     await writeFile(catalogFile,JSON.stringify({schemaVersion:1,adapters:[{
       completionMode:'explicit-text-v1',
-      manifest:{schemaVersion:2,type:'example.cuda.inference',
-        adapterId:'example.cuda.inference.v1',version:'1.0.0',executionMode:'streaming-gateway'},
+      manifest:selectedManifest,
       command:{executable,sha256:sha256(await readFile(executable)),
         args:[launcher,script],assets:[
           {path:launcher,sha256:sha256(launcherBytes)},
@@ -109,17 +170,6 @@ test('physical GPU: independently packed Client SDK reaches approved CUDA adapte
     }]}),{mode:0o600});
     const adapters=await loadApprovedSubprocessSessionAdapters(catalogFile);
     assert.equal(adapters.length,1);
-
-    assert.ok(existsSync(path.join(sdkDir,'dist/index.js')),
-      'First run: npm --prefix packages/gpulink-sdk run build');
-    const packed=JSON.parse(command('npm',[
-      'pack','--offline','--ignore-scripts','--json','--pack-destination',packDir,
-    ],sdkDir));
-    assert.equal(packed[0].name,'@gpulink/client');
-    await writeFile(path.join(consumerDir,'package.json'),
-      '{"name":"gpulink-real-gpu-consumer","private":true,"type":"module"}\n');
-    command('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',
-      path.join(packDir,packed[0].filename)],consumerDir);
 
     app=createControlPlane({
       host:'127.0.0.1',port:0,dataPath:':memory:',tokens,

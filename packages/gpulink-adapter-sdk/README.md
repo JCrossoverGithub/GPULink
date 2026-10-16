@@ -47,7 +47,7 @@ operator configures an adapter for the worker.
   isolation, independent GPU-backed workload proof and SDK publishing remain
   separate unaccepted DP3 criteria.
 
-## Offline package and operator preview (DP3 candidate)
+## Offline package and operator preview (accepted scoped DP3 foundation)
 
 The `gpulink-adapter-package` CLI provides a minimal author-to-operator
 workflow for **one GLIP program file**. It is independently installable from an
@@ -74,3 +74,17 @@ GPULink repository. This is not a safe untrusted plugin manager: self-declared
 hashes do not verify publisher identity, and imported/native/model dependencies
 are not transitively pinned. A one-file author package does not certify actual
 GPU execution, resource cleanup or isolation.
+
+## Versioned developer contract (experimental v0.1; scoped JPCMAIN accepted)
+
+Import `@gpulink/adapter-sdk/contract` from an independently installed
+SDK tarball to read the declared GLIP/manifest/package/catalog versions and
+to call `assertAdapterCompatibility(declaration)`. Unsupported major versions
+and extra declaration fields throw `AdapterCompatibilityError` with a bounded
+`code`. This is an *author-side version check*, never operator approval,
+protocol conformance, installation or a claim of public SemVer stability.
+
+See `docs/developer-platform/adapter-sdk-developer-contract-v0.1.md` for the
+pre-v1 export matrix, error/compatibility policy, author steps and opt-in
+packaged real-GPU acceptance. Existing echo helpers are **not** general-purpose
+streaming and model readiness/consumption are workload-specific.

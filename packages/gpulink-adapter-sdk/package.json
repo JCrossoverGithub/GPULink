@@ -2,7 +2,7 @@
   "name": "@gpulink/adapter-sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Candidate GLIP echo conformance and independent adapter packaging/approval-preview tooling",
+  "description": "Pre-v1 independent GLIP adapter conformance, package tooling and compatibility contract",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -13,7 +13,8 @@
   },
   "exports": {
     ".": "./src/echo-conformance.mjs",
-    "./package": "./src/package-workflow.mjs"
+    "./package": "./src/package-workflow.mjs",
+    "./contract": "./src/contract.mjs"
   },
   "scripts": {
     "test": "node --test spec/*.test.mjs"

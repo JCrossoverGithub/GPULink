@@ -20,6 +20,8 @@ Read in this order:
 
 **DP3 independent packaging (scoped JPCMAIN acceptance, October 16, 2026):** [Operator-trusted package workflow](operator-trusted-adapter-package-workflow.md) documents an accepted portable single-file bundle, independent npm consumer gate, and manual operator catalog review. The authoring SDK remains private and pre-v1; this is not signed distribution, complete dependency pinning, or untrusted isolation.
 
+**DP3 versioned developer contract (scoped JPCMAIN acceptance, October 16, 2026):** [Adapter SDK developer compatibility contract](adapter-sdk-developer-contract-v0.1.md) records independently installed npm compatibility exports and a separately packaged physical CUDA workload through the existing operator-approved loader and Client SDK. The SDK remains experimental, private and pre-v1; no new Core/runtime or public release is claimed.
+
 **External adapter-author conformance candidate:** [`packages/gpulink-adapter-sdk/README.md`](../../packages/gpulink-adapter-sdk/README.md) documents a deliberately small, not-yet-public GLIP v1 echo-profile tester. This complements the existing worker-side tests; it does not replace the adapter contract or establish DP3 completion.
 
 ## Historical 2026-10-15 design checkpoint (superseded)

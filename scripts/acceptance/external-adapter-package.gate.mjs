@@ -6,11 +6,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {spawnSync} from 'node:child_process';
+import {createRequire} from 'node:module';
 import {mkdtemp, mkdir, copyFile, readFile, rm, writeFile} from 'node:fs/promises';
 import {realpathSync} from 'node:fs';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {loadApprovedSubprocessSessionAdapters} from '../../src/worker/approved-subprocess-adapters.mjs';
 import {runEchoConformance} from '../../packages/gpulink-adapter-sdk/src/echo-conformance.mjs';
 
@@ -41,6 +42,20 @@ test('independent npm SDK produces reviewed catalog accepted by unchanged operat
     '{"name":"independent-adapter-developer","private":true,"type":"module"}\n');
   run('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund',
     path.join(packDir,packed[0].filename)],consumer,env);
+  const externalRequire=createRequire(path.join(consumer,'package.json'));
+  const {ADAPTER_SDK_COMPATIBILITY,assertAdapterCompatibility,AdapterCompatibilityError}=await import(
+    pathToFileURL(externalRequire.resolve('@gpulink/adapter-sdk/contract')).href);
+  assert.equal(ADAPTER_SDK_COMPATIBILITY.sdkVersion,'0.1.0');
+  assert.equal(assertAdapterCompatibility({
+    protocol:'gpulink.adapter.ipc',ipcVersion:1,manifestSchemaVersion:2,
+    packageSchemaVersion:1,executionMode:'streaming-gateway',
+    completionMode:'explicit-text-v1',
+  }).compatible,true);
+  assert.throws(() => assertAdapterCompatibility({
+    protocol:'gpulink.adapter.ipc',ipcVersion:2,manifestSchemaVersion:2,
+    packageSchemaVersion:1,executionMode:'streaming-gateway',
+    completionMode:'explicit-text-v1',
+  }),e => e instanceof AdapterCompatibilityError && e.code==='unsupported_ipc');
 
   // This source is outside GPULink and imports no worker/Core modules.
   await copyFile(path.join(root,'examples/external-adapter/echo-subprocess.py'),path.join(author,'main.py'));

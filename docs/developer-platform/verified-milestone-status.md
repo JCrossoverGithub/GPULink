@@ -211,3 +211,38 @@ SHA-256 integrity data. Publisher identity/signing, multiple assets, transitive
 runtime and model dependencies, running-session revocation, process-tree/GPU
 cleanup, untrusted isolation and a stable public v1 remain **open DP3/product
 gaps**; no production catalog install or deployment occurred.
+
+
+## Accepted DP3 experimental developer contract and packaged CUDA consumer (October 16, 2026)
+
+Accepted foundation: `b2510d4c51acbc6eff984a0fc8e6f5ecdaf192bf`.
+The subsequent **nine-file** contract/consumer candidate passed the guarded
+JPCMAIN WSL test gate; the accepted implementation is the commit carrying this
+status record (consult Git history). See
+[`adapter-sdk-developer-contract-v0.1.md`](adapter-sdk-developer-contract-v0.1.md).
+The private `@gpulink/adapter-sdk@0.1.0` now exposes an experimental
+`./contract` compatibility export, with exact version declarations and bounded
+incompatibility error codes. The independent npm author-to-operator acceptance
+uses that export. The separately installed Adapter SDK tarball also creates a
+portable, hash-locked CUDA program bundle which the existing operator-approved
+loader executes on a scheduled physical GPU via a separate Client SDK consumer.
+No Core, worker, broker, scheduler, operator catalog or GLIP wire changes.
+
+**JPCMAIN acceptance results:** author SDK **10/10**; independent package
+**1/1**; focused IPC/subprocess **54/54**; opt-in physical CUDA
+**1/1**, prediction `15.5` (reported GPU operation `0.0143 ms`, not session
+latency); full Core **494/528 passed**, **34 optional PostgreSQL test skips**,
+zero failures; Client SDK build succeeded and tests **33/33** passed.
+Executed with the existing operator-selected CUDA Python runtime; no production
+catalog installation, deployment, public publication or merge to `main`.
+
+**Changed paths:** `docs/developer-platform/README.md`,
+`docs/developer-platform/adapter-sdk-developer-contract-v0.1.md`,
+`docs/developer-platform/verified-milestone-status.md`,
+`packages/gpulink-adapter-sdk/{README.md,package.json,src/contract.mjs,spec/contract.test.mjs}`,
+`scripts/acceptance/{external-adapter-package.gate.mjs,real-gpu-approved-adapter.gate.mjs}`.
+The contract is a compatibility checker, not a general ML adapter-author API;
+the accepted bundle contains one program, not transitive Python/CUDA/model
+artifacts. Publisher signing, multi-file dependency closure, revocation of
+running sessions, process-tree/GPU isolation and safe fence release, pretrained
+ASR, production hardening and **public SDK v1** remain unaccepted.
