@@ -1,7 +1,7 @@
 # Phase 6A — Streaming ASR application protocol v1
 
-Status: PROPOSED — not yet implemented.
-Baseline: bc39f4599588e62d9982ed2dff165a1e65066c40.
+Status: PROPOSED for a real pretrained-ASR adapter; v1 protocol validators, bounded session coordination, and synthetic Python ASR tests have been implemented and accepted in development. No production/pretrained ASR integration is claimed.
+Baseline: bc39f4599588e62d9982ed2dff165a1e65066c40 (original design reference); see ../developer-platform/verified-milestone-status.md for current feature-branch evidence.
 
 ## Scope and compatibility
 

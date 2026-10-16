@@ -81,14 +81,18 @@ The physical GPU fleet is:
 The former DigitalOcean deployment is frozen and retained only as a rollback
 target. Its control plane must remain stopped while AWS is authoritative.
 
-Phase 5, the application-platform phase, is in development on the
-`feature/phase6a-streaming-asr-foundation` branch. The source snapshot at
-`37dc692` includes functioning persistent-session, authenticated relay,
-Client SDK and operator-approved adapter foundations; independent public SDK
-and real third-party GPU-workload acceptance remain open. This does **not**
-assert that `37dc692` is deployed to production. See the
+Application-platform development is accepted on
+`feature/phase6a-streaming-asr-foundation` through pushed checkpoint
+`8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` (2026-10-16), **not yet
+merged into `main` or deployed to AWS**. The independent TypeScript Client SDK
+and experimental Adapter SDK have passed external npm-package acceptance;
+operator-approved, separately packaged CUDA inference has also run through
+the GPULink session path on a physical GPU. This is a small deterministic
+inference fixture, **not** pretrained streaming ASR, a public SDK v1 release,
+or safe untrusted-code execution. The earlier `37dc692` snapshot remains a
+historical source-audit baseline. See the
 [verified developer-platform milestone status](docs/developer-platform/verified-milestone-status.md)
-for source-to-evidence mapping.
+for scoped evidence and remaining product gaps.
 
 See docs/ROADMAP.md for the current project plan and
 docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the

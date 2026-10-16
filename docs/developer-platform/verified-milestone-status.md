@@ -1,12 +1,12 @@
 # GPULink — verified developer-platform status and milestone evidence
 
-**Status:** source-reconciled documentation candidate; **not yet accepted or merged**.
-**Baseline:** `37dc692d19aa0581f1365c5bce3d721904a8b980` (`feature/phase6a-streaming-asr-foundation`, as reported in the handoff).
-**Source:** exact user-supplied Git archive; `RELEASE_REVISION` matches the baseline. Git metadata, HEAD, worktree, remote tracking and deployment cannot be verified from this archive.
+**Status:** living evidence index; scoped development accepted and pushed through `8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` on `feature/phase6a-streaming-asr-foundation` (2026-10-16). **Not merged into `main`, not deployed, and not a public SDK v1 release.**
+**Historical source-audit baseline:** `37dc692d19aa0581f1365c5bce3d721904a8b980` on the same feature branch.
+**Original source review:** a user-supplied source archive established this baseline without Git/remote state or runtime execution verification; the initial milestone tables and source map below record that historical baseline.
+**Later evidence:** the appended October 16 acceptance sections record independent JPCMAIN tests, including private SDK packaging, a versioned experimental developer contract, and separately packaged operator-trusted physical CUDA inference. The latest root suite passed 494/528 with 34 PostgreSQL-dependent tests skipped; the Client SDK passed 33/33. Do not infer complete PostgreSQL acceptance or production deployment from those results.
 **Review date:** 2026-10-16.
-**Execution:** source inspection only for this reconciliation. No test run, installed package, GPU inference, commit, push, or deployment accompanies this document.
 
-This is the **single living milestone/evidence index** for the developer-platform work. For *planned gate definitions* see [implementation-roadmap.md](implementation-roadmap.md); for *architecture* see [ADR 0001](adr-0001-direct-sdk-platform.md); for the *broader infrastructure phases* see [../ROADMAP.md](../ROADMAP.md). Earlier gate-specific notes remain historical records and can retain their original labels such as `candidate` or `pending JPCMAIN acceptance`. This index does not replace their test artifacts or certify a deployment.
+This is the **single living milestone/evidence index** for developer-platform work. **Read the original DP0–DP9 table and source-to-interface map as the `37dc692` historical snapshot; the later accepted development-gate sections below supersede its older "missing evidence" statements where specifically tested.** For planned gates see [implementation-roadmap.md](implementation-roadmap.md), for architecture see [ADR 0001](adr-0001-direct-sdk-platform.md), and for infrastructure see [../ROADMAP.md](../ROADMAP.md). Older gate reports retain their original `candidate` or `pending JPCMAIN acceptance` labels as timestamped evidence, not as current project status. No section of this index certifies a production rollout, public SDK release, or safe untrusted GPU isolation.
 
 ## Boundaries that must not change silently
 

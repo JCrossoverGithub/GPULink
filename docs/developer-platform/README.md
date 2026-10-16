@@ -1,6 +1,6 @@
 # GPULink Developer Platform v1 — design and implementation evidence
 
-> **Current checkpoint:** Read [verified milestone status and evidence](verified-milestone-status.md) first. The initial proposal and checkpoint notes below record the state of the *2026-10-15 design package*, **not** the later accepted DP3B–D2C implementations in the `37dc692` source snapshot. Public v1 SDK contracts are **not** yet declared complete.
+> **Current feature checkpoint:** `8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` (accepted and pushed on the development branch, 2026-10-16). Start with the [living evidence index](verified-milestone-status.md); the original 2026-10-15 designs and gate reports are retained as historical decisions. Neither SDK has a completed public v1 release, and this feature branch is not merged into `main` or deployed.
 
 **Status:** approved architectural direction, **not** a declaration of implemented SDK v1 behavior.  
 **Decision date:** 2026-10-15.  
@@ -8,15 +8,14 @@
 **Initial reference workload:** developer-owned streaming speech recognition adapter.  
 **Owner boundary:** GPULink core is an application-agnostic GPU execution substrate, not a speech product.
 
-Read in this order:
+Read in this order (implemented development interfaces first, historical proposals afterward):
 
-1. [Verified milestone status and evidence](verified-milestone-status.md)
-2. [Architecture decision (ADR 0001)](adr-0001-direct-sdk-platform.md)
-3. [Client SDK contract proposal](client-sdk-v1-contract.md)
-4. [Third-party adapter contract proposal](adapter-sdk-v1-contract.md)
-5. [CaptionLink direct SDK integration](captionlink-direct-sdk.md)
-6. [Development gates and acceptance criteria](implementation-roadmap.md)
-7. [DP3B operator-approved adapter loader (trusted-code prototype)](operator-approved-adapters-dp3b.md)
+1. [Living milestone and evidence index](verified-milestone-status.md) — current accepted scope and open gates.
+2. [Client SDK](../../packages/gpulink-sdk/README.md) and [Adapter SDK](../../packages/gpulink-adapter-sdk/README.md) — actual pre-v1 packages.
+3. [Adapter SDK compatibility contract](adapter-sdk-developer-contract-v0.1.md) and [operator-reviewed package workflow](operator-trusted-adapter-package-workflow.md) — accepted experimental author/operator path.
+4. [Architecture decision (ADR 0001)](adr-0001-direct-sdk-platform.md) — the generic Core / independent SDK boundaries.
+5. [Original Client SDK v1 proposal](client-sdk-v1-contract.md), [Adapter SDK v1 proposal](adapter-sdk-v1-contract.md), and [planned gates](implementation-roadmap.md) — historical targets, not shipping API declarations.
+6. [CaptionLink integration design](captionlink-direct-sdk.md) and [original trusted-loader evidence](operator-approved-adapters-dp3b.md) — reference materials, not generic Core requirements.
 
 **DP3 independent packaging (scoped JPCMAIN acceptance, October 16, 2026):** [Operator-trusted package workflow](operator-trusted-adapter-package-workflow.md) documents an accepted portable single-file bundle, independent npm consumer gate, and manual operator catalog review. The authoring SDK remains private and pre-v1; this is not signed distribution, complete dependency pinning, or untrusted isolation.
 

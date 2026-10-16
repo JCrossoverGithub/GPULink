@@ -1,7 +1,7 @@
 # Developer Platform v1 implementation gates
 
 **Original plan date:** 2026-10-15. **Approved direction:** Direct Client SDK + open third-party Adapter SDK.
-**Current evidence baseline:** source archive `37dc692d19aa0581f1365c5bce3d721904a8b980` (2026-10-16 reconciliation, pending repository acceptance). See the [verified milestone status and evidence index](verified-milestone-status.md) for **current implementation and acceptance status**. The original wording "production implementation not begun" described this *initial design gate*, not the source state at `37dc692`. This page preserves the originally planned DP0–DP9 gate definitions; do not treat its historical checkpoints as the current checkout.
+**Historical source-audit baseline:** `37dc692d19aa0581f1365c5bce3d721904a8b980` (2026-10-16). The later `8a90539` development branch was accepted and pushed, but not merged into `main` or deployed. See the [living milestone status and evidence index](verified-milestone-status.md) for the later scoped JPCMAIN evidence. This page preserves the original DP0–DP9 gate definitions; its gate descriptions are not a current list of unfinished tasks or public API guarantees.
 
 ## Accepted preconditions
 
@@ -32,6 +32,6 @@ The previously proposed Phase 6A-6L2C GPULink-specific C++ native-bridge build i
 
 No unrelated GPU tests, new model downloads, package installs, certificate/key material, credentials in files, commits, pushes, merges or deployments as part of this docs package. The docs need source-level reconciliation against the live checkouts before implementation claims or API freezing. Any content in `docs/sdk/phase5e-*` remains historical description of accepted behavior, not replaced by proposed v1 design.
 
-## Current next action following the source reconciliation
+## Historical next action at the `37dc692` reconciliation
 
-Review and accept the [verified milestone status and evidence index](verified-milestone-status.md) against the real checkout; it is the file-by-file source map for the `37dc692` baseline. Then close DP1's *minimal existing-protocol* compatibility and threat-boundary decisions, and pursue independently consumable Adapter SDK conformance alongside Client SDK v1 qualification. Do not duplicate previously accepted DP3B–D2C work. Any implementation, test execution, commit, push or deploy remains separately gated by the operator's normal checks.
+At that checkpoint, the next action was to reconcile the index against the checkout and qualify independent adapter conformance alongside the Client SDK. Those scoped gates were subsequently exercised on JPCMAIN through `8a90539`; consult the [living milestone index](verified-milestone-status.md) for their exact results and limitations. Repository cleanup and controlled integration into `main` are the immediate maintenance focus. This historical plan does not authorize code changes, a merge, or deployment.
