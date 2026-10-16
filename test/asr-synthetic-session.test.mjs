@@ -123,12 +123,33 @@ pythonTest("slow runtime cannot create unbounded pending audio", async () => {
   const promises = [];
   try {
     s.start();
-    for (let i = 0; i < 10; i++) promises.push(s.sendAudio(frame(i, i * 3200, 3200)));
-    assert.equal(s.snapshot().client.queuedSamples, 32_000);
-    assert.equal(s.snapshot().runtime.pendingSamples, 32_000);
-    assert.throws(() => s.sendAudio(frame(10, 32_000)));
-    assert.equal(s.snapshot().client.nextSequence, 10);
-    assert.equal(s.snapshot().runtime.nextSequence, 10);
+    let accepted = 0;
+    let backpressured = false;
+    for (; accepted < 10; accepted++) {
+      try {
+        promises.push(s.sendAudio(frame(accepted, accepted * 3200, 3200)));
+      } catch (error) {
+        assert.equal(error.code, "backpressure_limit");
+        backpressured = true;
+        break;
+      }
+    }
+    const snapshot = s.snapshot();
+    assert.ok(accepted > 0, "at least one frame must enter the runtime");
+    assert.ok(snapshot.client.queuedSamples <= 32_000);
+    assert.ok(snapshot.runtime.pendingSamples <= 32_000);
+    if (backpressured) {
+      // Underlying OS pipe limits may trip before the logical queue bound.
+      // Runtime rejection must interrupt the session, never complete it.
+      assert.equal(snapshot.worker.state, "interrupted");
+      assert.equal(snapshot.runtime.nextSequence, accepted);
+    } else {
+      assert.equal(snapshot.client.queuedSamples, 32_000);
+      assert.equal(snapshot.runtime.pendingSamples, 32_000);
+      assert.throws(() => s.sendAudio(frame(10, 32_000)));
+      assert.equal(s.snapshot().client.nextSequence, 10);
+      assert.equal(s.snapshot().runtime.nextSequence, 10);
+    }
   } finally {
     await s.cancel();
     await Promise.allSettled(promises);

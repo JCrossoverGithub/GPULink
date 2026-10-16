@@ -31,7 +31,23 @@ async function temp(t) {
 }
 const fails = (code) => e => e instanceof AdapterPackageError && e.code === code;
 
-test('offline directory package is reproducible and independent of Core imports', async t => {
+function findPython() {
+  const probe = 'import os,sys;print(os.path.realpath(sys.executable))';
+  const candidates = process.platform === 'win32' ? ['python', 'python3'] : ['/usr/bin/python3', 'python3', 'python'];
+  for (const candidate of candidates) {
+    const result = spawnSync(candidate, ['-c', probe], {
+      encoding: 'utf8', timeout: 2_000, windowsHide: true,
+    });
+    if (result.status === 0 && path.isAbsolute(result.stdout.trim())) {
+      return realpathSync(result.stdout.trim());
+    }
+  }
+  return null;
+}
+const pythonExecutable = findPython();
+
+test('offline directory package is reproducible and independent of Core imports',
+  {skip: !pythonExecutable && 'Requires a local Python interpreter'}, async t => {
   const root=await temp(t);
   const sourceDir=await author(root);
   const a=await packAdapter({sourceDir,outDir:path.join(root,'bundle-a')});
@@ -40,7 +56,7 @@ test('offline directory package is reproducible and independent of Core imports'
   assert.deepEqual(await readFile(path.join(root,'bundle-a','gpulink.adapter.lock.json')),
     await readFile(path.join(root,'bundle-b','gpulink.adapter.lock.json')));
   assert.equal(a.lock.manifest.adapterId,'example.subprocess.echo.v1');
-  assert.equal(runEchoConformance({executable:realpathSync('/usr/bin/python3'),
+  assert.equal(runEchoConformance({executable:pythonExecutable,
     args:['-I','-B',a.programPath]}).length,6);
   await assert.rejects(packAdapter({sourceDir,outDir:path.join(root,'bundle-a')}),fails('output_must_not_exist'));
 });
@@ -74,7 +90,8 @@ test('untrusted author recipe schema and symlinked sources fail closed', async t
   await assert.rejects(packAdapter({sourceDir:dir,outDir:path.join(root,'link')}),fails('invalid_file_type_or_size'));
 });
 
-test('CLI reports integrity, emits existing trusted catalog schema and never activates it', async t => {
+test('CLI reports integrity, emits existing trusted catalog schema and never activates it',
+  {skip: !pythonExecutable && 'Requires a local Python interpreter'}, async t => {
   const root=await temp(t);
   const dir=await author(root);
   const bundleDir=path.join(root,'bundle');
@@ -82,7 +99,7 @@ test('CLI reports integrity, emits existing trusted catalog schema and never act
   assert.equal(packed.status,0,packed.stderr);
   const scanned=spawnSync(process.execPath,[cli,'inspect','--bundle',bundleDir],{encoding:'utf8'});
   assert.equal(scanned.status,0,scanned.stderr);
-  const interpreter=realpathSync('/usr/bin/python3');
+  const interpreter=pythonExecutable;
   const output=spawnSync(process.execPath,
     [cli,'catalog','--bundle',bundleDir,'--interpreter',interpreter],{encoding:'utf8'});
   assert.equal(output.status,0,output.stderr);

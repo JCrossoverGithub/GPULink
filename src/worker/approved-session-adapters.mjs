@@ -5,7 +5,7 @@
  * with the worker's privileges. Never load entries from client requests.
  */
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
@@ -38,6 +38,13 @@ function validPath(filePath) {
 
 async function readPinnedFile(filePath, byteLimit) {
   if (!validPath(filePath)) throw invalid("absolute_path_required");
+  // Windows does not expose POSIX O_NOFOLLOW. Reject a leaf symlink
+  // before opening a trusted operator-controlled file. This is not a
+  // race-free replacement for Linux O_NOFOLLOW: directories and catalogs
+  // must remain protected from untrusted modifications by the operator.
+  if (process.platform === "win32" && (await lstat(filePath)).isSymbolicLink()) {
+    throw invalid("symlink_disallowed");
+  }
   // O_NOFOLLOW rejects a symlink in the leaf file component on Linux.
   const fd = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {

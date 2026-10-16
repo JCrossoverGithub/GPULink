@@ -127,14 +127,28 @@ pythonTest("bounded pending samples prevent an unacknowledged backlog", async ()
   const child = await launchSyntheticAsrRuntime(opt({ mode: "no_ack", ackTimeoutMs: 2_000 }));
   const rejected = [];
   try {
-    for (let sequence = 0; sequence < 10; sequence++) {
-      const p = child.sendAudio(audio(sequence, sequence * 3200, 3200));
-      rejected.push(p.catch(() => {}));
+    let accepted = 0;
+    let backpressured = false;
+    for (; accepted < 10; accepted++) {
+      try {
+        const p = child.sendAudio(audio(accepted, accepted * 3200, 3200));
+        rejected.push(p.catch(() => {}));
+      } catch (error) {
+        assert.ok(assertCode("backpressure_limit")(error));
+        backpressured = true;
+        break;
+      }
     }
-    assert.equal(child.snapshot().pendingSamples, 32_000);
-    assert.throws(() => child.sendAudio(audio(10, 32_000, 640)),
-      assertCode("backpressure_limit"));
-    assert.equal(child.snapshot().nextSequence, 10);
+    assert.ok(accepted > 0, "at least one audio frame must enter the runtime");
+    assert.equal(child.snapshot().pendingSamples, accepted * 3200);
+    assert.ok(child.snapshot().pendingSamples <= 32_000);
+    assert.equal(child.snapshot().nextSequence, accepted);
+    if (!backpressured) {
+      assert.equal(accepted, 10);
+      assert.throws(() => child.sendAudio(audio(10, 32_000, 640)),
+        assertCode("backpressure_limit"));
+      assert.equal(child.snapshot().nextSequence, 10);
+    }
   } finally {
     const result = await child.cancel();
     assert.equal(result.state, "cancelled");

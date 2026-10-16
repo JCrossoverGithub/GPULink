@@ -263,8 +263,9 @@ test('disconnect before END always cancels, never acknowledges completion',async
 test('an adapter that acknowledges END but does not exit successfully cannot complete',async()=>{
   await fixture(async ({put,spec,catalog,script})=>{
     const source=await readFile(script,'utf8');
-    const broken=source.replace('send(END)\n            return 0', 'send(END)\n            return 2');
-    assert.notEqual(source,broken);
+    const normalized=source.replace(/\r\n/gu,'\n');
+    const broken=normalized.replace('send(END)\n            return 0', 'send(END)\n            return 2');
+    assert.notEqual(normalized,broken);
     await writeFile(script,broken);
     await put([{...spec,completionMode:'explicit-text-v1',command:{...spec.command,
       assets:[{path:script,sha256:sha(Buffer.from(broken))}]}}]);
