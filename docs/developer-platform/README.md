@@ -18,6 +18,8 @@ Read in this order:
 6. [Development gates and acceptance criteria](implementation-roadmap.md)
 7. [DP3B operator-approved adapter loader (trusted-code prototype)](operator-approved-adapters-dp3b.md)
 
+**External adapter-author conformance candidate:** [`packages/gpulink-adapter-sdk/README.md`](../../packages/gpulink-adapter-sdk/README.md) documents a deliberately small, not-yet-public GLIP v1 echo-profile tester. This complements the existing worker-side tests; it does not replace the adapter contract or establish DP3 completion.
+
 ## Historical 2026-10-15 design checkpoint (superseded)
 
 The original design package recorded the GPULink development checkpoint on JPCMAIN at local branch `feature/phase6a-streaming-asr-foundation`, commit `60e31dcbced34b964c1fef2d6da53e623973ebbf` (eight local commits above `bc39f4599588e62d9982ed2dff165a1e65066c40`). These are *local* findings; nothing in these documents claims that the public main branch or AWS deployment contains these changes.

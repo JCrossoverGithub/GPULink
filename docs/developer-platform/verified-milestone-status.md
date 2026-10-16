@@ -97,6 +97,10 @@ These milestones are **not undone** by open public DP3 acceptance. Status `A` me
 | **Core and runtime** | scheduler, service, worker agent, transports, authenticated grants, fencing/broker observation | Operator-trusted integration end-to-end with actual GPU model; separate isolation and whole-tree cleanup acceptance for untrusted execution. |
 | **Example workloads** | `examples/external-adapter/echo-stream.mjs`, `echo-subprocess.py`, synthetic ASR | Independently packaged real GPU workload + non-ASR second workload. |
 
+## Unaccepted external Adapter SDK conformance candidate (after `e31f2d5`)
+
+A proposed `packages/gpulink-adapter-sdk/` package provides a standalone, dependency-free **GLIP v1 echo-profile** CLI and library with no imports from Core or worker internals. Its tests copy the stdlib Python echo fixture to an external temporary directory, execute six positive/negative scenarios, and verify a golden wire vector. **This is candidate implementation work pending the repository's normal acceptance gate**, not a replacement for accepted internal IPC/loader tests and not completion of DP3. It does not test production catalog installation, supply-chain closure, untrusted-code containment, GPU inference or workload-specific readiness. When accepted, record the resulting Git commit and JPCMAIN Node >=24 test output here before updating the DP3 milestone classification.
+
 ## Next acceptance gates — existing DP roadmap, no new phase IDs
 
 **0. DP0/DP1 status consolidation (immediate, documentation only).** Verify this matrix, links and historical test citations against the exact checkout; approve/commit docs without changing runtime or public API. Require `git status` and SHA guards on the actual developer machine. **Pass:** every DP0–DP9 row and accepted nested development milestone is source-linked, scope-limited and reviewed; no contradictory "not begun" current-status guidance remains.
