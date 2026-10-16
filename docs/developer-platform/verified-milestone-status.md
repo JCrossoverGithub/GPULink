@@ -153,3 +153,33 @@ SDK release. DP3 remains partially complete.
 ## Maintenance contract
 
 Update this file only with source-grounded evidence. Each change to a milestone status must include: (1) the accepted commit SHA or explicitly "pending", (2) exact changed source/test paths, (3) reproducible test or review artifact and its date/environment, (4) the capability/limitations proven, and (5) product gaps still open. Record source status separately from production deployment and public release. Preserve historical gate documents as evidence, not competing current roadmaps.
+
+
+## Accepted physical-GPU adapter integration (scoped, October 16, 2026)
+
+See [real-GPU operator-trusted integration evidence](real-gpu-approved-adapter-gate.md).
+JPCMAIN accepted the opt-in `scripts/acceptance/real-gpu-approved-adapter.gate.mjs`
+test (**1/1 passed**) based on `36f1cdcd99ffa2f387d7f5d5a410a4537e39bd5a`
+plus the eight-file candidate; the resulting acceptance commit is the
+Git commit containing this status record (consult Git history). A separately installed `@gpulink/client` consumer requested the real physical
+RTX 3090 Ti assigned by the existing scheduler, drove a hash-pinned external
+GLIP PyTorch CUDA workload, received a distinct model-ready signal, validated
+prediction `15.5` and explicit completion, and closed the session. Allocation
+events confirmed GPU placement; the closed session cleared its worker/GPU
+assignment. Focused tests passed **54/54**. Full Core passed **487/521** with
+**34 PostgreSQL-dependent skips** and **0 failures**. Client SDK passed
+**33/33**. No production deployment occurred.
+
+Changed paths: `src/worker/adapter-subprocess-supervisor.mjs`,
+`src/worker/approved-subprocess-adapters.mjs`,
+`test/adapter-subprocess-supervisor.test.mjs`,
+`examples/external-adapter/cuda-inference-subprocess.py`,
+`examples/gpulink-sdk/real-gpu-inference-client.mjs`,
+`scripts/acceptance/real-gpu-approved-adapter.gate.mjs`,
+`docs/developer-platform/real-gpu-approved-adapter-gate.md` and this file.
+
+**Limits:** fixed tiny test model, trusted subprocess, NVIDIA-specific
+cooperative device selection, runtime dependencies not transitively pinned,
+no OCI/process-tree isolation, no pretrained-model inference, no production
+GPU cleanup/fence guarantee, and no public Adapter SDK v1 release. DP3/DP6
+remain partially complete; this is only the physical-GPU integration gate.

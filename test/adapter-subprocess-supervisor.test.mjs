@@ -189,3 +189,33 @@ sys.stdin.buffer.read()`;
     else process.env.GPULINK_PRIVATE_CREDENTIAL_FOR_TEST = old;
   }
 });
+
+// The NVIDIA visibility hint comes from the worker-assigned GPU, not the client.
+// It is deliberately an environment *hint*, not an OS-level isolation boundary.
+test("supervisor exposes only the assigned CUDA GPU UUID, never inherited secrets", async () => {
+  const uuid = "GPU-12345678-1234-1234-1234-123456789abc";
+  const code = `import os,sys,struct
+f=lambda k,p:b'GLIP'+struct.pack('>BI',k,len(p))+p
+out=sys.stdout.buffer
+out.write(f(2,b'{"protocol":"gpulink.adapter.ipc","version":1,"ready":true}'))
+out.write(f(4,os.environ.get('CUDA_VISIBLE_DEVICES','absent').encode()))
+out.flush()
+sys.stdin.buffer.read()`;
+  const seen = [];
+  const proc = startAdapterSubprocess(opts({
+    args: ["-I", "-S", "-c", code], cudaVisibleDevices: uuid,
+    onFrame: f => seen.push(f.payload.toString('utf8')),
+  }));
+  await proc.ready;
+  await new Promise(resolve => setTimeout(resolve, 40));
+  proc.cancel();
+  await rejectedCode(proc.completed, "cancelled");
+  assert.deepEqual(seen, [uuid]);
+});
+
+test("supervisor fails closed on malformed CUDA selection", () => {
+  assert.throws(() => startAdapterSubprocess(opts({cudaVisibleDevices: "0,1"})),
+    {code: "invalid_cuda_visible_devices"});
+  assert.throws(() => startAdapterSubprocess(opts({cudaVisibleDevices: "GPU-../unsafe"})),
+    {code: "invalid_cuda_visible_devices"});
+});

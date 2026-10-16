@@ -40,7 +40,7 @@ function validate(options) {
   const {
     executable, args = [], sessionId, onFrame,
     startupTimeoutMs = 2_000, sessionTimeoutMs = 30_000,
-    terminateGraceMs = 150, signal,
+    terminateGraceMs = 150, signal, cudaVisibleDevices = null,
   } = options;
   if (typeof executable !== "string" || !path.isAbsolute(executable) ||
       executable.includes("\0") || executable.length > 4096) {
@@ -58,12 +58,19 @@ function validate(options) {
     typeof signal.addEventListener !== "function" || typeof signal.aborted !== "boolean")) {
     throw failure("invalid_abort_signal");
   }
+  // Worker-selected NVIDIA GPU identity only. This is a placement hint for
+  // cooperative operator-trusted workloads, NOT GPU isolation or a grant.
+  if (cudaVisibleDevices !== null &&
+      (typeof cudaVisibleDevices !== "string" ||
+       !/^GPU-[a-fA-F0-9-]{32,64}$/u.test(cudaVisibleDevices))) {
+    throw failure("invalid_cuda_visible_devices");
+  }
   ms(startupTimeoutMs, "startup_timeout", 1, 60_000);
   ms(sessionTimeoutMs, "session_timeout", 1, 300_000);
   ms(terminateGraceMs, "termination_grace", 10, 5_000);
   if (signal?.aborted) throw failure("cancelled");
   return { executable, args, sessionId, onFrame, startupTimeoutMs,
-    sessionTimeoutMs, terminateGraceMs, signal };
+    sessionTimeoutMs, terminateGraceMs, signal, cudaVisibleDevices };
 }
 
 /**
@@ -100,7 +107,12 @@ export function startAdapterSubprocess(options) {
 
   const child = spawn(config.executable, config.args, {
     shell: false,
-    env: { LANG: "C", LC_ALL: "C" },
+    env: {
+      LANG: "C", LC_ALL: "C",
+      ...(config.cudaVisibleDevices === null ? {} : {
+        CUDA_VISIBLE_DEVICES: config.cudaVisibleDevices,
+      }),
+    },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });

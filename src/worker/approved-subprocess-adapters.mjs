@@ -140,7 +140,7 @@ export async function loadApprovedSubprocessSessionAdapters(catalogPath = null) 
  * never result in a successful completion signal.
  */
 export async function bridgeSubprocessSession(
-  session, {signal, dataPlaneSocket: socket}, command, completionMode = undefined,
+  session, {signal, gpu = null, dataPlaneSocket: socket}, command, completionMode = undefined,
 ) {
   if (!session || typeof session.id !== 'string' ||
       !signal || typeof signal.addEventListener !== 'function' ||
@@ -258,6 +258,11 @@ export async function bridgeSubprocessSession(
     child = startAdapterSubprocess({
       executable: command.executable, args: command.args, sessionId: session.id,
       signal: control.signal,
+      // WorkerAgent supplies gpu from the authoritative assignedGpuUuid.
+      // No client message or adapter manifest may select a CUDA device.
+      // Other GPU backends are not implied by this NVIDIA-specific hint.
+      cudaVisibleDevices: /^GPU-[a-fA-F0-9-]{32,64}$/u.test(gpu?.uuid ?? "")
+        ? gpu.uuid : null,
       onFrame(frame) {
         if (control.signal.aborted || socket.readyState !== 1) { abort(); return; }
         // Do not allow a subprocess to forge a worker-issued completion ACK.
