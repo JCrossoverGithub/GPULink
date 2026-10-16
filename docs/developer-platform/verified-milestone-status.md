@@ -32,10 +32,10 @@ This is the **single living milestone/evidence index** for the developer-platfor
 
 | Gate | Status at baseline | Implementation/source evidence | Missing criterion / next decision |
 |---|---|---|---|
-| **DP0 — design and source mapping** | **P** | `adr-0001-direct-sdk-platform.md`; `client-sdk-v1-contract.md`; `adapter-sdk-v1-contract.md`; source map below | This source-grounded matrix is prepared but not accepted in Git yet. Review/merge it, remove contradictory *current-status* summaries, preserve historical notes. |
+| **DP0 — design and source mapping** | **P** | `adr-0001-direct-sdk-platform.md`; `client-sdk-v1-contract.md`; `adapter-sdk-v1-contract.md`; source map below | Source-grounded matrix committed and pushed in `e31f2d55`; keep it synchronized with accepted SDK evidence and preserve historical notes. |
 | **DP1 — protocol/security review** | **P** | Both SDK contract drafts; `adapter-ipc-v1-dp3c1.md`; `workload-broker-threat-model-dp3c3b2a.md` | Freeze only minimal v1 compatibility/security contract with cross-language golden fixtures. No silent promotion of illustrative APIs to public APIs. |
 | **DP2 — public TypeScript Client SDK** | **P; implemented development foundation** | `packages/gpulink-sdk/{package.json,README.md,src/index.ts,src/session.ts,src/data-plane.ts}`; `spec/{client,data-plane,reliability,readiness-v2,external-consumer,high-level-session}.mjs` | `@gpulink/client@0.1.0` remains `private: true` and Node >=24; publication/semver/compatibility policy not accepted. Current `sendBinary`/`sendText` are bounded synchronous methods, not application-consumption ACKs. Model readiness is workload-defined. Preserve existing exports; don't rewrite relay. |
-| **DP3 — public independent Adapter SDK** | **P; functioning attachment substrate** | `src/shared/adapter-manifest.mjs`; `src/worker/{adapter-ipc-v1,adapter-subprocess-supervisor,approved-session-adapters,approved-subprocess-adapters,session-adapters,main}.mjs`; `examples/external-adapter/`; `test/approved-*-e2e.test.mjs` | Only `packages/gpulink-sdk/` exists as an SDK package; no independent public Adapter SDK/conformance distribution, artifact/dependency closure or external real-GPU developer proof. Trust is operator-approved, not untrusted sandboxed. |
+| **DP3 — public independent Adapter SDK** | **P; functioning attachment substrate** | `src/shared/adapter-manifest.mjs`; `src/worker/{adapter-ipc-v1,adapter-subprocess-supervisor,approved-session-adapters,approved-subprocess-adapters,session-adapters,main}.mjs`; `examples/external-adapter/`; `test/approved-*-e2e.test.mjs`; `packages/gpulink-adapter-sdk/` (echo-v1 conformance) | `@gpulink/adapter-sdk@0.1.0` exists as a private development candidate, but no published general-purpose Adapter SDK, artifact/dependency closure or external real-GPU developer proof. Trust is operator-approved, not untrusted sandboxed. |
 | **DP4 — .NET Client SDK parity** | **N** | No `.cs` or `.csproj` in snapshot | Public protocol fixtures, shipped .NET client and parity/cancel tests needed. |
 | **DP5 — direct CaptionLink client** | **N / external unknown** | `captionlink-direct-sdk.md` design; CaptionLink repo not included | Inspect separate CaptionLink source and prove real provider integration without regressing local mode. |
 | **DP6 — real multitalker ASR adapter** | **N for external real-inference proof** | `src/worker/asr-synthetic-*`; `scripts/asr/synthetic_runtime.py`; `test/phase6a-*` | GPU-backed packaged model, model-ready signal, bounded VRAM/latency and integration with independent Client SDK not demonstrated. Historical CUDA benchmarks are separate. |
@@ -97,9 +97,38 @@ These milestones are **not undone** by open public DP3 acceptance. Status `A` me
 | **Core and runtime** | scheduler, service, worker agent, transports, authenticated grants, fencing/broker observation | Operator-trusted integration end-to-end with actual GPU model; separate isolation and whole-tree cleanup acceptance for untrusted execution. |
 | **Example workloads** | `examples/external-adapter/echo-stream.mjs`, `echo-subprocess.py`, synthetic ASR | Independently packaged real GPU workload + non-ASR second workload. |
 
-## Unaccepted external Adapter SDK conformance candidate (after `e31f2d5`)
+## Accepted scoped Adapter SDK echo conformance (`3e05af6`)
 
-A proposed `packages/gpulink-adapter-sdk/` package provides a standalone, dependency-free **GLIP v1 echo-profile** CLI and library with no imports from Core or worker internals. Its tests copy the stdlib Python echo fixture to an external temporary directory, execute six positive/negative scenarios, and verify a golden wire vector. **This is candidate implementation work pending the repository's normal acceptance gate**, not a replacement for accepted internal IPC/loader tests and not completion of DP3. It does not test production catalog installation, supply-chain closure, untrusted-code containment, GPU inference or workload-specific readiness. When accepted, record the resulting Git commit and JPCMAIN Node >=24 test output here before updating the DP3 milestone classification.
+Commit `3e05af616c7faded51cccbc334204bdf03580492` added the private
+`packages/gpulink-adapter-sdk/` development package and its standalone GLIP v1
+**echo-profile** CLI/library. JPCMAIN Node **24.19.0**, Python **3.12.3**:
+**3/3** dedicated conformance tests passed; the root suite **485/519** passed
+with **34** PostgreSQL-dependent skips and no failures; the existing Client SDK
+build and **33/33** tests passed, including its packed external-consumer gate.
+The source and tests copy a Python echo fixture outside the repository, exercise
+six positive/negative profile behaviors, and verify an immutable wire vector.
+No change to Core, worker, adapter manifests, IPC or broker semantics was required.
+
+This is **accepted within its limited echo-profile scope**, not a published SDK,
+general workload conformance certification, operator approval, safe untrusted
+execution, GPU inference, or completed DP3. Existing operator-controlled catalog
+approval remains authoritative. Earlier PostgreSQL-enabled acceptance evidence
+is historical and was not rerun during this latest scoped gate.
+
+**Accepted scoped external integration gate (JPCMAIN, October 16, 2026):**
+`node --test scripts/acceptance/external-client-approved-adapter.gate.mjs`
+passed **1/1**. A separately installed `@gpulink/client` application
+communicated through authenticated GPULink Core and a fake-GPU worker with
+a copied, GLIP-conformant, operator-approved, SHA-256-pinned Python echo
+subprocess. The gate verified binary echo, explicit completion and
+authoritative session closure without modifying Core. The root regression
+suite passed **485/519**, with **34 PostgreSQL-dependent skips** and no
+failures. The TypeScript Client SDK passed **33/33** tests.
+
+This is accepted only for operator-trusted fake-GPU echo integration.
+It does not establish real GPU inference, independent model authorship,
+untrusted workload isolation, artifact supply-chain closure, or public
+SDK release. DP3 remains partially complete.
 
 ## Next acceptance gates — existing DP roadmap, no new phase IDs
 
