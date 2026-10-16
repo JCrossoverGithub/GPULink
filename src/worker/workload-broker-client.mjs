@@ -15,7 +15,7 @@ export async function requestTestBroker({socketPath, operation, payload, timeout
       socketPath.includes('\0') || !Number.isSafeInteger(timeoutMs) || timeoutMs < 50 || timeoutMs > 10000) {
     fail('broker_invalid_transport');
   }
-  if (!['claim','inspect','cancel','reserve-authoritative','observe-authoritative'].includes(operation)) fail('broker_unsupported_operation');
+  if (!['claim','inspect','cancel','reserve-authoritative','observe-authoritative','observe-host'].includes(operation)) fail('broker_unsupported_operation');
   let body;
   if (operation === 'claim') {
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload) ||
@@ -87,9 +87,23 @@ export async function requestTestBroker({socketPath, operation, payload, timeout
               (Number.isSafeInteger(parsed.result.fenceEpoch) && parsed.result.fenceEpoch>0)) ||
             ((parsed.result.disposition==='not_found') !== (parsed.result.fenceEpoch===null))))
           return failure('broker_invalid_response');
+        if (operation==='observe-host' && (
+            Object.keys(parsed.result).sort().join('|') !==
+              'advisoryOnly|attemptId|authorityConfirmed|canLaunch|canRelease|cleanupVerified|observation|operatorHintOnly|reason|schemaVersion|source' ||
+            !['present','absent','unknown'].includes(parsed.result.observation) ||
+            (parsed.result.observation==='present') !== (parsed.result.reason==='identity_present') ||
+            (parsed.result.observation==='absent') !== (parsed.result.reason==='identity_not_present') ||
+            !['identity_present','identity_not_present','boot_mismatch','identity_changed_or_moved',
+              'host_unobservable','epoch_unconfirmed','no_broker_verified_binding',
+              'witness_identity_mismatch'].includes(parsed.result.reason) ||
+            parsed.result.canRelease!==false || parsed.result.canLaunch!==false ||
+            parsed.result.cleanupVerified!==false || parsed.result.authorityConfirmed!==false ||
+            parsed.result.operatorHintOnly!==true || parsed.result.advisoryOnly!==true ||
+            parsed.result.source !== (parsed.result.observation==='unknown' ? 'none':'linux-procfs-v1')))
+          return failure('broker_invalid_response');
         if (operation==='claim' && (parsed.result.status!=='reserved-test-only' ||
             parsed.result.advisoryOnly!==true)) return failure('broker_invalid_response');
-        if (!['claim','reserve-authoritative','observe-authoritative'].includes(operation) && !['reserved','cancelled','quarantined'].includes(parsed.result.state))
+        if (!['claim','reserve-authoritative','observe-authoritative','observe-host'].includes(operation) && !['reserved','cancelled','quarantined'].includes(parsed.result.state))
           return failure('broker_invalid_response');
         finish(null, parsed.result);
       }
@@ -109,3 +123,7 @@ export const reserveAuthoritativeBrokerAttempt = ({socketPath, request, timeoutM
 // D1: diagnostic-only observation of an existing local journal entry.
 export const observeAuthoritativeBrokerAttempt = ({socketPath,attemptId,timeoutMs=4000}) =>
   requestTestBroker({socketPath,operation:'observe-authoritative',payload:{attemptId},timeoutMs});
+
+// D2A: test-only procfs observation; never cleanup verification or release.
+export const observeHostBrokerAttempt = ({socketPath,attemptId,timeoutMs=4000}) =>
+  requestTestBroker({socketPath,operation:'observe-host',payload:{attemptId},timeoutMs});
