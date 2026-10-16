@@ -1,4 +1,4 @@
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,6 +10,10 @@ import {ControlPlaneService} from '../src/control-plane/service.mjs';
 import {parseBrokerProfiles} from '../src/control-plane/broker-claim-service.mjs';
 import {reserveAuthoritativeBrokerAttempt,requestTestBroker} from '../src/worker/workload-broker-client.mjs';
 import {createTestContext,registerWorker,submitJob,gpu} from './helpers.mjs';
+
+// These broker/host tests require Linux kernel identity and process APIs.
+// Never emulate a peer UID on Windows; Linux CI must execute the real tests.
+const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 const brokerScript = path.resolve('src/broker/broker_server.py');
 const token = 'broker-control-plane-nonproduction-secret-unique';

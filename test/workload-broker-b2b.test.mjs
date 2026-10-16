@@ -1,4 +1,4 @@
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -6,6 +6,10 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {requestTestBroker,claimTestBrokerAttempt} from '../src/worker/workload-broker-client.mjs';
+
+// These broker/host tests require Linux kernel identity and process APIs.
+// Never emulate a peer UID on Windows; Linux CI must execute the real tests.
+const test = process.platform === 'linux' ? nodeTest : nodeTest.skip;
 
 const brokerScript = path.resolve('src/broker/broker_server.py');
 const artifact = {adapterId:'com.example.echo',version:'1.0.0',sha256:'a'.repeat(64)};
