@@ -1,6 +1,6 @@
 # GPULink Roadmap
 
-This roadmap describes the current engineering sequence for GPULink.
+This roadmap describes the current engineering sequence for GPULink. For source-grounded progress on the developer-platform DP0–DP9 milestones (including accepted nested adapter/broker work), see [verified developer-platform milestone status](developer-platform/verified-milestone-status.md), reconciled to the `37dc692` feature-branch source snapshot. Historic production Phase 4 acceptance is separate from feature-branch deployment.
 
 GPULink began as a way to reuse otherwise-idle GPUs across several personal
 computers. The longer-term goal is a reusable compute layer that allows
@@ -317,7 +317,7 @@ migration and final-workload evidence.
 
 ## Phase 5 — Application platform
 
-**Status: next — Phase 4 production acceptance complete**
+**Status: in development on feature branch — Phase 4 production acceptance complete; Phase 5 public-platform gates remain open**
 
 Goal: turn the proven GPULink compute fabric into a stable framework that
 independent applications can consume without knowing GPULink's deployment

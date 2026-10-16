@@ -81,11 +81,14 @@ The physical GPU fleet is:
 The former DigitalOcean deployment is frozen and retained only as a rollback
 target. Its control plane must remain stopped while AWS is authoritative.
 
-Phase 5, the application-platform phase, is next.
-
-The first important Phase 5 target is the generic persistent-session and
-real-time data-plane functionality required for applications such as
-CaptionLink to consume speech.streaming.
+Phase 5, the application-platform phase, is in development on the
+`feature/phase6a-streaming-asr-foundation` branch. The source snapshot at
+`37dc692` includes functioning persistent-session, authenticated relay,
+Client SDK and operator-approved adapter foundations; independent public SDK
+and real third-party GPU-workload acceptance remain open. This does **not**
+assert that `37dc692` is deployed to production. See the
+[verified developer-platform milestone status](docs/developer-platform/verified-milestone-status.md)
+for source-to-evidence mapping.
 
 See docs/ROADMAP.md for the current project plan and
 docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the
@@ -423,8 +426,8 @@ The current architecture rework is organized into major phases:
 - **Phase 1 — PostgreSQL persistence:** complete
 - **Phase 2 — distributed scheduler/event correctness:** complete
 - **Phase 3 — production hardening and recovery:** complete
-- **Phase 4 — AWS + K3s production GPU fabric:** in progress
-- **Phase 5 — application platform (jobs, sessions, data plane, SDK):** future
+- **Phase 4 — AWS + K3s production GPU fabric:** historically accepted in production on 2026-10-13
+- **Phase 5 — application platform (jobs, sessions, data plane, SDK):** in development; public SDK/adapter gates remain open
 - **Phase 6 — reference applications (CaptionLink first):** future
 - **Phase 7 — private multi-user GPU fleet:** future
 - **Phase 8 — cross-trust distributed GPU network:** long-term future
@@ -439,6 +442,7 @@ See [Roadmap](docs/ROADMAP.md) for details.
 - [ADR 0002 — Application Framework Boundary](docs/adr/0002-application-framework-boundary.md)
 - [API](docs/API.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Verified Developer-Platform Milestone Status](docs/developer-platform/verified-milestone-status.md)
 - [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md)
 - [Production Operations](docs/PRODUCTION_OPERATIONS.md)
 - [GPU Benchmark Workload](docs/GPU_BENCHMARK.md)
