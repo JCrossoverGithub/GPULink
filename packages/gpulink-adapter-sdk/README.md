@@ -46,3 +46,31 @@ operator configures an adapter for the worker.
 - Operator trust, pinned dependency closure, process-tree/GPU cleanup,
   isolation, independent GPU-backed workload proof and SDK publishing remain
   separate unaccepted DP3 criteria.
+
+## Offline package and operator preview (DP3 candidate)
+
+The `gpulink-adapter-package` CLI provides a minimal author-to-operator
+workflow for **one GLIP program file**. It is independently installable from an
+npm tarball, imports no worker/Core internals, and makes no changes to GPULink
+Core. A portable directory contains the entry program and a SHA-256 lock, not
+host-specific Python or CUDA paths. For an example recipe, see
+`examples/external-adapter/gpulink.adapter.example.json` in the repository.
+
+```bash
+node bin/package.mjs pack --source /absolute/author --out /absolute/new-bundle
+node bin/package.mjs inspect --bundle /absolute/new-bundle
+node bin/package.mjs catalog --bundle /absolute/new-bundle --interpreter /usr/bin/python3
+```
+
+`catalog` prints **only a JSON candidate**, never installs or enables an adapter.
+The operator controls staging, independent digest review, catalog merge, catalog
+permissions, opt-in, restart and revocation. The existing trusted-subprocess
+catalog schema v1 and adapter manifest v2 are unchanged. Direct single-file
+executable candidates use `catalog-direct --bundle ...` instead of `catalog`.
+
+For the full trust boundaries and examples, see
+`docs/developer-platform/operator-trusted-adapter-package-workflow.md` in the
+GPULink repository. This is not a safe untrusted plugin manager: self-declared
+hashes do not verify publisher identity, and imported/native/model dependencies
+are not transitively pinned. A one-file author package does not certify actual
+GPU execution, resource cleanup or isolation.

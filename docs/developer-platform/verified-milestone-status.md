@@ -183,3 +183,31 @@ cooperative device selection, runtime dependencies not transitively pinned,
 no OCI/process-tree isolation, no pretrained-model inference, no production
 GPU cleanup/fence guarantee, and no public Adapter SDK v1 release. DP3/DP6
 remain partially complete; this is only the physical-GPU integration gate.
+
+## Accepted scoped DP3 independent adapter packaging (October 16, 2026)
+
+The prior physical-CUDA integration remains accepted at
+`ca276169b907fb01d464e580268b1fe291f71fb2`; the subsequent **ten-file**
+independent author-to-operator packaging increment was accepted on **JPCMAIN,
+Node 24** and is recorded in the commit carrying this status update. See
+[`operator-trusted-adapter-package-workflow.md`](operator-trusted-adapter-package-workflow.md).
+The still-private `@gpulink/adapter-sdk@0.1.0` builds a portable single-file
+bundle and SHA-256 lock, validates its integrity, and previews an existing
+catalog-v1 approval entry. An independently npm-installed package created the
+bundle, produced an operator candidate, exercised the unchanged trusted loader,
+rejected tampering, and verified that catalog removal disables new admission.
+No Core, worker, scheduler, broker, GLIP, manifest, or relay code was changed.
+
+**JPCMAIN accepted evidence:** `npm --prefix packages/gpulink-adapter-sdk test`
+**7/7**; `node --test scripts/acceptance/external-adapter-package.gate.mjs`
+**1/1**; focused IPC/subprocess tests **54/54**; root `npm run check`
+**491/525** with **34 optional PostgreSQL-dependent skips**, zero failures;
+Client SDK build succeeded and tests **33/33** passed. This acceptance covers
+packaging/conformance and manual trusted operator approval, **not** physical
+GPU inference in this gate (already separately accepted) or publication.
+
+The operator's explicit trust decision remains distinct from author-provided
+SHA-256 integrity data. Publisher identity/signing, multiple assets, transitive
+runtime and model dependencies, running-session revocation, process-tree/GPU
+cleanup, untrusted isolation and a stable public v1 remain **open DP3/product
+gaps**; no production catalog install or deployment occurred.
