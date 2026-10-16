@@ -11,6 +11,7 @@ import {
 } from "node:url";
 
 import pg from "pg";
+import { validateExecutionClaim, validateCurrentExecutionOwner, ExecutionClaimDenied } from "../execution-claim-authority.mjs";
 
 import {
   PERSISTENCE_METHODS,
@@ -567,6 +568,13 @@ export class PostgresPersistence {
     );
   }
 
+  listBlockedGpuResources(...args) {
+    return this.#call(
+      "listBlockedGpuResources",
+      args,
+    );
+  }
+
   listActiveJobs(...args) {
     return this.#call(
       "listActiveJobs",
@@ -730,6 +738,36 @@ export class PostgresPersistence {
           );
     }
 
+    // Single SELECT statement for an internally consistent READ COMMITTED
+    // snapshot without acquiring writer locks or changing any host authority.
+    transaction.observeExecutionAttempt = async (input) => {
+      const row = await client.query(`
+        SELECT a.attempt_id AS "attemptId", a.fence_epoch AS "fenceEpoch",
+          a.worker_id AS "workerId", a.gpu_uuid AS "gpuUuid",
+          a.subject_kind AS "subjectKind", a.subject_id AS "subjectId",
+          a.lease_id AS "leaseId", a.status AS "attemptStatus",
+          f.epoch AS "currentFenceEpoch", f.safety_state AS "fenceState",
+          f.attempt_id AS "fenceAttemptId", f.lease_id AS "fenceLeaseId",
+          f.subject_kind AS "fenceSubjectKind", f.subject_id AS "fenceSubjectId"
+        FROM execution_attempts a
+        LEFT JOIN gpu_resource_fences f
+          ON f.worker_id=a.worker_id AND f.gpu_uuid=a.gpu_uuid
+        WHERE a.attempt_id=$1 AND a.worker_id=$2 AND a.project_id=$3
+          AND a.subject_kind=$4 AND a.subject_id=$5 AND a.lease_id=$6
+        LIMIT 1`,
+        [input.attemptId,input.workerId,input.projectId,
+          input.subjectKind,input.subjectId,input.leaseId]);
+      if (!row.rows.length) return null;
+      const value = row.rows[0];
+      value.fenceEpoch = Number(value.fenceEpoch);
+      value.currentFenceEpoch = value.currentFenceEpoch === null
+        ? null : Number(value.currentFenceEpoch);
+      return value;
+    };
+
+    transaction.reserveExecutionAttempt =
+      (input) => postgresReserveExecutionAttempt(client, input);
+
     transaction.tryAcquireSchedulerLock =
       async () => {
         const result =
@@ -818,6 +856,12 @@ export class PostgresPersistence {
 
       case "listQueuedJobs":
         return postgresListQueuedJobs(
+          queryable,
+          ...args,
+        );
+
+      case "listBlockedGpuResources":
+        return postgresListBlockedGpuResources(
           queryable,
           ...args,
         );
@@ -1276,6 +1320,23 @@ function mapPostgresWorker(row) {
   };
 }
 
+
+async function postgresListBlockedGpuResources(queryable) {
+  // Row locks serialize changes to existing fence rows during placement.
+  // Creation of previously absent rows MUST also join the scheduler
+  // advisory lock; this stage provides no live broker writers.
+  const result = await queryable.query(`
+    SELECT worker_id, gpu_uuid
+    FROM gpu_resource_fences
+    WHERE safety_state <> 'clear'
+    ORDER BY worker_id, gpu_uuid
+    FOR UPDATE NOWAIT
+  `);
+  return result.rows.map((row) => ({
+    workerId: row.worker_id,
+    gpuUuid: row.gpu_uuid,
+  }));
+}
 
 async function postgresInsertSession(
   queryable,
@@ -2562,4 +2623,66 @@ async function postgresCounts(
     workerCounts,
     jobCounts,
   };
+}
+
+// B2C2B2B: The SAME advisory lock used by the scheduler protects *missing*
+// fence rows, not just existing rows. The worker and logical owner are locked
+// against concurrent updates. All modifications rollback on any rejection.
+async function postgresReserveExecutionAttempt(client, rawInput) {
+  const input = validateExecutionClaim(rawInput);
+  const lock = await client.query(`SELECT pg_try_advisory_xact_lock(
+    1196447052::integer, 1229867825::integer) AS acquired`);
+  if (!lock.rows[0].acquired) throw new ExecutionClaimDenied("allocation_busy");
+  const wr = await client.query('SELECT * FROM workers WHERE id=$1 FOR UPDATE',
+    [input.workerId]);
+  const table = input.subjectKind === 'job' ? 'jobs' : 'sessions';
+  const owned = await client.query(`SELECT * FROM ${table} WHERE id=$1 FOR UPDATE`,
+    [input.subjectId]);
+  const worker = wr.rows.length ? {
+    status:wr.rows[0].status, drainMode: Boolean(wr.rows[0].drain_mode),
+    lastSeenAt:Number(wr.rows[0].last_seen_at),
+    gpus:typeof wr.rows[0].gpu_inventory_json === 'string'
+      ? JSON.parse(wr.rows[0].gpu_inventory_json)
+      : wr.rows[0].gpu_inventory_json,
+  } : null;
+  const workload = owned.rows.length ? {
+    status:owned.rows[0].status, leaseId:owned.rows[0].lease_id,
+    assignedWorkerId:owned.rows[0].assigned_worker_id,
+    assignedGpuUuid:owned.rows[0].assigned_gpu_uuid,
+    leaseExpiresAt:owned.rows[0].lease_expires_at===null?null:Number(owned.rows[0].lease_expires_at),
+    projectId:owned.rows[0].project_id,
+  } : null;
+  validateCurrentExecutionOwner(input,worker,workload);
+  const conflict = await client.query(`
+    SELECT 1 FROM jobs WHERE assigned_worker_id=$1 AND assigned_gpu_uuid=$2
+      AND status IN ('leased','running') AND id<>$3
+    UNION ALL SELECT 1 FROM sessions WHERE assigned_worker_id=$1 AND assigned_gpu_uuid=$2
+      AND status IN ('allocated','connecting','active') AND id<>$4
+    LIMIT 1`,[input.workerId,input.gpuUuid,
+      input.subjectKind==='job'?input.subjectId:'',
+      input.subjectKind==='session'?input.subjectId:'']);
+  if (conflict.rowCount) throw new ExecutionClaimDenied("resource_conflict");
+  const row = await client.query(`
+    INSERT INTO gpu_resource_fences
+      (worker_id,gpu_uuid,epoch,safety_state,subject_kind,subject_id,lease_id,attempt_id,updated_at)
+    VALUES ($1,$2,1,'reserved',$3,$4,$5,$6,$7)
+    ON CONFLICT(worker_id,gpu_uuid) DO UPDATE SET
+      epoch=gpu_resource_fences.epoch+1,
+      safety_state='reserved',subject_kind=EXCLUDED.subject_kind,
+      subject_id=EXCLUDED.subject_id,lease_id=EXCLUDED.lease_id,
+      attempt_id=EXCLUDED.attempt_id,updated_at=EXCLUDED.updated_at
+    WHERE gpu_resource_fences.safety_state='clear'
+    RETURNING epoch`,[input.workerId,input.gpuUuid,input.subjectKind,
+      input.subjectId,input.leaseId,input.attemptId,input.now]);
+  if (!row.rowCount) throw new ExecutionClaimDenied("resource_held");
+  const epoch=Number(row.rows[0].epoch);
+  await client.query(`INSERT INTO execution_attempts
+    (attempt_id,subject_kind,subject_id,project_id,lease_id,worker_id,gpu_uuid,
+    fence_epoch,artifact_digest,adapter_identity,runtime_policy_revision,
+    approval_ref,status,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'reserved',$13,$13)`,
+    [input.attemptId,input.subjectKind,input.subjectId,workload.projectId,
+      input.leaseId,input.workerId,input.gpuUuid,epoch,input.artifactDigest,
+      input.adapterIdentity,input.runtimePolicyRevision,input.approvalRef,input.now]);
+  return {attemptId:input.attemptId,fenceEpoch:epoch,canLaunch:false};
 }

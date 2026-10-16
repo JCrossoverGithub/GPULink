@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "applicationProtocol": "gpulink.asr.v1",
+  "audio": {
+    "encoding": "pcm_s16le",
+    "sampleRateHz": 16000,
+    "channels": 1,
+    "frameMagic": "ASR1",
+    "frameHeaderBytes": 16,
+    "frameDurationMs": 40,
+    "example": {
+      "sequence": 0,
+      "sampleOffset": 0,
+      "sampleCount": 640,
+      "totalFrameBytes": 1296
+    }
+  },
+  "messages": [
+    {
+      "type": "asr.start.v1",
+      "audio": {
+        "encoding": "pcm_s16le",
+        "sampleRateHz": 16000,
+        "channels": 1
+      }
+    },
+    {
+      "type": "asr.model_ready.v1",
+      "modelId": "example/streaming-asr",
+      "revision": "0000000000000000000000000000000000000000"
+    },
+    {
+      "type": "asr.partial.v1",
+      "segmentId": 1,
+      "revision": 1,
+      "startSample": 0,
+      "endSample": 640,
+      "text": "hello"
+    },
+    {
+      "type": "asr.final.v1",
+      "segmentId": 1,
+      "revision": 2,
+      "startSample": 0,
+      "endSample": 640,
+      "text": "hello"
+    },
+    {
+      "type": "asr.end.v1",
+      "lastSequence": 0
+    },
+    {
+      "type": "asr.completed.v1",
+      "lastSequence": 0
+    },
+    {
+      "type": "asr.cancel.v1"
+    },
+    {
+      "type": "asr.cancelled.v1"
+    },
+    {
+      "type": "asr.error.v1",
+      "code": "model_integrity_failed",
+      "retryable": false
+    }
+  ]
+}

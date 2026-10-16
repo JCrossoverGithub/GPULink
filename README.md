@@ -81,11 +81,18 @@ The physical GPU fleet is:
 The former DigitalOcean deployment is frozen and retained only as a rollback
 target. Its control plane must remain stopped while AWS is authoritative.
 
-Phase 5, the application-platform phase, is next.
-
-The first important Phase 5 target is the generic persistent-session and
-real-time data-plane functionality required for applications such as
-CaptionLink to consume speech.streaming.
+Application-platform development is accepted on
+`feature/phase6a-streaming-asr-foundation` through pushed checkpoint
+`8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` (2026-10-16), **not yet
+merged into `main` or deployed to AWS**. The independent TypeScript Client SDK
+and experimental Adapter SDK have passed external npm-package acceptance;
+operator-approved, separately packaged CUDA inference has also run through
+the GPULink session path on a physical GPU. This is a small deterministic
+inference fixture, **not** pretrained streaming ASR, a public SDK v1 release,
+or safe untrusted-code execution. The earlier `37dc692` snapshot remains a
+historical source-audit baseline. See the
+[verified developer-platform milestone status](docs/developer-platform/verified-milestone-status.md)
+for scoped evidence and remaining product gaps.
 
 See docs/ROADMAP.md for the current project plan and
 docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the
@@ -423,8 +430,8 @@ The current architecture rework is organized into major phases:
 - **Phase 1 — PostgreSQL persistence:** complete
 - **Phase 2 — distributed scheduler/event correctness:** complete
 - **Phase 3 — production hardening and recovery:** complete
-- **Phase 4 — AWS + K3s production GPU fabric:** in progress
-- **Phase 5 — application platform (jobs, sessions, data plane, SDK):** future
+- **Phase 4 — AWS + K3s production GPU fabric:** historically accepted in production on 2026-10-13
+- **Phase 5 — application platform (jobs, sessions, data plane, SDK):** in development; public SDK/adapter gates remain open
 - **Phase 6 — reference applications (CaptionLink first):** future
 - **Phase 7 — private multi-user GPU fleet:** future
 - **Phase 8 — cross-trust distributed GPU network:** long-term future
@@ -439,6 +446,7 @@ See [Roadmap](docs/ROADMAP.md) for details.
 - [ADR 0002 — Application Framework Boundary](docs/adr/0002-application-framework-boundary.md)
 - [API](docs/API.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Verified Developer-Platform Milestone Status](docs/developer-platform/verified-milestone-status.md)
 - [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md)
 - [Production Operations](docs/PRODUCTION_OPERATIONS.md)
 - [GPU Benchmark Workload](docs/GPU_BENCHMARK.md)

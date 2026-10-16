@@ -10,6 +10,7 @@ export const PERSISTENCE_METHODS = Object.freeze([
   "listJobs",
   "listQueuedJobs",
   "listActiveJobs",
+  "listBlockedGpuResources",
   "assignJob",
   "startJob",
   "renewJob",

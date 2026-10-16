@@ -1,4 +1,5 @@
 import path from "node:path";
+import { parseBrokerProfiles } from "./broker-claim-service.mjs";
 
 function positiveInteger(value, fallback, name) {
   if (value === undefined || value === "") return fallback;
@@ -82,7 +83,13 @@ export function loadControlPlaneConfig(environment = process.env) {
     );
   }
 
+  const brokerProfiles = parseBrokerProfiles(
+    environment.GPULINK_BROKER_PROFILES_JSON,
+    [clientToken, workerToken, adminToken, dataPlaneSigningKey],
+  );
+
   return Object.freeze({
+    brokerProfiles,
     host: environment.GPULINK_CONTROL_HOST?.trim() || "127.0.0.1",
     port: positiveInteger(environment.GPULINK_CONTROL_PORT, 8088, "GPULINK_CONTROL_PORT"),
     database,

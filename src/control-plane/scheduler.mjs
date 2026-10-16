@@ -142,6 +142,15 @@ export class Scheduler {
           }
         }
 
+        // A logical lease becoming free does NOT prove an old GPU
+        // process was reaped. Committed durable holds block reuse.
+        // Read under the same scheduler transaction as placement.
+        const blockedGpuResources = new Set(
+          (await transaction.listBlockedGpuResources())
+            .map(({ workerId, gpuUuid }) =>
+              resourceKey(workerId, gpuUuid)),
+        );
+
         const workers =
           await transaction
             .listWorkers();
@@ -208,6 +217,7 @@ export class Scheduler {
                     .heartbeatTimeoutMs,
                 vramSafetyMiB:
                   this.vramSafetyMiB,
+                blockedGpuResources,
               },
             );
 
@@ -317,6 +327,7 @@ export function choosePlacement(
     now,
     heartbeatTimeoutMs,
     vramSafetyMiB,
+    blockedGpuResources = new Set(),
   },
 ) {
   const requirements =
@@ -412,6 +423,9 @@ export function choosePlacement(
       if (
         occupiedGpus.has(
           gpu.uuid,
+        ) ||
+        blockedGpuResources.has(
+          resourceKey(worker.id, gpu.uuid),
         )
       ) {
         continue;
@@ -480,6 +494,16 @@ export function choosePlacement(
   );
 
   return candidates[0] ?? null;
+}
+
+// Exact host/device pair, not the GPU UUID alone (UUIDs can repeat
+// across test workers and future vendor namespaces).
+function resourceKey(workerId, gpuUuid) {
+  if (typeof workerId !== "string" || !workerId ||
+      typeof gpuUuid !== "string" || !gpuUuid) {
+    throw new TypeError("invalid persistent GPU resource identity");
+  }
+  return JSON.stringify([workerId, gpuUuid]);
 }
 
 function comparePendingWork(

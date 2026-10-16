@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "schemaVersion": 2,
+    "type": "example.subprocess.echo",
+    "adapterId": "example.subprocess.echo.external.v1",
+    "version": "1.0.0",
+    "executionMode": "streaming-gateway"
+  },
+  "entry": "echo.py",
+  "completionMode": "explicit-text-v1"
+}

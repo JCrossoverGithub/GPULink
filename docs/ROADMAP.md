@@ -1,6 +1,6 @@
 # GPULink Roadmap
 
-This roadmap describes the current engineering sequence for GPULink.
+This roadmap describes GPULink's engineering sequence, not an automatic declaration that every planned gate has shipped. For source-grounded developer-platform DP0–DP9 progress and later JPCMAIN acceptance through feature-branch checkpoint `8a90539` (2026-10-16), use the [verified developer-platform milestone index](developer-platform/verified-milestone-status.md). That index preserves `37dc692` as its historical source-audit baseline. Feature-branch development acceptance is distinct from merging into `main`, public SDK release, and the earlier Phase 4 AWS production acceptance.
 
 GPULink began as a way to reuse otherwise-idle GPUs across several personal
 computers. The longer-term goal is a reusable compute layer that allows
@@ -317,7 +317,7 @@ migration and final-workload evidence.
 
 ## Phase 5 — Application platform
 
-**Status: next — Phase 4 production acceptance complete**
+**Status: in development on feature branch — Phase 4 production acceptance complete; Phase 5 public-platform gates remain open**
 
 Goal: turn the proven GPULink compute fabric into a stable framework that
 independent applications can consume without knowing GPULink's deployment

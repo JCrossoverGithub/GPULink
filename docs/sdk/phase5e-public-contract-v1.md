@@ -75,3 +75,9 @@ connection attempt, including grant issuance, WebSocket negotiation, and session
 status polling. No client cancellation or timeout mutates authoritative lease
 state. There is no automatic grant reuse or retry. A later, separately versioned
 relay readiness acknowledgment remains outside this patch.
+
+---
+
+### GPULink Developer Platform v1 (decision 2026-10-15)
+
+The historical Phase 5E SDK contract above remains descriptive of its accepted implementation; it has not been replaced. The forward-looking, **unimplemented** direct Client SDK / open third-party Adapter SDK direction is recorded in [`../developer-platform/README.md`](../developer-platform/README.md), including [ADR 0001](../developer-platform/adr-0001-direct-sdk-platform.md) and the [Client SDK proposal](../developer-platform/client-sdk-v1-contract.md). No CaptionLink-specific compatibility gateway is a prerequisite for greenfield apps.
