@@ -15,7 +15,7 @@ export async function requestTestBroker({socketPath, operation, payload, timeout
       socketPath.includes('\0') || !Number.isSafeInteger(timeoutMs) || timeoutMs < 50 || timeoutMs > 10000) {
     fail('broker_invalid_transport');
   }
-  if (!['claim','inspect','cancel','reserve-authoritative','observe-authoritative','observe-host','capture-host-binding','observe-bound-host'].includes(operation)) fail('broker_unsupported_operation');
+  if (!['claim','inspect','cancel','reserve-authoritative','observe-authoritative','observe-host','capture-host-binding','observe-bound-host','spawn-synthetic-probe','observe-synthetic-probe'].includes(operation)) fail('broker_unsupported_operation');
   let body;
   if (operation === 'claim') {
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload) ||
@@ -122,9 +122,31 @@ export async function requestTestBroker({socketPath, operation, payload, timeout
             parsed.result.advisoryOnly!==true ||
             parsed.result.source !== (parsed.result.observation==='unknown' ? 'none':'linux-procfs-v1')))
           return failure('broker_invalid_response');
+        if (operation==='spawn-synthetic-probe' && (
+            Object.keys(parsed.result).sort().join('|') !==
+              'advisoryOnly|attemptId|canLaunch|canRelease|cleanupVerified|identityObserved|intentDurable|origin|schemaVersion|status|workloadLaunchAttested' ||
+            parsed.result.status !== 'synthetic-probe-recorded' ||
+            parsed.result.origin !== 'broker-created-fixed-synthetic-child-test-only' ||
+            parsed.result.intentDurable !== true || parsed.result.identityObserved !== true ||
+            parsed.result.workloadLaunchAttested !== false || parsed.result.cleanupVerified !== false ||
+            parsed.result.canRelease !== false || parsed.result.advisoryOnly !== true))
+          return failure('broker_invalid_response');
+        if (operation==='observe-synthetic-probe' && (
+            Object.keys(parsed.result).sort().join('|') !==
+              'advisoryOnly|attemptId|authorityConfirmed|canLaunch|canRelease|cleanupVerified|observation|origin|reason|schemaVersion|source|status|workloadLaunchAttested' ||
+            !['no_intent','intent_uncertain','synthetic_identity_recorded'].includes(parsed.result.status) ||
+            !['present','absent','unknown'].includes(parsed.result.observation) ||
+            !['no_provenance_intent','birth_not_committed','identity_present','identity_not_present','boot_mismatch',
+              'identity_changed_or_moved','host_unobservable'].includes(parsed.result.reason) ||
+            parsed.result.origin !== 'broker-created-fixed-synthetic-child-test-only' ||
+            parsed.result.workloadLaunchAttested !== false || parsed.result.authorityConfirmed !== false ||
+            parsed.result.cleanupVerified !== false || parsed.result.canRelease !== false ||
+            parsed.result.advisoryOnly !== true ||
+            parsed.result.source !== (parsed.result.observation==='unknown' ? 'none':'linux-procfs-v1')))
+          return failure('broker_invalid_response');
         if (operation==='claim' && (parsed.result.status!=='reserved-test-only' ||
             parsed.result.advisoryOnly!==true)) return failure('broker_invalid_response');
-        if (!['claim','reserve-authoritative','observe-authoritative','observe-host','capture-host-binding','observe-bound-host'].includes(operation) && !['reserved','cancelled','quarantined'].includes(parsed.result.state))
+        if (!['claim','reserve-authoritative','observe-authoritative','observe-host','capture-host-binding','observe-bound-host','spawn-synthetic-probe','observe-synthetic-probe'].includes(operation) && !['reserved','cancelled','quarantined'].includes(parsed.result.state))
           return failure('broker_invalid_response');
         finish(null, parsed.result);
       }
@@ -154,3 +176,10 @@ export const captureHostBrokerBinding = ({socketPath,attemptId,timeoutMs=4000}) 
   requestTestBroker({socketPath,operation:'capture-host-binding',payload:{attemptId},timeoutMs});
 export const observeBoundHostBrokerAttempt = ({socketPath,attemptId,timeoutMs=4000}) =>
   requestTestBroker({socketPath,operation:'observe-bound-host',payload:{attemptId},timeoutMs});
+
+// D2C: synthetic fixed GPU-free child only. Explicit broker opt-in required.
+// These operations are NOT authorization for a real workload launch or GPU release.
+export const spawnSyntheticProvenanceProbe = ({socketPath,attemptId,timeoutMs=4000}) =>
+  requestTestBroker({socketPath,operation:'spawn-synthetic-probe',payload:{attemptId},timeoutMs});
+export const observeSyntheticProvenanceProbe = ({socketPath,attemptId,timeoutMs=4000}) =>
+  requestTestBroker({socketPath,operation:'observe-synthetic-probe',payload:{attemptId},timeoutMs});
