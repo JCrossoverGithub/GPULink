@@ -2,11 +2,11 @@
 
 > **Current feature checkpoint:** `8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` (accepted and pushed on the development branch, 2026-10-16). Start with the [living evidence index](verified-milestone-status.md); the original 2026-10-15 designs and gate reports are retained as historical decisions. Neither SDK has a completed public v1 release, and this feature branch is not merged into `main` or deployed.
 
-**Status:** approved architectural direction, **not** a declaration of implemented SDK v1 behavior.  
-**Decision date:** 2026-10-15.  
-**Initial reference consumer:** CaptionLink.  
-**Initial reference workload:** developer-owned streaming speech recognition adapter.  
-**Owner boundary:** GPULink core is an application-agnostic GPU execution substrate, not a speech product.
+- **Status:** approved architectural direction, **not** a declaration of implemented SDK v1 behavior.
+- **Decision date:** 2026-10-15.
+- **Initial reference consumer:** CaptionLink.
+- **Initial reference workload:** developer-owned streaming speech recognition adapter.
+- **Owner boundary:** GPULink core is an application-agnostic GPU execution substrate, not a speech product.
 
 Read in this order (implemented development interfaces first, historical proposals afterward):
 

@@ -60,7 +60,7 @@ test('D1 PostgreSQL: read-only scope, exact fence observation, and durable hold'
   const observed=await call(observeBrokerBoundAttempt);
   assert.deepEqual(observed,{schemaVersion:1,attemptId:req.attemptId,
     disposition:'held',fenceEpoch:1,canLaunch:false,canRelease:false,evidenceVerified:false});
-  const bad=await call(observeBrokerBoundAttempt,{...req,leaseId:'substituted'}); 
+  const bad=await call(observeBrokerBoundAttempt,{...req,leaseId:'substituted'});
   assert.equal(bad.disposition,'not_found');
   const wrong=await call(observeBrokerBoundAttempt,req,'Bearer not-a-valid-broker-credential').catch(e=>e);
   assert.equal(wrong.statusCode,401);
