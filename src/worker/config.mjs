@@ -50,6 +50,20 @@ export function loadWorkerConfig(environment = process.env) {
       "GPULINK_WORKER_MODEL_INVENTORY_INTERVAL_MS",
       3_600_000,
     ),
+    approvedAdapterCatalogPath: environment.GPULINK_APPROVED_ADAPTERS_CATALOG_PATH?.trim()
+      ? absolutePath(
+          environment.GPULINK_APPROVED_ADAPTERS_CATALOG_PATH,
+          "GPULINK_APPROVED_ADAPTERS_CATALOG_PATH",
+          "",
+        )
+      : null,
+    approvedSubprocessCatalogPath: environment.GPULINK_APPROVED_SUBPROCESS_CATALOG_PATH?.trim()
+      ? absolutePath(
+          environment.GPULINK_APPROVED_SUBPROCESS_CATALOG_PATH,
+          "GPULINK_APPROVED_SUBPROCESS_CATALOG_PATH",
+          "",
+        )
+      : null,
     capabilities: [...new Set(
       (environment.GPULINK_WORKER_CAPABILITIES?.trim() || "diagnostic.echo,diagnostic.gpu-status")
         .split(",")

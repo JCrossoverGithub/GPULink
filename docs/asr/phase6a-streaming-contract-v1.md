@@ -382,3 +382,9 @@ fixture, and a real local synthetic Python fixture where available. They do
 session. That is a separate Phase 6A-5C acceptance gate. Full PostgreSQL
 regression, real-model verification, CUDA inference, and production
 registration/deployment also remain separate gates.
+
+---
+
+### GPULink Developer Platform v1 (decision 2026-10-15)
+
+The Phase 6A ASR contract remains a test/reference workload contract; it does **not** make ASR a privileged GPULink core capability or prove real-model readiness. The independently installable third-party adapter direction is in [`../developer-platform/adapter-sdk-v1-contract.md`](../developer-platform/adapter-sdk-v1-contract.md). The native Nemotron C bridge is deferred until public SDK/adapter boundaries are reviewed; CaptionLink's existing working multitalker services are the preferred first real workload.

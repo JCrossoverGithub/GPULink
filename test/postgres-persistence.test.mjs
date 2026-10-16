@@ -128,7 +128,9 @@ test(
               'workers',
               'jobs',
               'sessions',
-              'events'
+              'events',
+              'execution_attempts',
+              'gpu_resource_fences'
             )
           ORDER BY table_name
         `);
@@ -139,6 +141,8 @@ test(
         ),
         [
           "events",
+          "execution_attempts",
+          "gpu_resource_fences",
           "gpulink_schema_migrations",
           "jobs",
           "sessions",
@@ -160,6 +164,7 @@ test(
         [
           "0001-initial.sql",
           "0002-sessions.sql",
+          "0003-execution-ownership-storage.sql",
         ],
       );
 

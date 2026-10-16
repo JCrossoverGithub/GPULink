@@ -34,6 +34,40 @@ export function createHttpServer({ service, database, scheduler }) {
         return await openEventStream(request, response, database, eventClients);
       }
 
+      // Off by default; broker credentials are scoped independently of
+      // ordinary workers, clients and administrators.
+      if (request.method === "POST" && url.pathname === "/v1/broker/attempts/reserve") {
+        if (!service.config.brokerProfiles?.length) {
+          return sendJson(response, 404, { error: { code: "not_found", message: "route not found" } });
+        }
+        // Authenticate before parsing arbitrary request bodies.
+        if (!service.authenticateBroker(request.headers.authorization)) {
+          response.setHeader("WWW-Authenticate", "Bearer");
+          return sendJson(response, 401, {
+            error: { code: "broker_unauthorized", message: "broker credential required" },
+          });
+        }
+        const result = await service.reserveBrokerAttempt(
+          request.headers.authorization,
+          await readJson(request),
+        );
+        return sendJson(response, 201, { result });
+      }
+
+      // D1 diagnostic snapshot only. No cleanup, fence mutation or launch.
+      if (request.method === "POST" && url.pathname === "/v1/broker/attempts/observe") {
+        if (!service.config.brokerProfiles?.length) {
+          return sendJson(response, 404, {error:{code:"not_found",message:"route not found"}});
+        }
+        if (!service.authenticateBroker(request.headers.authorization)) {
+          response.setHeader("WWW-Authenticate","Bearer");
+          return sendJson(response,401,{error:{code:"broker_unauthorized",message:"broker credential required"}});
+        }
+        const result=await service.observeBrokerAttempt(
+          request.headers.authorization,await readJson(request));
+        return sendJson(response,200,{result});
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/workers/register") {
         if (!authorize(service, request, response, ["worker"])) return;
         const worker = await service.registerWorker(await readJson(request));
@@ -394,10 +428,11 @@ export function createHttpServer({ service, database, scheduler }) {
       sendJson(response, 404, { error: { code: "not_found", message: "route not found" } });
     } catch (error) {
       const statusCode = error.statusCode ?? 500;
-      const code = statusCode === 500 ? "internal_error" : error.name
+      const code = statusCode === 500 ? "internal_error" :
+        (typeof error.code === "string" ? error.code : error.name
         .replace(/Error$/u, "")
         .replace(/[A-Z]/gu, (character) => `_${character.toLowerCase()}`)
-        .replace(/^_/u, "");
+        .replace(/^_/u, ""));
       if (statusCode === 500) console.error(error);
       sendJson(response, statusCode, {
         error: {

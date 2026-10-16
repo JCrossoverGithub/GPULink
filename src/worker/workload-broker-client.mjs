@@ -1,0 +1,111 @@
+/** DP3C3B2B: bounded, versioned UNIX socket client to TEST-ONLY broker.
+ * The test-only operations are claim, inspect, cancel, reserve-authoritative; never launch.
+ * Transport is available to Linux GPU operators, not GPULink Client SDK users.
+ */
+import net from 'node:net';
+import {validateBrokerLaunchIntent} from './workload-broker-admission.mjs';
+import {WorkloadRuntimeError} from './workload-runtime-contract.mjs';
+
+const MAX = 16 * 1024;
+const OUT_MAX = 4096;
+const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const fail = code => { throw new WorkloadRuntimeError(code); };
+export async function requestTestBroker({socketPath, operation, payload, timeoutMs=2000}) {
+  if (typeof socketPath !== 'string' || socketPath.length > 160 || !socketPath.startsWith('/') ||
+      socketPath.includes('\0') || !Number.isSafeInteger(timeoutMs) || timeoutMs < 50 || timeoutMs > 10000) {
+    fail('broker_invalid_transport');
+  }
+  if (!['claim','inspect','cancel','reserve-authoritative','observe-authoritative'].includes(operation)) fail('broker_unsupported_operation');
+  let body;
+  if (operation === 'claim') {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload) ||
+        Object.keys(payload).sort().join('|') !== 'intent') fail('broker_invalid_message');
+    body = {intent:validateBrokerLaunchIntent(payload.intent)};
+  } else if (operation === 'reserve-authoritative') {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload) ||
+        Object.getPrototypeOf(payload) !== Object.prototype) fail('broker_invalid_message');
+    const entries = Object.getOwnPropertyDescriptors(payload);
+    const fields = ['attemptId','leaseId','subjectId','subjectKind'];
+    if (Object.keys(entries).sort().join('|') !== fields.join('|') ||
+        fields.some(k => !Object.hasOwn(entries[k],'value')) ||
+        !['job','session'].includes(entries.subjectKind.value) ||
+        ['attemptId','leaseId','subjectId'].some(k => typeof entries[k].value !== 'string' || !ID.test(entries[k].value)))
+      fail('broker_invalid_message');
+    body=Object.fromEntries(fields.map(k => [k,entries[k].value]));
+  } else {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload) ||
+        Object.keys(payload).sort().join('|') !== 'attemptId' ||
+        typeof payload.attemptId !== 'string' || !ID.test(payload.attemptId)) fail('broker_invalid_message');
+    body = {attemptId:payload.attemptId};
+  }
+  const raw = Buffer.from(JSON.stringify({schemaVersion:1,operation,payload:body}),'utf8');
+  if (raw.length < 2 || raw.length > MAX) fail('broker_message_too_large');
+  const packet = Buffer.allocUnsafe(4+raw.length);
+  packet.writeUInt32BE(raw.length,0); raw.copy(packet,4);
+  return new Promise((resolve,reject)=> {
+    const socket = net.createConnection({path:socketPath});
+    let done=false, buffers=[], size=0, expected=null;
+    const finish = (error, value) => {
+      if (done) return;
+      done=true; socket.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    const failure = code => finish(new WorkloadRuntimeError(code));
+    socket.setTimeout(timeoutMs,()=>failure('broker_timeout'));
+    socket.once('error',()=>failure('broker_transport_failed'));
+    socket.once('connect',()=>socket.write(packet));
+    socket.on('data',data=>{
+      if (done) return;
+      size += data.length;
+      if (size > OUT_MAX+4) return failure('broker_message_too_large');
+      buffers.push(data);
+      const joined=Buffer.concat(buffers,size);
+      if (expected===null && joined.length>=4) {
+        expected=joined.readUInt32BE(0);
+        if (expected<2 || expected>OUT_MAX) return failure('broker_message_too_large');
+      }
+      if (expected!==null && joined.length >= expected+4) {
+        if (joined.length!==expected+4) return failure('broker_invalid_response');
+        let parsed;
+        try { parsed=JSON.parse(joined.subarray(4).toString('utf8')); }
+        catch { return failure('broker_invalid_response'); }
+        if (!parsed || typeof parsed!=='object' || parsed.schemaVersion!==1 ||
+            typeof parsed.ok!=='boolean' || (parsed.ok && !parsed.result) ||
+            (!parsed.ok && typeof parsed.code!=='string')) return failure('broker_invalid_response');
+        if (!parsed.ok) return failure(ID.test(parsed.code) ? parsed.code : 'broker_invalid_response');
+        if (parsed.result.canLaunch!==false) return failure('broker_unexpected_launch_authority');
+        if (parsed.result.schemaVersion!==1 || parsed.result.attemptId!==
+            (operation==='claim' ? body.intent.attemptId : body.attemptId)) return failure('broker_invalid_response');
+        if (operation==='reserve-authoritative' && (parsed.result.status!=='reserved-not-launchable' ||
+            parsed.result.advisoryOnly!==true || !Number.isSafeInteger(parsed.result.fenceEpoch) ||
+            parsed.result.fenceEpoch < 1)) return failure('broker_invalid_response');
+        if (operation==='observe-authoritative' && (
+            !['held','unconfirmed','not_found'].includes(parsed.result.disposition) ||
+            parsed.result.canRelease!==false || parsed.result.evidenceVerified!==false ||
+            parsed.result.advisoryOnly!==true ||
+            !(parsed.result.fenceEpoch===null ||
+              (Number.isSafeInteger(parsed.result.fenceEpoch) && parsed.result.fenceEpoch>0)) ||
+            ((parsed.result.disposition==='not_found') !== (parsed.result.fenceEpoch===null))))
+          return failure('broker_invalid_response');
+        if (operation==='claim' && (parsed.result.status!=='reserved-test-only' ||
+            parsed.result.advisoryOnly!==true)) return failure('broker_invalid_response');
+        if (!['claim','reserve-authoritative','observe-authoritative'].includes(operation) && !['reserved','cancelled','quarantined'].includes(parsed.result.state))
+          return failure('broker_invalid_response');
+        finish(null, parsed.result);
+      }
+    });
+    socket.once('end',()=>failure('broker_truncated_message'));
+    socket.once('close',()=>{if (!done) failure('broker_truncated_message');});
+  });
+}
+
+export const claimTestBrokerAttempt = ({socketPath,intent,timeoutMs}) =>
+  requestTestBroker({socketPath,operation:'claim',payload:{intent},timeoutMs});
+
+// B2C2B2C2: test-only non-executing bridge to control-plane claim authority.
+export const reserveAuthoritativeBrokerAttempt = ({socketPath, request, timeoutMs=4000}) =>
+  requestTestBroker({socketPath,operation:'reserve-authoritative',payload:request,timeoutMs});
+
+// D1: diagnostic-only observation of an existing local journal entry.
+export const observeAuthoritativeBrokerAttempt = ({socketPath,attemptId,timeoutMs=4000}) =>
+  requestTestBroker({socketPath,operation:'observe-authoritative',payload:{attemptId},timeoutMs});

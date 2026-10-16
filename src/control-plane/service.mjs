@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { reserveBrokerBoundAttempt, observeBrokerBoundAttempt, authenticateBroker } from "./broker-claim-service.mjs";
 import { createId } from "../shared/ids.mjs";
 import { validateAdapterHealth } from "../shared/adapter-health.mjs";
 import { validateAdapterManifests } from "../shared/adapter-manifest.mjs";
@@ -53,6 +54,31 @@ export class ControlPlaneService {
         return supplied.length === expected.length &&
           timingSafeEqual(supplied, expected);
       });
+  }
+
+  // Deliberately separate from authenticate(): admin and worker tokens cannot
+  // impersonate host brokers. No managed launch authorization is returned.
+  authenticateBroker(authorization) {
+    return Boolean(authenticateBroker(this.config.brokerProfiles ?? [], authorization));
+  }
+
+  reserveBrokerAttempt(authorization, input) {
+    return reserveBrokerBoundAttempt({
+      persistence: this.database,
+      profiles: this.config.brokerProfiles ?? [],
+      authorization,
+      request: input,
+      clock: this.clock,
+      maxHeartbeatAgeMs: Math.min(this.config.heartbeatTimeoutMs, 300_000),
+    });
+  }
+
+  observeBrokerAttempt(authorization, input) {
+    return observeBrokerBoundAttempt({
+      persistence:this.database,
+      profiles:this.config.brokerProfiles ?? [],
+      authorization,request:input,
+    });
   }
 
   async registerWorker(input) {

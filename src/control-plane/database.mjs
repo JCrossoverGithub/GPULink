@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseJson, stringifyJson } from "../shared/json.mjs";
+import { validateExecutionClaim, validateCurrentExecutionOwner, ExecutionClaimDenied } from "./execution-claim-authority.mjs";
 
 const ACTIVE_JOB_STATES = Object.freeze(["leased", "running"]);
 
@@ -138,6 +139,61 @@ export class ControlPlaneDatabase {
         payload_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+
+      -- B2C2B1: inert storage. Do not infer physical safety or launch permission.
+      CREATE TABLE IF NOT EXISTS gpu_resource_fences (
+        worker_id TEXT NOT NULL REFERENCES workers(id),
+        gpu_uuid TEXT NOT NULL CHECK(length(gpu_uuid) > 0),
+        epoch INTEGER NOT NULL CHECK(epoch >= 1),
+        safety_state TEXT NOT NULL CHECK(safety_state IN
+          ('clear','allocated','reserved','running','cleanup_required','quarantined')),
+        subject_kind TEXT CHECK(subject_kind IN ('session','job')),
+        subject_id TEXT,
+        lease_id TEXT,
+        attempt_id TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (worker_id, gpu_uuid),
+        CHECK (
+          (safety_state = 'clear' AND subject_kind IS NULL AND
+           subject_id IS NULL AND lease_id IS NULL AND attempt_id IS NULL)
+          OR
+          (safety_state <> 'clear' AND subject_kind IS NOT NULL AND
+           subject_id IS NOT NULL AND lease_id IS NOT NULL)
+        ),
+        CHECK (safety_state <> 'allocated' OR attempt_id IS NULL)
+      );
+      CREATE INDEX IF NOT EXISTS gpu_resource_fences_state_idx
+        ON gpu_resource_fences (safety_state, worker_id, gpu_uuid);
+      CREATE TABLE IF NOT EXISTS execution_attempts (
+        attempt_id TEXT PRIMARY KEY,
+        subject_kind TEXT NOT NULL CHECK(subject_kind IN ('session','job')),
+        subject_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        lease_id TEXT NOT NULL,
+        worker_id TEXT NOT NULL REFERENCES workers(id),
+        gpu_uuid TEXT NOT NULL,
+        fence_epoch INTEGER NOT NULL CHECK(fence_epoch >= 1),
+        artifact_digest TEXT NOT NULL,
+        adapter_identity TEXT NOT NULL,
+        runtime_policy_revision TEXT NOT NULL,
+        approval_ref TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN
+          ('reserved','preparing','running','stopping','terminated','cleanup_required','quarantined')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        cleanup_evidence_id TEXT,
+        FOREIGN KEY (worker_id, gpu_uuid) REFERENCES gpu_resource_fences(worker_id, gpu_uuid) ON DELETE RESTRICT,
+        CHECK(length(attempt_id) > 0 AND length(subject_id) > 0 AND
+          length(project_id) > 0 AND length(lease_id) > 0 AND
+          length(gpu_uuid) > 0 AND length(artifact_digest) > 0 AND
+          length(adapter_identity) > 0 AND length(runtime_policy_revision) > 0 AND
+          length(approval_ref) > 0)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS execution_attempts_open_resource_idx
+        ON execution_attempts (worker_id, gpu_uuid)
+        WHERE status <> 'terminated';
+      CREATE INDEX IF NOT EXISTS execution_attempts_lease_idx
+        ON execution_attempts (subject_kind, subject_id, lease_id);
     `);
     const workerColumns = new Set(
       this.database.prepare("PRAGMA table_info(workers)").all().map((column) => column.name),
@@ -321,6 +377,82 @@ export class ControlPlaneDatabase {
       SELECT * FROM jobs WHERE status = 'queued'
       ORDER BY priority DESC, created_at ASC, id ASC
     `).all().map(mapJob);
+  }
+
+  listBlockedGpuResources() {
+    return this.database.prepare(`
+      SELECT worker_id AS workerId, gpu_uuid AS gpuUuid
+      FROM gpu_resource_fences
+      WHERE safety_state <> 'clear'
+      ORDER BY worker_id, gpu_uuid
+    `).all().map((row) => ({
+      workerId: row.workerId,
+      gpuUuid: row.gpuUuid,
+    }));
+  }
+
+  // D1: a single-statement, read-only snapshot. Missing or mismatched records
+  // are never evidence that the host GPU is clean or safe for reuse.
+  observeExecutionAttempt(input) {
+    return this.database.prepare(`
+      SELECT a.attempt_id AS attemptId, a.fence_epoch AS fenceEpoch,
+        a.worker_id AS workerId, a.gpu_uuid AS gpuUuid,
+        a.subject_kind AS subjectKind, a.subject_id AS subjectId,
+        a.lease_id AS leaseId, a.status AS attemptStatus,
+        f.epoch AS currentFenceEpoch, f.safety_state AS fenceState,
+        f.attempt_id AS fenceAttemptId, f.lease_id AS fenceLeaseId,
+        f.subject_kind AS fenceSubjectKind, f.subject_id AS fenceSubjectId
+      FROM execution_attempts a
+      LEFT JOIN gpu_resource_fences f
+        ON f.worker_id=a.worker_id AND f.gpu_uuid=a.gpu_uuid
+      WHERE a.attempt_id=? AND a.worker_id=? AND a.project_id=?
+        AND a.subject_kind=? AND a.subject_id=? AND a.lease_id=?
+      LIMIT 1
+    `).get(input.attemptId,input.workerId,input.projectId,
+      input.subjectKind,input.subjectId,input.leaseId) ?? null;
+  }
+
+  reserveExecutionAttempt(rawInput) {
+    // Must be called within SqlitePersistence.transaction (BEGIN IMMEDIATE).
+    // No live broker callers; the returned record never grants launch.
+    const input = validateExecutionClaim(rawInput);
+    const worker = this.getWorker(input.workerId);
+    const workload = input.subjectKind === "job"
+      ? this.getJob(input.subjectId) : this.getSession(input.subjectId);
+    validateCurrentExecutionOwner(input, worker, workload);
+    const occupiedJob = this.database.prepare(`
+      SELECT id FROM jobs WHERE assigned_worker_id=? AND assigned_gpu_uuid=?
+        AND status IN ('leased','running') AND id <> ? LIMIT 1
+    `).get(input.workerId,input.gpuUuid,input.subjectKind==='job'?input.subjectId:'');
+    const occupiedSession = this.database.prepare(`
+      SELECT id FROM sessions WHERE assigned_worker_id=? AND assigned_gpu_uuid=?
+        AND status IN ('allocated','connecting','active') AND id <> ? LIMIT 1
+    `).get(input.workerId,input.gpuUuid,input.subjectKind==='session'?input.subjectId:'');
+    if (occupiedJob || occupiedSession) throw new ExecutionClaimDenied("resource_conflict");
+    const row = this.database.prepare(`
+      INSERT INTO gpu_resource_fences
+        (worker_id,gpu_uuid,epoch,safety_state,subject_kind,subject_id,lease_id,attempt_id,updated_at)
+      VALUES (?,?,1,'reserved',?,?,?,?,?)
+      ON CONFLICT(worker_id,gpu_uuid) DO UPDATE SET
+        epoch=gpu_resource_fences.epoch+1,
+        safety_state='reserved',subject_kind=excluded.subject_kind,
+        subject_id=excluded.subject_id,lease_id=excluded.lease_id,
+        attempt_id=excluded.attempt_id,updated_at=excluded.updated_at
+      WHERE gpu_resource_fences.safety_state='clear'
+      RETURNING epoch
+    `).get(input.workerId,input.gpuUuid,input.subjectKind,input.subjectId,
+      input.leaseId,input.attemptId,input.now);
+    if (!row) throw new ExecutionClaimDenied("resource_held");
+    this.database.prepare(`
+      INSERT INTO execution_attempts
+        (attempt_id,subject_kind,subject_id,project_id,lease_id,worker_id,gpu_uuid,
+         fence_epoch,artifact_digest,adapter_identity,runtime_policy_revision,
+         approval_ref,status,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'reserved',?,?)
+    `).run(input.attemptId,input.subjectKind,input.subjectId,workload.projectId,
+      input.leaseId,input.workerId,input.gpuUuid,row.epoch,input.artifactDigest,
+      input.adapterIdentity,input.runtimePolicyRevision,input.approvalRef,input.now,input.now);
+    return {attemptId:input.attemptId,fenceEpoch:row.epoch,canLaunch:false};
   }
 
   listActiveJobs() {

@@ -2,6 +2,9 @@
 import { GPULinkDataPlane, openDataPlaneSocket, validateConnectTimeout, validateProtocolVersion } from './data-plane.js';
 export { GPULinkDataPlane, GPULINK_DATA_PLANE_PROTOCOL, GPULINK_DATA_PLANE_PROTOCOL_V2, GPULINK_RELAY_READY_V2, GPULINK_MAX_FRAME_BYTES, GPULINK_MAX_BUFFERED_BYTES } from './data-plane.js';
 import type { DataPlaneConnectOptions } from './data-plane.js';
+import { GPULinkSession } from './session.js';
+export { GPULinkSession, GPULinkSessionError } from './session.js';
+export type { GPULinkSessionErrorCode } from './session.js';
 export type { DataPlaneConnectOptions, DataPlaneCloseInfo, DataPlaneMessage } from './data-plane.js';
 export type JsonObject = Record<string, unknown>;
 export interface JobSubmission {
@@ -30,6 +33,17 @@ export interface SessionRequest {
   };
   metadata?: JsonObject;
   recovery?: { maxInterruptions?: number };
+}
+/** High-level client session acquisition. Only generic lifecycle, not model readiness. */
+export interface OpenSessionOptions {
+  /** Cancels placement wait and data-plane connection; setup cleanup remains best-effort. */
+  signal?: AbortSignal;
+  /** Time to wait for a worker to start a newly created session. Default 30s. */
+  allocationTimeoutMs?: number;
+  /** Grant + authenticated relay pairing deadline. Default 8s, maximum 10s. */
+  connectTimeoutMs?: number;
+  /** Stable caller-supplied idempotency key for HTTP session creation. */
+  idempotencyKey?: string;
 }
 export interface JobRecord { id: string; status: string; [key: string]: unknown }
 export interface SessionRecord { id: string; status: string; [key: string]: unknown }
@@ -91,8 +105,74 @@ export class GPULinkClient {
   requestSession(body: SessionRequest, options: SubmitOptions = {}): Promise<{ session: SessionRecord; duplicate: boolean }> {
     return this.#request('POST', '/v1/sessions', body, options);
   }
-  async getSession(id: string): Promise<{ session: SessionRecord }> {
-    return this.#request('GET', `/v1/sessions/${part(id)}`);
+  /**
+   * Request a GPU capability and connect through the authenticated v2 relay.
+   * This waits for worker activation but NOT application/model readiness.
+   * It deliberately does not retry, reconnect, or interpret adapter payloads.
+   */
+  async openSession(body: SessionRequest, options: OpenSessionOptions = {}): Promise<GPULinkSession> {
+    if (!options || typeof options !== 'object') throw new TypeError('options must be an object');
+    if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) {
+      throw new TypeError('signal must be an AbortSignal');
+    }
+    const allocationTimeoutMs = options.allocationTimeoutMs ?? 30_000;
+    if (!Number.isSafeInteger(allocationTimeoutMs) || allocationTimeoutMs < 100 || allocationTimeoutMs > 120_000) {
+      throw new RangeError('allocationTimeoutMs must be 100..120000');
+    }
+    const connectTimeoutMs = validateConnectTimeout(options.connectTimeoutMs);
+    options.signal?.throwIfAborted();
+
+    // Do not abort session creation mid-response: the server may have created a
+    // session whose ID we could no longer discover and close. Creation remains
+    // subject to the SDK's normal HTTP timeout. Once an ID is known, we own it.
+    const created = await this.requestSession(body, { idempotencyKey: options.idempotencyKey });
+    const id = created.session?.id;
+    if (typeof id !== 'string' || !id.trim()) {
+      throw new Error('GPULink session creation did not return a valid ID');
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('session allocation deadline exceeded')), allocationTimeoutMs);
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    let stream: GPULinkDataPlane | undefined;
+    try {
+      // Grant issuance before connecting/active is correctly rejected by Core.
+      // Do not try to bypass that contract by retrying grant failures.
+      for (;;) {
+        signal.throwIfAborted();
+        const { session } = await this.getSession(id, { signal });
+        signal.throwIfAborted();
+        if (session.status === 'connecting' || session.status === 'active') break;
+        if (!['requested', 'allocated', 'interrupted'].includes(session.status)) {
+          throw new Error('session ended before worker activation');
+        }
+        await waitForPairing(100, signal);
+      }
+      // The allocation deadline covers this connect attempt as well, while
+      // the transport retains its existing stricter connectTimeoutMs cap.
+      stream = await this.connectSession(id, {
+        protocolVersion: 2,
+        connectTimeoutMs,
+        signal,
+      });
+      signal.throwIfAborted();
+      if (!stream.isOpen) throw new Error('data plane closed before session became usable');
+      return new GPULinkSession(id, stream, () => this.closeSession(id));
+    } catch (error) {
+      stream?.close();
+      try {
+        // Cleanup is intentionally not tied to the caller's aborted signal.
+        await this.closeSession(id);
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'session setup failed and cleanup failed');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async getSession(id: string, options: { signal?: AbortSignal } = {}): Promise<{ session: SessionRecord }> {
+    return this.#request('GET', `/v1/sessions/${part(id)}`, undefined, options);
   }
   async listSessions(options: ListOptions = {}): Promise<{ sessions: SessionRecord[] }> {
     return this.#request('GET', `/v1/sessions${query(options)}`);

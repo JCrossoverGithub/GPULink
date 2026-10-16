@@ -30,6 +30,12 @@ function createTransactionView(
       };
   }
 
+  transaction.observeExecutionAttempt =
+    async (input) => database.observeExecutionAttempt(input);
+
+  transaction.reserveExecutionAttempt =
+    async (input) => database.reserveExecutionAttempt(input);
+
   transaction.tryAcquireSchedulerLock =
     async () => true;
 
@@ -219,6 +225,13 @@ export class SqlitePersistence {
   listQueuedJobs(...args) {
     return this.#call(
       "listQueuedJobs",
+      args,
+    );
+  }
+
+  listBlockedGpuResources(...args) {
+    return this.#call(
+      "listBlockedGpuResources",
       args,
     );
   }

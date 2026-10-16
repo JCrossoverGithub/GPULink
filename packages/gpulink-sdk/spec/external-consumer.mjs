@@ -134,6 +134,7 @@ test('packed SDK works in independent finite-job and v2 streaming applications',
     assert.deepEqual(new Set(manifest[0].files.map((file) => file.path)), new Set([
       'README.md', 'package.json', 'dist/index.js', 'dist/index.d.ts',
       'dist/data-plane.js', 'dist/data-plane.d.ts',
+      'dist/session.js', 'dist/session.d.ts',
     ]));
     const tgz = join(packDir, manifest[0].filename);
     assert.ok(existsSync(tgz));

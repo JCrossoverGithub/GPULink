@@ -1,7 +1,14 @@
 import { WorkerAgent } from "./agent.mjs";
 import { loadWorkerConfig } from "./config.mjs";
+import { loadApprovedSessionAdapters } from "./approved-session-adapters.mjs";
+import { loadApprovedSubprocessSessionAdapters } from "./approved-subprocess-adapters.mjs";
 
-const agent = new WorkerAgent(loadWorkerConfig());
+const config = loadWorkerConfig();
+const sessionAdapters = [
+  ...await loadApprovedSessionAdapters(config.approvedAdapterCatalogPath),
+  ...await loadApprovedSubprocessSessionAdapters(config.approvedSubprocessCatalogPath),
+];
+const agent = new WorkerAgent(config, { sessionAdapters });
 await agent.start();
 
 let stopping = false;
