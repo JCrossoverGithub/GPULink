@@ -18,6 +18,7 @@ import sqlite3
 from broker_state import BrokerLedger, Denied, strict_json, deny
 from broker_authority_bridge import BrokerAuthorityBridge, OPERATION, OPERATION_OBSERVE
 from host_process_observer import HostProcessObserver
+from host_binding_journal import HostBindingJournal
 
 MAX_MESSAGE = 16 * 1024
 RESPONSE_MAX = 4096
@@ -50,7 +51,7 @@ def send_message(sock, obj):
     sock.sendall(struct.pack('>I', len(payload)) + payload)
 
 
-def handle_request(db, uid, request, bridge=None, host_observer=None):
+def handle_request(db, uid, request, bridge=None, host_observer=None, host_bindings=None):
     if type(request) is not dict or set(request) != {'schemaVersion','operation','payload'} or request['schemaVersion'] != 1:
         deny('broker_invalid_message')
     operation, payload = request['operation'], request['payload']
@@ -62,6 +63,10 @@ def handle_request(db, uid, request, bridge=None, host_observer=None):
         if bridge is None:
             deny('broker_authority_disabled')
         return bridge.observe(uid, payload)
+    if operation in ('capture-host-binding','observe-bound-host'):
+        if host_bindings is None:
+            deny('broker_authority_disabled')
+        return (host_bindings.capture if operation=='capture-host-binding' else host_bindings.observe)(uid,payload)
     if operation == 'observe-host':
         if host_observer is None:
             deny('broker_authority_disabled')
@@ -77,7 +82,7 @@ def handle_request(db, uid, request, bridge=None, host_observer=None):
     deny('broker_unsupported_operation')
 
 
-def serve(socket_path, db, *, stop_after=0, bridge=None, host_observer=None):
+def serve(socket_path, db, *, stop_after=0, bridge=None, host_observer=None, host_bindings=None):
     path = Path(socket_path)
     if not path.parent.is_dir() or path.parent.is_symlink() or path.parent.stat().st_uid != os.geteuid() or path.parent.stat().st_mode & 0o077:
         deny('broker_unsafe_socket_directory')
@@ -107,7 +112,7 @@ def serve(socket_path, db, *, stop_after=0, bridge=None, host_observer=None):
                     if not hasattr(socket, 'SO_PEERCRED'):
                         deny('broker_unsupported_peer_credentials')
                     _pid, uid, _gid = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-                    response = handle_request(db, uid, recv_message(connection), bridge, host_observer)
+                    response = handle_request(db, uid, recv_message(connection), bridge, host_observer, host_bindings)
                     send_message(connection, {'schemaVersion':1,'ok':True,'result':response})
                 except (Denied, socket.timeout) as exc:
                     code = exc.code if isinstance(exc, Denied) else 'broker_timeout'
@@ -155,7 +160,8 @@ def main():
         if args.host_witness_file and bridge is None:
             deny('broker_authority_disabled')
         observer = HostProcessObserver(bridge, args.host_witness_file) if bridge else None
-        serve(args.socket, ledger, stop_after=args.stop_after, bridge=bridge, host_observer=observer)
+        bindings = HostBindingJournal(observer) if observer else None
+        serve(args.socket, ledger, stop_after=args.stop_after, bridge=bridge, host_observer=observer, host_bindings=bindings)
     finally:
         ledger.close()
 
