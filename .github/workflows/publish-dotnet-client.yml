@@ -79,6 +79,7 @@ jobs:
           packages/gpulink-dotnet/GPULink.Client/GPULink.Client.csproj
           --configuration Release
           --output artifacts
+          -p:ContinuousIntegrationBuild=true
 
       - name: Verify package
         env:
