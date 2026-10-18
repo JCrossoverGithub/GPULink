@@ -36,3 +36,5 @@ crash.*.log
 !*.tfvars.example
 .terraformrc
 terraform.rc
+/packages/gpulink-dotnet/*/bin/
+/packages/gpulink-dotnet/*/obj/

@@ -24,9 +24,14 @@ const END_BYTES = Buffer.from(SUBPROCESS_END_TEXT_V1, 'utf8');
 const COMPLETED_BYTES = Buffer.from(SUBPROCESS_COMPLETED_TEXT_V1, 'utf8');
 const COMPLETION_MODE = 'explicit-text-v1';
 const HASH = /^[a-f0-9]{64}$/u;
+// Optional operator-controlled lifetime; client messages cannot set this.
+const MAX_APPROVED_SESSION_TIMEOUT_MS = 900_000;
 const isRecord = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const sameKeys = (v, keys) => isRecord(v) &&
   Object.keys(v).sort().join(',') === [...keys].sort().join(',');
+const validExecutionLimits = v => sameKeys(v, ['sessionTimeoutMs']) &&
+  Number.isSafeInteger(v.sessionTimeoutMs) && v.sessionTimeoutMs >= 1 &&
+  v.sessionTimeoutMs <= MAX_APPROVED_SESSION_TIMEOUT_MS;
 const isAbsolute = v => typeof v === 'string' && v.length > 0 &&
   v.length <= 4096 && !v.includes('\0') && path.isAbsolute(v);
 function bad(code) { const e = new Error(`Approved subprocess adapter: ${code}`); e.code = code; return e; }
@@ -59,9 +64,17 @@ function validateCatalog(value) {
     !Array.isArray(value.adapters) || value.adapters.length > 64) throw bad('catalog_schema');
   const identities = new Set();
   for (const item of value.adapters) {
-    if (!sameKeys(item, ['manifest', 'command']) &&
-        !sameKeys(item, ['manifest', 'command', 'completionMode'])) {
+    if (![
+      ['manifest', 'command'],
+      ['manifest', 'command', 'completionMode'],
+      ['manifest', 'command', 'executionLimits'],
+      ['manifest', 'command', 'completionMode', 'executionLimits'],
+    ].some(keys => sameKeys(item, keys))) {
       throw bad('adapter_spec_schema');
+    }
+    if (item.executionLimits !== undefined &&
+        !validExecutionLimits(item.executionLimits)) {
+      throw bad('invalid_execution_limits');
     }
     if (item.completionMode !== undefined && item.completionMode !== COMPLETION_MODE) {
       throw bad('unsupported_completion_mode');
@@ -120,13 +133,13 @@ export async function loadApprovedSubprocessSessionAdapters(catalogPath = null) 
   const specs = validateCatalog(parsed);
   // Verify every command before exposing any adapter to the worker.
   for (const item of specs) await verifyCommand(item.command);
-  return specs.map(({manifest, command, completionMode}) => Object.freeze({
+  return specs.map(({manifest, command, completionMode, executionLimits}) => Object.freeze({
     manifest: Object.freeze({...manifest}),
     async readinessProbe() {
       try { await verifyCommand(command); return true; } catch { return false; }
     },
     async handleSession(session, context) {
-      return bridgeSubprocessSession(session, context, command, completionMode);
+      return bridgeSubprocessSession(session, context, command, completionMode, executionLimits);
     },
   }));
 }
@@ -141,11 +154,13 @@ export async function loadApprovedSubprocessSessionAdapters(catalogPath = null) 
  */
 export async function bridgeSubprocessSession(
   session, {signal, gpu = null, dataPlaneSocket: socket}, command, completionMode = undefined,
+  executionLimits = undefined,
 ) {
   if (!session || typeof session.id !== 'string' ||
       !signal || typeof signal.addEventListener !== 'function' ||
       !socket || typeof socket.on !== 'function' ||
-      (completionMode !== undefined && completionMode !== COMPLETION_MODE)) {
+      (completionMode !== undefined && completionMode !== COMPLETION_MODE) ||
+      (executionLimits !== undefined && !validExecutionLimits(executionLimits))) {
     throw bad('invalid_session_context');
   }
   if (signal.aborted || socket.readyState !== 1) throw bad('session_not_connected');
@@ -258,6 +273,7 @@ export async function bridgeSubprocessSession(
     child = startAdapterSubprocess({
       executable: command.executable, args: command.args, sessionId: session.id,
       signal: control.signal,
+      sessionTimeoutMs: executionLimits?.sessionTimeoutMs ?? 30_000,
       // WorkerAgent supplies gpu from the authoritative assignedGpuUuid.
       // No client message or adapter manifest may select a CUDA device.
       // Other GPU backends are not implied by this NVIDIA-specific hint.

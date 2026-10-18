@@ -1,0 +1,110 @@
+name: Publish GPULink.Client to NuGet.org
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact SDK package version
+        required: true
+        type: string
+        default: 0.1.0-preview.1
+      confirmation:
+        description: Type publish-GPULink.Client to authorize publication
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish approved NuGet prerelease
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      inputs.confirmation == 'publish-GPULink.Client'
+    runs-on: ubuntu-latest
+    environment: nuget-production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify version matches committed SDK
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+
+          requested = os.environ["REQUESTED_VERSION"]
+
+          if not re.fullmatch(
+              r"[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+",
+              requested
+          ):
+              raise SystemExit("Invalid prerelease version")
+
+          project = ET.parse(
+              "packages/gpulink-dotnet/"
+              "GPULink.Client/GPULink.Client.csproj"
+          )
+
+          version = project.findtext("./PropertyGroup/Version")
+          package_id = project.findtext("./PropertyGroup/PackageId")
+
+          if package_id != "GPULink.Client" or version != requested:
+              raise SystemExit("Package identity/version mismatch")
+
+          print("PASS: exact committed package version")
+          PY
+
+      - name: Run .NET SDK contract tests
+        run: >-
+          dotnet run
+          --project packages/gpulink-dotnet/GPULink.Client.ContractTests/GPULink.Client.ContractTests.csproj
+          --configuration Release
+
+      - name: Build NuGet package
+        run: >-
+          dotnet pack
+          packages/gpulink-dotnet/GPULink.Client/GPULink.Client.csproj
+          --configuration Release
+          --output artifacts
+
+      - name: Verify package
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+        run: |
+          python3 packages/gpulink-dotnet/verify-package.py \
+            "artifacts/GPULink.Client.${PACKAGE_VERSION}.nupkg"
+
+      - name: Verify NuGet publisher configured
+        env:
+          NUGET_USERNAME: ${{ vars.NUGET_USERNAME }}
+        run: test -n "$NUGET_USERNAME"
+
+      - name: Authenticate with NuGet.org
+        uses: NuGet/login@v1
+        id: nuget_login
+        with:
+          user: ${{ vars.NUGET_USERNAME }}
+
+      - name: Publish approved package
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
+        run: |
+          test -n "$NUGET_API_KEY"
+          dotnet nuget push \
+            "artifacts/GPULink.Client.${PACKAGE_VERSION}.nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY"

@@ -19,6 +19,8 @@ const MAX_WIRE_BYTES = 16 * 1024 * 1024;
 const MAX_PENDING_WRITE_BYTES = 262_144;
 const MAX_STDERR_BYTES = 8192;
 const MAX_FRAME_COUNT = 8192;
+// Hard upper bound; larger values require an explicit operator catalog opt-in.
+const MAX_SESSION_TIMEOUT_MS = 900_000;
 
 function failure(code) {
   const error = new Error(`GPULink adapter subprocess: ${code}`);
@@ -66,7 +68,7 @@ function validate(options) {
     throw failure("invalid_cuda_visible_devices");
   }
   ms(startupTimeoutMs, "startup_timeout", 1, 60_000);
-  ms(sessionTimeoutMs, "session_timeout", 1, 300_000);
+  ms(sessionTimeoutMs, "session_timeout", 1, MAX_SESSION_TIMEOUT_MS);
   ms(terminateGraceMs, "termination_grace", 10, 5_000);
   if (signal?.aborted) throw failure("cancelled");
   return { executable, args, sessionId, onFrame, startupTimeoutMs,

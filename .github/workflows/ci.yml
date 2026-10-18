@@ -50,3 +50,33 @@ jobs:
         working-directory: dashboard/frontend
       - run: npm run build
         working-directory: dashboard/frontend
+
+  dotnet-client-sdk:
+    name: .NET client SDK (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run .NET SDK contract checks
+        run: dotnet run --project packages/gpulink-dotnet/GPULink.Client.ContractTests/GPULink.Client.ContractTests.csproj --configuration Release
+      - name: Build .NET NuGet package
+        run: dotnet pack packages/gpulink-dotnet/GPULink.Client/GPULink.Client.csproj --configuration Release --output artifacts/nuget -p:ContinuousIntegrationBuild=true
+      - name: Validate package contents and metadata
+        run: python packages/gpulink-dotnet/verify-package.py artifacts/nuget/GPULink.Client.0.1.0-preview.1.nupkg
+      - name: Upload candidate NuGet package (not published)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: GPULink.Client-preview-nupkg
+          path: artifacts/nuget/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
