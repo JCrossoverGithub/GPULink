@@ -336,3 +336,20 @@ test('subprocess cannot spoof a worker completion acknowledgment via its output'
     assert.equal(socket.writes.some(x=>x.bytes.toString().includes('completed.v1')),false);
   });
 });
+
+
+test('operator-only catalog session timeout is strictly bounded and opt-in', async () => {
+  await fixture(async ({put, spec, catalog}) => {
+    for (const value of [null, 0, -1, 900_001, 1.5, '720000']) {
+      await put([{...spec, executionLimits: {sessionTimeoutMs: value}}]);
+      await assert.rejects(loadApprovedSubprocessSessionAdapters(catalog),
+        {code:'invalid_execution_limits'});
+    }
+    await put([{...spec, executionLimits: {sessionTimeoutMs: 720_000}}]);
+    const [adapter] = await loadApprovedSubprocessSessionAdapters(catalog);
+    assert.equal(await adapter.readinessProbe(), true);
+    // Legacy catalogs without executionLimits must remain valid.
+    await put([spec]);
+    assert.equal((await loadApprovedSubprocessSessionAdapters(catalog)).length, 1);
+  });
+});

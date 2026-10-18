@@ -219,3 +219,13 @@ test("supervisor fails closed on malformed CUDA selection", () => {
   assert.throws(() => startAdapterSubprocess(opts({cudaVisibleDevices: "GPU-../unsafe"})),
     {code: "invalid_cuda_visible_devices"});
 });
+
+
+test("opt-in long subprocess lifetime is bounded and remains cancellable", async () => {
+  assert.throws(() => startAdapterSubprocess(opts({ sessionTimeoutMs: 900_001 })),
+    { code: "invalid_session_timeout" });
+  const proc = startAdapterSubprocess(opts({ sessionTimeoutMs: 720_000 }));
+  await proc.ready;
+  proc.cancel();
+  await rejectedCode(proc.completed, "cancelled");
+});
