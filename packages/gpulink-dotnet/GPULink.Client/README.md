@@ -10,24 +10,62 @@ control-plane session allocation and the supported streaming/session lifecycle c
 - .NET 10 SDK to build, and a GPULink control plane to use the client at runtime.
 - A configured and authorized GPULink environment for remote execution.
 
-## Dependency
+## Installation
 
-The candidate version is `0.1.0-preview.1`. **It is not published to a public NuGet feed.**
-For evaluation, build a NuGet package from this repository and provide a local package source:
+`GPULink.Client 0.1.0-preview.1` is an early .NET 10 preview. Once the
+version is listed on NuGet.org, install it in your .NET project:
 
 ```sh
-dotnet pack packages/gpulink-dotnet/GPULink.Client/GPULink.Client.csproj -c Release -o ./artifacts/nuget
+dotnet add package GPULink.Client --version 0.1.0-preview.1
 ```
 
-After the package is placed in a NuGet feed available to your build, reference an **exact version**:
+For builds that must use this **exact** version, add this to your project file:
 
 ```xml
 <PackageReference Include="GPULink.Client" Version="[0.1.0-preview.1]" />
 ```
 
-The square brackets are an exact NuGet version constraint, not a minimum-version request.
-Do not switch external applications to this dependency until the selected version is actually
-available from their configured package source and validated by CI.
+The square brackets specify an exact NuGet version constraint. Do not switch
+a downstream application to this dependency until that version is retrievable
+from its configured feed.
+
+## Minimal C# example
+
+```csharp
+using GPULink.Client;
+
+static string Required(string name) =>
+    Environment.GetEnvironmentVariable(name)
+    ?? throw new InvalidOperationException($"Missing {name}");
+
+await using var client = new GPULinkClient(
+    Required("GPULINK_ORIGIN"),
+    Required("GPULINK_CLIENT_BEARER"));
+
+await using var session = await client.OpenSessionAsync(
+    new GPULinkSessionRequest(
+        ProjectId: "example-project",
+        Capability: "example.capability",
+        Adapter: "example.approved.adapter"));
+
+// Consult the approved adapter's protocol to handle workload readiness,
+// send input frames, receive results, and establish completion.
+// Disposing the session closes its remote GPULink allocation.
+```
+
+Replace the example identifiers with those approved by your GPULink
+deployment. An authorized GPULink control plane, client credentials, and an
+available workload adapter are required; installing this SDK does not provide
+a running GPU cluster.
+
+## Preview limitations
+
+- Public APIs and protocol requirements can change before a stable release.
+- Session requests currently allocate one GPU at a time.
+- Automatic interruption recovery is not enabled in this preview.
+- GPULink relay readiness is distinct from adapter/model readiness.
+- Workload-specific message framing, completion, and error handling belong
+  to the consuming application and its approved adapter contract.
 
 The local SDK contract runner is:
 
@@ -39,6 +77,6 @@ dotnet run --project packages/gpulink-dotnet/GPULink.Client.ContractTests/GPULin
 
 This package provides the generic .NET Client SDK only. It does **not** bundle GPULink Core,
 workers, approved adapter assets, CUDA code, or CaptionLink. The current target framework is
-`net10.0`; no other target frameworks or package publication channels are claimed yet.
+`net10.0`; no other target frameworks or stable compatibility guarantees are claimed.
 
-See `docs/sdk/dotnet-client-package.md` for the proposed release process and current gates.
+Source, documentation, and issues: https://github.com/JCrossoverGithub/GPULink
