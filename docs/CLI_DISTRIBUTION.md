@@ -80,3 +80,22 @@ conflate CLI portability with native GPU worker support.
 Publishing, compatibility policy, signing/provenance, upgrade/recovery,
 non-local installation support, and persistent local service supervision
 remain separate future milestones.
+
+## Read-only local status (single-machine development)
+
+`gpulink local status` observes the default generated localhost setup. Use
+`gpulink --config-dir /absolute/private/path local status` to select another.
+The operation is **credential-free and read-only**: it does not send admin,
+worker, or client secrets to the network and never starts any process or GPU
+work. This avoids leaking credentials to an unrelated service occupying port 8088.
+
+The JSON fields distinguish `controlPlane` (`offline`,
+`ready-response-unverified`, or `unverified`), `localWorker` (`unknown`),
+and `processOwnership` (`unverified`). A plausible `/readyz` response is
+**not** proof of GPULink identity. Offline is an observational success;
+unknown or responding-but-unverified endpoints cause a nonzero exit code.
+
+This is only the safe observation foundation. Verified worker health and
+authenticated status require a trusted service-ownership protocol, which is
+needed before adding persistent `local start` and `local stop`. It is not
+remote GPU enrollment or a network-cluster deployment command.
