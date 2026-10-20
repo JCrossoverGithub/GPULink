@@ -62,7 +62,7 @@ test("validates init-local profile ownership, endpoints, and role-scoped secrets
   const directory = localFixture(t);
   const setup = readLocalSmokeSetup(directory);
   assert.equal(setup.profiles["client.env"].GPULINK_URL, "http://127.0.0.1:8088");
-  assert.equal(setup.profiles["control-plane.env"].GPULINK_CONTROL_DATA_PATH,
+  assert.equal(path.resolve(setup.profiles["control-plane.env"].GPULINK_CONTROL_DATA_PATH),
     path.join(directory, "control-plane.sqlite"));
   assert.notEqual(setup.profiles["worker.env"].GPULINK_WORKER_TOKEN,
     setup.profiles["client.env"].GPULINK_CLIENT_TOKEN);
