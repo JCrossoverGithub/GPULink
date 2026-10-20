@@ -1,5 +1,6 @@
 import { readLocalSmokeSetup } from "./local-smoke.mjs";
 import { inspectLocalOwnershipCandidates } from "./local-process-ownership.mjs";
+import { inspectManagedLocal } from "./local-lifecycle.mjs";
 
 const TIMEOUT_MS = 2500;
 
@@ -80,11 +81,17 @@ export async function runLocalStatus(args, selectedDirectory, { output = console
     output.error("Local setup validation failed; no endpoint was contacted.");
     return 1;
   }
+  const managed = await inspectManagedLocal(setup);
   const status = {
     ...await inspectLocalStatus(setup, fetchImpl),
     ownershipRecords: inspectLocalOwnershipCandidates(setup),
   };
+  if (managed) {
+    status.processOwnership = "managed-local";
+    status.controlPlane = managed === "ready" && status.controlPlane === "ready-response-unverified"
+      ? "ready-managed-local" : "starting-or-stopping-managed-local";
+  }
   output.log(JSON.stringify(status, null, 2));
   // Offline is an observation; any occupied/unverified endpoint is unresolved.
-  return status.controlPlane === "offline" ? 0 : 1;
+  return ["offline", "ready-managed-local"].includes(status.controlPlane) ? 0 : 1;
 }
