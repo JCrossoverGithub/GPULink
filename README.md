@@ -98,6 +98,10 @@ See docs/ROADMAP.md for the current project plan and
 docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the
 production-migration evidence.
 
+## Start developing with GPULink
+
+GPULink is **self-hostable open-source infrastructure**, not a public cluster operated by this project. You can deploy your own control plane and GPU workers, or connect to another operator's GPULink deployment with their authorization. See the [getting-started guide](docs/GETTING_STARTED.md) for application developers, adapter authors, and GPU operators; it distinguishes published SDKs, experimental tooling, and operator responsibilities.
+
 ## What GPULink does
 
 ### Reuse idle GPU capacity
