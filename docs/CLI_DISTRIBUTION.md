@@ -1,7 +1,7 @@
 # GPULink CLI preview — package and configuration contract
 
 **Status:** source-built, private local-installation preview. Not an npm
-registry release, OS installer, process supervisor, production deployment,
+registry release, OS installer, production service supervisor,
 or automatic hardware setup.
 
 ## Roles and boundaries
@@ -78,8 +78,8 @@ occupied port. Document architecture/hardware support accurately; do not
 conflate CLI portability with native GPU worker support.
 
 Publishing, compatibility policy, signing/provenance, upgrade/recovery,
-non-local installation support, and persistent local service supervision
-remain separate future milestones.
+non-local installation support, and production-grade service supervision
+remain separate future milestones. A Linux-only developer preview is described below.
 
 ## Read-only local status (single-machine development)
 
@@ -96,8 +96,8 @@ and `processOwnership` (`unverified`). A plausible `/readyz` response is
 unknown or responding-but-unverified endpoints cause a nonzero exit code.
 
 This is only the safe observation foundation. Verified worker health and
-authenticated status require a trusted service-ownership protocol, which is
-needed before adding persistent `local start` and `local stop`. It is not
+Managed Linux lifecycle status uses a private supervisor IPC channel
+as described below. This is not general production supervision. It is not
 remote GPU enrollment or a network-cluster deployment command.
 
 ## Installation-scoped process-record inspection (read-only foundation)
@@ -114,11 +114,43 @@ secret-derived fingerprint, PID, Linux boot ID and kernel process start ticks.
 Records are size-bounded, schema-strict, and reject symlinks or unsafe POSIX
 permissions. A PID and matching kernel birth time are only an untrusted
 candidate, **not** sufficient proof that a process belongs to GPULink.
-A future managed service must additionally prove its live launch identity
-through an installation-scoped authenticated IPC challenge before `local stop`
-can ever act. Windows lacks a validated kernel-birth probe in this increment,
+These records alone cannot authorize shutdown; the Linux preview below
+adds an installation-private supervisor IPC channel. Windows lacks a validated
+kernel-birth probe in this increment,
 so existing records there remain `unverifiable` and cannot authorize action.
 
 This feature does not create ownership records or automatically enroll workers;
 it is a contract and read-only inspection foundation for future lifecycle
 management. Local smoke remains independently owned and temporary.
+
+
+## Linux managed control-plane lifecycle preview
+
+`gpulink local start`, `gpulink local status`, and `gpulink local stop`
+are an **opt-in single-machine development workflow** in Linux (including
+WSL). They manage **only the local control plane**, not GPU workers or jobs.
+`start` launches a detached, installation-owned supervisor; the supervisor
+alone owns the control-plane child process. The CLI verifies installation
+identity and Linux kernel process birth metadata, then communicates through
+a private Unix-domain socket. `stop` never sends a signal to a PID parsed
+from a file: it asks that supervisor to gracefully terminate its own child.
+There is no custom cryptographic challenge-response protocol here. The
+protection is an installation-private directory, Unix socket permissions,
+verified birth metadata, a per-launch identifier, and supervision of a
+direct child. This does **not** defend against a malicious process already
+running under the same operating-system account.
+
+Stale/corrupt owner records, symlinked runtime state, lock contention,
+and unknown sockets fail closed; records are **not** automatically deleted.
+Do not delete state or signal a PID without examining the situation.
+Status remains credential-free. A managed control plane is reported as
+`ready-managed-local` with `processOwnership: managed-local`; unrecognized
+listeners remain unverified. The original `ownershipRecords` object remains
+non-authoritative. An unexpected control-plane exit is not treated as success.
+
+**Linux-only initial acceptance.** Windows `local start` and `local stop`
+fail closed pending a separately validated Windows-native ownership and
+permission implementation. `local smoke --real-gpu` is unchanged. Remote
+GPU worker enrollment, multi-machine clusters, production supervision,
+and service auto-start at boot remain separate features. CLI packaging
+remains private; nothing is published or deployed automatically.
