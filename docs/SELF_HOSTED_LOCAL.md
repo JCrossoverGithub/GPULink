@@ -86,3 +86,33 @@ operator must configure a trusted HTTPS origin, certificate validation,
 service supervision, persistent storage and recovery, worker GPU runtime,
 credential distribution and rotation, firewall rules, and approved adapters.
 The local generator **does not** implement that cross-machine deployment path.
+
+## Verify the full local GPU lifecycle
+
+Once an independent installation has been initialized, a **deliberately opt-in**
+real-GPU smoke test can start the local control plane and worker, register a
+physical GPU, schedule exactly one trusted `diagnostic.gpu-status` job, verify
+its persisted completion and worker events, and shut down **only** the two
+processes it started:
+
+```sh
+npm run cli -- local smoke --real-gpu
+```
+
+An optional final argument selects another already initialized private setup
+folder: `npm run cli -- local smoke --real-gpu /path/to/setup`.
+
+The command validates all four generated profiles and their credential scopes,
+requires `127.0.0.1:8088` and the setup's SQLite path, and refuses an occupied
+port. It never connects to the project's AWS or any other GPULink installation.
+It does not create credentials or databases in other locations, run arbitrary
+adapters, or perform cloud provisioning. The database is **retained**, including
+prior job history; use a fresh installation if you require an empty history.
+The worker must be able to discover a physical GPU. `--real-gpu` is required
+so CI and development tooling do not accidentally use a GPU.
+
+For Windows, verify that the setup directory has private NTFS ACLs first; Node
+file modes alone cannot establish ACL safety. This is a **localhost development
+acceptance** flow, not a production startup/stop supervisor or a cross-machine
+installer. Real workload capability and secure remote deployment require
+separate setup and operator approval.
