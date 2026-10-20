@@ -74,7 +74,14 @@ export function inspectRole(role, environment = process.env, { nodeMajor = Numbe
     const database = environment.GPULINK_CONTROL_DATABASE?.trim().toLowerCase() || "sqlite";
     checks.push(check("Database selection", ["sqlite", "postgres"].includes(database) && (database !== "postgres" || Boolean(environment.GPULINK_DATABASE_URL?.trim())) ? "PASS" : "FAIL", "Select sqlite or postgres; postgres requires GPULINK_DATABASE_URL."));
     const host = environment.GPULINK_CONTROL_HOST?.trim() || "127.0.0.1";
-    checks.push(check("Control-plane bind", ["127.0.0.1", "localhost", "::1"].includes(host) ? "PASS" : "WARN", "Non-loopback bind: confirm firewall, authentication, and trusted TLS termination before accepting remote clients."));
+    const loopback = ["127.0.0.1", "localhost", "::1"].includes(host);
+    checks.push(check(
+      "Control-plane bind",
+      loopback ? "PASS" : "WARN",
+      loopback
+        ? "Loopback-only bind configured for local development."
+        : "Non-loopback bind: confirm firewall, authentication, and trusted TLS termination before accepting remote clients.",
+    ));
     try {
       loadControlPlaneConfig(environment);
       checks.push(check("Control-plane config parser", "PASS", "Existing GPULink control-plane configuration parser accepted the settings."));

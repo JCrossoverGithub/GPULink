@@ -1,4 +1,5 @@
 import { runDoctor } from "./doctor.mjs";
+import { runLocalInit } from "./local-init.mjs";
 import {
   BENCHMARK_DEFAULTS,
   BENCHMARK_TYPE,
@@ -9,6 +10,9 @@ const [command, ...arguments_] = process.argv.slice(2);
 
 try {
   switch (command) {
+    case "init":
+      process.exitCode = runLocalInit(arguments_);
+      break;
     case "doctor":
       process.exitCode = runDoctor(arguments_);
       break;
@@ -148,6 +152,7 @@ function print(value) {
 
 function usage() {
   console.error(`Usage:
+  npm run cli -- init local [output-directory]
   npm run cli -- doctor <control-plane|worker>
   npm run cli -- workers
   npm run cli -- jobs
