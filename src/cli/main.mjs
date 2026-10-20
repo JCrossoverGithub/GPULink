@@ -1,15 +1,58 @@
+#!/usr/bin/env node
 import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
-import { runLocalSmoke } from "./local-smoke.mjs";
+import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
+import { defaultLocalSetupDirectory, parseGlobalCliOptions } from "./setup-directory.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   BENCHMARK_DEFAULTS,
   BENCHMARK_TYPE,
   validateBenchmarkPayload,
 } from "../shared/benchmark-contract.mjs";
 
-const [command, ...arguments_] = process.argv.slice(2);
-
 try {
+  const { args, directory: explicitDirectory } = parseGlobalCliOptions(process.argv.slice(2));
+  const [command, ...arguments_] = args;
+  const defaultDirectory = defaultLocalSetupDirectory();
+  const selectedDirectory = explicitDirectory ??
+    (existsSync(defaultDirectory) ? defaultDirectory : null);
+  if (command === "--version" || command === "version") {
+    const packageFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../package.json");
+    console.log(JSON.parse(readFileSync(packageFile, "utf8")).version);
+  } else if (command === "--help" || command === "help" || command === "-h") {
+    usage(false);
+  } else {
+    // Only generated localhost installations are selected in this milestone.
+    // A remote/production deployment must still supply explicit environment configuration.
+    if (selectedDirectory && command !== "init") {
+      if (command === "local" && arguments_[0] === "smoke") {
+        if (explicitDirectory && arguments_[2]) throw new Error("Choose either --config-dir or a positional setup directory, not both.");
+        if (!arguments_[2]) arguments_[2] = selectedDirectory;
+      } else if (["doctor", "workers", "jobs", "job", "wait", "submit-diagnostic", "submit-benchmark", "drain", "resume"].includes(command)) {
+        const profiles = readLocalSmokeSetup(selectedDirectory).profiles;
+        const role = command === "doctor" ? arguments_[0] :
+          (["workers", "drain", "resume"].includes(command) ? "admin" : "client");
+        const filename = role === "control-plane" ? "control-plane.env" :
+          role === "worker" ? "worker.env" :
+          role === "admin" ? "admin.env" : "client.env";
+        const profile = profiles[filename];
+        // Do not mix inherited GPULINK settings with an explicitly selected installation.
+        for (const key of Object.keys(profile)) {
+          if (Object.hasOwn(process.env, key)) {
+            throw new Error(`Inherited ${key} conflicts with selected local configuration; clear it before continuing.`);
+          }
+        }
+        Object.assign(process.env, profile);
+      }
+    }
+    if (command === "init" && explicitDirectory) {
+      if (arguments_.length !== 1 || arguments_[0] !== "local") {
+        throw new Error("Use either --config-dir or an init output directory, not both.");
+      }
+      arguments_.push(explicitDirectory);
+    }
   switch (command) {
     case "init":
       process.exitCode = runLocalInit(arguments_);
@@ -79,8 +122,9 @@ try {
       print(await setDrain(requiredArgument(arguments_[0], "worker id"), false));
       break;
     default:
-      usage();
+      usage(true);
       process.exitCode = 2;
+  }
   }
 } catch (error) {
   console.error(error.message);
@@ -154,17 +198,22 @@ function print(value) {
   console.log(JSON.stringify(value, null, 2));
 }
 
-function usage() {
-  console.error(`Usage:
-  npm run cli -- init local [output-directory]
-  npm run cli -- local smoke --real-gpu [setup-directory]
-  npm run cli -- doctor <control-plane|worker>
-  npm run cli -- workers
-  npm run cli -- jobs
-  npm run cli -- job <job-id>
-  npm run cli -- submit-diagnostic [minimum-vram-mib]
-  npm run cli -- submit-benchmark [matrix-size] [warmup-iterations] [measured-iterations]
-  npm run cli -- wait <job-id>
-  npm run cli -- drain <worker-id>
-  npm run cli -- resume <worker-id>`);
+function usage(error = true) {
+  const output = error ? console.error : console.log;
+  output(`Usage:
+  gpulink [--config-dir DIRECTORY] init local [output-directory]
+  gpulink [--config-dir DIRECTORY] local smoke --real-gpu [setup-directory]
+  gpulink [--config-dir DIRECTORY] doctor <control-plane|worker>
+  gpulink [--config-dir DIRECTORY] workers
+  gpulink [--config-dir DIRECTORY] jobs
+  gpulink [--config-dir DIRECTORY] job <job-id>
+  gpulink [--config-dir DIRECTORY] submit-diagnostic [minimum-vram-mib]
+  gpulink [--config-dir DIRECTORY] submit-benchmark [matrix-size] [warmup-iterations] [measured-iterations]
+  gpulink [--config-dir DIRECTORY] wait <job-id>
+  gpulink [--config-dir DIRECTORY] drain <worker-id>
+  gpulink [--config-dir DIRECTORY] resume <worker-id>
+  gpulink --version | --help
+
+Default local setup: ~/.gpulink/instances/local
+Remote/non-local operations require separately configured GPULINK_* environment values.`);
 }

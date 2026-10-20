@@ -10,8 +10,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { defaultLocalSetupDirectory } from "./setup-directory.mjs";
 
-const defaultDirectory = path.join("data", "self-hosted-local");
+const defaultDirectory = defaultLocalSetupDirectory();
 const files = Object.freeze([
   "control-plane.env",
   "worker.env",
@@ -105,7 +106,7 @@ export function createLocalSetup(outputDirectory = defaultDirectory) {
 
 export function runLocalInit(args, output = console) {
   if (args.length < 1 || args[0] !== "local" || args.length > 2 || args[1] === "") {
-    output.error("Usage: npm run cli -- init local [output-directory]");
+    output.error("Usage: gpulink init local [output-directory]");
     output.error("Creates private localhost-only configuration; never starts GPULink or provisions hardware.");
     return 2;
   }
@@ -114,7 +115,7 @@ export function runLocalInit(args, output = console) {
     output.log(`Created local-only configuration in ${result.directory}`);
     output.log(`Files: ${result.filenames.join(", ")}`);
     output.log("No services started. No secrets printed. This is not a production or cross-machine deployment.");
-    output.log("Review docs/SELF_HOSTED_LOCAL.md before starting any process.");
+    output.log("See the GPULink self-hosting guide before starting any process.");
     if (process.platform === "win32") {
       output.log("SECURITY: Windows file-mode bits are not an NTFS ACL check. Restrict directory access to your Windows account.");
     }
