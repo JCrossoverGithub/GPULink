@@ -1,3 +1,4 @@
+import { runDoctor } from "./doctor.mjs";
 import {
   BENCHMARK_DEFAULTS,
   BENCHMARK_TYPE,
@@ -5,10 +6,12 @@ import {
 } from "../shared/benchmark-contract.mjs";
 
 const [command, ...arguments_] = process.argv.slice(2);
-const baseUrl = requiredEnvironment("GPULINK_URL").replace(/\/$/u, "");
 
 try {
   switch (command) {
+    case "doctor":
+      process.exitCode = runDoctor(arguments_);
+      break;
     case "workers":
       print(await request("GET", "/v1/workers", undefined, "admin"));
       break;
@@ -103,6 +106,7 @@ async function waitForJob(jobId) {
 }
 
 async function request(method, path, body, scope, extraHeaders = {}) {
+  const baseUrl = requiredEnvironment("GPULINK_URL").replace(/\/$/u, "");
   const token = requiredEnvironment(
     scope === "admin" ? "GPULINK_ADMIN_TOKEN" : "GPULINK_CLIENT_TOKEN",
   );
@@ -144,6 +148,7 @@ function print(value) {
 
 function usage() {
   console.error(`Usage:
+  npm run cli -- doctor <control-plane|worker>
   npm run cli -- workers
   npm run cli -- jobs
   npm run cli -- job <job-id>

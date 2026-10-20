@@ -149,6 +149,24 @@ consumers, nor a universal production deployment prescription.**
 Begin with [architecture](ARCHITECTURE.md),
 [production operations](PRODUCTION_OPERATIONS.md), and
 [approved adapter packaging](developer-platform/operator-trusted-adapter-package-workflow.md).
+
+### Offline configuration preflight
+
+From a GPULink source checkout with Node.js 24+, installed repository
+dependencies, and the appropriate process-local configuration, run:
+
+```sh
+npm run cli -- doctor control-plane
+npm run cli -- doctor worker
+```
+
+Each role is checked separately. The first candidate validates environment
+configuration and optional catalog-file readability without connecting to a
+control plane, printing credential values, installing anything, or touching a
+GPU. A passing result **does not** certify TLS trust, live connectivity,
+physical GPU discovery, adapter integrity, or production readiness. Missing
+settings produce nonzero exit codes and operator-oriented guidance.
+
 For local development, use isolated credentials, loopback-only cleartext
 services and intentional TLS termination for remote clients. Do not expose the
 HTTP backend directly on a public interface, bypass certificate validation,
