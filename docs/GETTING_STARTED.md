@@ -202,3 +202,12 @@ authentication, or multi-tenant code isolation.
 Treat these as separate implementation targets. Do not invent a universal
 single-command installer before deciding which role, trust boundary and host
 runtime it is actually installing.
+
+## Initialize a localhost-only GPULink deployment
+
+For an isolated, independently owned development instance, run
+`npm run cli -- init local`. See the
+[local self-hosted setup guide](SELF_HOSTED_LOCAL.md) for generated
+role-scoped credentials, safety boundaries, offline checks, and
+deliberate startup instructions. This command does not install
+dependencies, start services, or enable cross-machine access.
