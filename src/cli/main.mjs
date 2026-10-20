@@ -2,6 +2,7 @@
 import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
 import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
+import { runLocalStatus } from "./local-status.mjs";
 import { defaultLocalSetupDirectory, parseGlobalCliOptions } from "./setup-directory.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -58,7 +59,9 @@ try {
       process.exitCode = runLocalInit(arguments_);
       break;
     case "local":
-      process.exitCode = await runLocalSmoke(arguments_);
+      process.exitCode = arguments_[0] === "status"
+        ? await runLocalStatus(arguments_.slice(1), selectedDirectory)
+        : await runLocalSmoke(arguments_);
       break;
     case "doctor":
       process.exitCode = runDoctor(arguments_);
@@ -202,6 +205,7 @@ function usage(error = true) {
   const output = error ? console.error : console.log;
   output(`Usage:
   gpulink [--config-dir DIRECTORY] init local [output-directory]
+  gpulink [--config-dir DIRECTORY] local status
   gpulink [--config-dir DIRECTORY] local smoke --real-gpu [setup-directory]
   gpulink [--config-dir DIRECTORY] doctor <control-plane|worker>
   gpulink [--config-dir DIRECTORY] workers
