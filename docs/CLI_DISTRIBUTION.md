@@ -99,3 +99,26 @@ This is only the safe observation foundation. Verified worker health and
 authenticated status require a trusted service-ownership protocol, which is
 needed before adding persistent `local start` and `local stop`. It is not
 remote GPU enrollment or a network-cluster deployment command.
+
+## Installation-scoped process-record inspection (read-only foundation)
+
+The `ownershipRecords` object in `gpulink local status` reports any candidate
+records under the selected installation's private `run/` directory. It reports
+`absent`, `invalid`, `stale`, `unverifiable`, or
+`birth-matches-unverified` for each service role. **Every classification has
+`authority: "none"`.** It does not read another installation's records,
+contact a management socket, send a credential, or signal a process.
+
+The v1 record contract binds a service role to the selected installation's
+secret-derived fingerprint, PID, Linux boot ID and kernel process start ticks.
+Records are size-bounded, schema-strict, and reject symlinks or unsafe POSIX
+permissions. A PID and matching kernel birth time are only an untrusted
+candidate, **not** sufficient proof that a process belongs to GPULink.
+A future managed service must additionally prove its live launch identity
+through an installation-scoped authenticated IPC challenge before `local stop`
+can ever act. Windows lacks a validated kernel-birth probe in this increment,
+so existing records there remain `unverifiable` and cannot authorize action.
+
+This feature does not create ownership records or automatically enroll workers;
+it is a contract and read-only inspection foundation for future lifecycle
+management. Local smoke remains independently owned and temporary.
