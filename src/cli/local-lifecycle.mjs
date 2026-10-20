@@ -52,6 +52,12 @@ function readOwnedRecord(setup) {
     throw new Error('Managed process birth cannot be verified (missing or stale).');
   return value;
 }
+// Capture kernel file identity; neither a matching filename nor a socket type
+// authorizes cleanup of a path another process may have substituted.
+export function sameRuntimeEntry(original, current) {
+  return Boolean(original && current && original.dev === current.dev &&
+    original.ino === current.ino && original.mode === current.mode);
+}
 function socketSafe(socketPath) {
   const st = lstatSync(socketPath);
   if (!st.isSocket() || st.isSymbolicLink()) throw new Error('Unsafe managed IPC socket.');
@@ -160,10 +166,16 @@ export async function runLocalStart(args, directory, { output = console } = {}) 
 export async function runLocalStop(args, directory, { output = console } = {}) {
   if (args.length !== 0) { output.error('Usage: gpulink [--config-dir DIRECTORY] local stop'); return 2; }
   if (!directory) { output.error('No local installation selected.'); return 1; }
+  let lock;
   try {
     assertLinux();
     const setup = readLocalSmokeSetup(directory);
     const p = paths(setup);
+    // The same exclusive operation lock is used by start AND stop. Never
+    // steal a stale lock or continue while another lifecycle operation runs.
+    privateDirectory(p.directory);
+    mkdirSync(p.lock, { mode: 0o700 });
+    lock = p.lock;
     // Never kill a PID read from a file. Ask a verified local supervisor to stop its own child.
     const observed = await inspectManaged(setup);
     const reply = await rpc(p.socket, { op: 'stop', launchId: observed.record.launchId }, 1800);
@@ -179,6 +191,11 @@ export async function runLocalStop(args, directory, { output = console } = {}) {
     }
     throw new Error('Graceful shutdown has not completed; no unverified process was signaled.');
   } catch (error) { output.error(`Local stop refused: ${error.message}`); return 1; }
+  finally {
+    // Only release the directory we successfully created, never a
+    // conflicting preexisting lock owned by another command.
+    if (lock) { try { rmdirSync(lock); } catch { /* preserve unexpected lock state */ } }
+  }
 }
 
 // Supervisor is a separate, installation-owned process. Only IT holds a direct child handle.
@@ -198,6 +215,8 @@ export async function runManagedSupervisor(args) {
     pid: process.pid, birth: { kind: 'linux-procfs', ...birth }, launchId,
   };
   let service;
+  let ownedSocketStat;
+  let ownedRecordStat;
   let state = 'starting';
   let exiting = false;
   const server = net.createServer({ allowHalfOpen: false }, (socket) => {
@@ -225,11 +244,18 @@ export async function runManagedSupervisor(args) {
   });
   function safeCleanup() {
     try {
-      const bytes = readFileSync(p.record, 'utf8');
-      if (JSON.parse(bytes).launchId === launchId) unlinkSync(p.record);
-    } catch { /* never delete another owner's record */ }
-    try { const s = lstatSync(p.socket); if (s.isSocket()) unlinkSync(p.socket); }
-    catch { /* no socket to unlink */ }
+      const current = lstatSync(p.record);
+      if (current.isFile() && !current.isSymbolicLink() &&
+          sameRuntimeEntry(ownedRecordStat, current)) {
+        const bytes = readFileSync(p.record, 'utf8');
+        if (JSON.parse(bytes).launchId === launchId) unlinkSync(p.record);
+      }
+    } catch { /* preserve unknown or substituted record */ }
+    try {
+      const current = lstatSync(p.socket);
+      if (current.isSocket() && !current.isSymbolicLink() &&
+          sameRuntimeEntry(ownedSocketStat, current)) unlinkSync(p.socket);
+    } catch { /* preserve unknown or substituted socket */ }
   }
   let finished = false;
   function finish() {
@@ -261,9 +287,14 @@ export async function runManagedSupervisor(args) {
   const { chmodSync } = await import('node:fs');
   try {
     chmodSync(p.socket, 0o600);
+    ownedSocketStat = lstatSync(p.socket);
+    if (!ownedSocketStat.isSocket() || ownedSocketStat.isSymbolicLink())
+      throw new Error('Managed socket identity changed during startup.');
     const fd = openSync(p.record, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    try { writeFileSync(fd, `${JSON.stringify(record)}\n`); }
-    finally { closeSync(fd); }
+    try {
+      writeFileSync(fd, `${JSON.stringify(record)}\n`);
+      ownedRecordStat = fstatSync(fd);
+    } finally { closeSync(fd); }
   } catch (error) {
     finish();
     throw error;

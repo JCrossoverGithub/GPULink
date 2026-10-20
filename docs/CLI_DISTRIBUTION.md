@@ -154,3 +154,29 @@ permission implementation. `local smoke --real-gpu` is unchanged. Remote
 GPU worker enrollment, multi-machine clusters, production supervision,
 and service auto-start at boot remain separate features. CLI packaging
 remains private; nothing is published or deployed automatically.
+
+## Linux lifecycle reliability and recovery
+
+The Linux/WSL developer preview uses a **shared exclusive lifecycle lock**
+for both `local start` and `local stop`. Contending commands refuse to run;
+neither command steals or automatically removes a stale lock. A lock left
+behind by an interrupted operation requires operator investigation.
+
+The supervisor captures the filesystem identity (device, inode, mode) of
+its own private socket and owner record. On graceful shutdown it only
+removes a path when that identity still matches. Replaced or tampered
+runtime objects are preserved for investigation rather than deleted.
+
+If the detached supervisor crashes or is killed abruptly, its child might
+remain running without a trustworthy supervisor. In that case, `local
+status` must not report it as managed and `local stop` must refuse to
+signal a PID taken from disk. This preview does not automatically adopt
+or terminate orphaned services. Inspect the runtime and running service
+before any manual recovery; do not delete owner records merely because a
+PID is absent or a Unix socket is unresponsive. A process that survives a
+supervisor crash may still occupy port 8088.
+
+The lifecycle retains the Linux-only, control-plane-only boundary. It
+is **not** a production service manager, crash-proof daemon, or Windows
+lifecycle implementation. Local GPU worker startup and remote worker
+enrollment remain separate milestones.
