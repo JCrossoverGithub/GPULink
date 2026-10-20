@@ -5,13 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
+import { defaultLocalSetupDirectory } from "./setup-directory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cliPath = path.join(root, "src/cli/main.mjs");
 const host = "127.0.0.1";
 const port = 8088;
 const origin = `http://${host}:${port}`;
-const defaultSetup = path.join(root, "data/self-hosted-local");
+const defaultSetup = defaultLocalSetupDirectory();
 const profileKeys = Object.freeze({
   "control-plane.env": ["GPULINK_CONTROL_HOST", "GPULINK_CONTROL_PORT", "GPULINK_CONTROL_DATABASE", "GPULINK_CONTROL_DATA_PATH", "GPULINK_CLIENT_TOKEN", "GPULINK_WORKER_TOKEN", "GPULINK_ADMIN_TOKEN", "GPULINK_DATA_PLANE_SIGNING_KEY"],
   "worker.env": ["GPULINK_CONTROL_PLANE_URL", "GPULINK_WORKER_NAME", "GPULINK_WORKER_TOKEN"],
@@ -89,9 +90,9 @@ async function portAvailable() {
   });
 }
 
-function launchService(script, profile) {
+function launchService(script, profile, setupDirectory) {
   const child = spawn(process.execPath, [path.join(root, script)], {
-    cwd: root, env: cleanEnvironment(profile), stdio: ["ignore", "pipe", "pipe"],
+    cwd: setupDirectory, env: cleanEnvironment(profile), stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
   child.smokeEvents = [];
@@ -152,9 +153,9 @@ async function waitReady(child, signal) {
   throw new Error("Control plane failed its owned-process readiness check.");
 }
 
-async function clientCommand(profile, args, signal) {
+async function clientCommand(profile, args, signal, setupDirectory) {
   const child = spawn(process.execPath, [cliPath, ...args], {
-    cwd: root, env: cleanEnvironment(profile), stdio: ["ignore", "pipe", "pipe"],
+    cwd: setupDirectory, env: cleanEnvironment(profile), stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
   let output = "";
@@ -201,24 +202,24 @@ export async function exerciseLocalSmoke(setup, operations, output = console, si
   let worker;
   try {
     await operations.portAvailable();
-    controlPlane = await operations.launch("src/control-plane/main.mjs", profiles["control-plane.env"]);
+    controlPlane = await operations.launch("src/control-plane/main.mjs", profiles["control-plane.env"], setup.directory);
     await operations.ready(controlPlane, signal);
     output.log("PASS: Independent localhost control plane ready");
-    worker = await operations.launch("src/worker/main.mjs", profiles["worker.env"]);
+    worker = await operations.launch("src/worker/main.mjs", profiles["worker.env"], setup.directory);
     const registration = await operations.event(worker, "worker_registered", undefined, 20_000, signal);
     requireCondition(/^worker_[a-f0-9]+$/i.test(registration.workerId) && registration.gpuCount > 0,
       "No physical GPU inventory registered.");
-    const inventory = await operations.client(profiles["admin.env"], ["workers"], signal);
+    const inventory = await operations.client(profiles["admin.env"], ["workers"], signal, setup.directory);
     const matching = inventory.workers?.find((entry) => entry.id === registration.workerId);
     requireCondition(matching?.status === "online" && !matching.drainMode &&
       matching.gpus?.length > 0 && matching.capabilities?.includes("diagnostic.gpu-status"),
     "New worker is not online and eligible for the diagnostic.");
     output.log("PASS: Physical GPU worker enrolled");
-    const submission = await operations.client(profiles["client.env"], ["submit-diagnostic", "256"], signal);
+    const submission = await operations.client(profiles["client.env"], ["submit-diagnostic", "256"], signal, setup.directory);
     const id = submission.job?.id;
     requireCondition(typeof id === "string" && /^job_[a-z0-9]+$/i.test(id) &&
       submission.job.type === "diagnostic.gpu-status", "Unexpected diagnostic submission response.");
-    const result = await operations.client(profiles["client.env"], ["wait", id], signal);
+    const result = await operations.client(profiles["client.env"], ["wait", id], signal, setup.directory);
     requireCondition(result.job?.id === id && result.job.status === "succeeded" &&
       result.job.type === "diagnostic.gpu-status", "Diagnostic did not complete successfully.");
     await operations.event(worker, "job_started", (event) => event.jobId === id, 5_000, signal);
@@ -233,7 +234,7 @@ export async function exerciseLocalSmoke(setup, operations, output = console, si
 
 export async function runLocalSmoke(args, output = console) {
   if (args[0] !== "smoke" || args[1] !== "--real-gpu" || args.length > 3 || args[2] === "") {
-    output.error("Usage: npm run cli -- local smoke --real-gpu [setup-directory]");
+    output.error("Usage: gpulink local smoke --real-gpu [setup-directory]");
     output.error("Real GPU execution is opt-in; uses only an independent localhost setup.");
     return 2;
   }
