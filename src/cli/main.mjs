@@ -1,5 +1,6 @@
 import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
+import { runLocalSmoke } from "./local-smoke.mjs";
 import {
   BENCHMARK_DEFAULTS,
   BENCHMARK_TYPE,
@@ -12,6 +13,9 @@ try {
   switch (command) {
     case "init":
       process.exitCode = runLocalInit(arguments_);
+      break;
+    case "local":
+      process.exitCode = await runLocalSmoke(arguments_);
       break;
     case "doctor":
       process.exitCode = runDoctor(arguments_);
@@ -153,6 +157,7 @@ function print(value) {
 function usage() {
   console.error(`Usage:
   npm run cli -- init local [output-directory]
+  npm run cli -- local smoke --real-gpu [setup-directory]
   npm run cli -- doctor <control-plane|worker>
   npm run cli -- workers
   npm run cli -- jobs
