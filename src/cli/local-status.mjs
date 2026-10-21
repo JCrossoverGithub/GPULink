@@ -82,6 +82,7 @@ export async function runLocalStatus(args, selectedDirectory, { output = console
     return 1;
   }
   const managed = await inspectManagedLocal(setup);
+  const managedWorker = await inspectManagedLocal(setup, 'worker');
   const status = {
     ...await inspectLocalStatus(setup, fetchImpl),
     ownershipRecords: inspectLocalOwnershipCandidates(setup),
@@ -90,6 +91,10 @@ export async function runLocalStatus(args, selectedDirectory, { output = console
     status.processOwnership = "managed-local";
     status.controlPlane = managed === "ready" && status.controlPlane === "ready-response-unverified"
       ? "ready-managed-local" : "starting-or-stopping-managed-local";
+  }
+  if (managedWorker) {
+    status.localWorker = managedWorker === 'ready'
+      ? 'ready-managed-local' : 'starting-or-stopping-managed-local';
   }
   output.log(JSON.stringify(status, null, 2));
   // Offline is an observation; any occupied/unverified endpoint is unresolved.
