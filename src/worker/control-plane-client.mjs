@@ -1,6 +1,8 @@
+import { normalizeWorkerControlPlaneUrl } from "./config.mjs";
+
 export class ControlPlaneClient {
   constructor(baseUrl, token) {
-    this.baseUrl = baseUrl;
+    this.baseUrl = normalizeWorkerControlPlaneUrl(baseUrl);
     this.token = token;
   }
 
@@ -60,6 +62,7 @@ export class ControlPlaneClient {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: "error",
       signal: AbortSignal.timeout(10_000),
     });
     const content = await response.json().catch(() => ({}));

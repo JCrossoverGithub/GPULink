@@ -13,6 +13,23 @@ function boundedPositiveInteger(value, fallback, name, maximum) {
   return result;
 }
 
+/**
+ * Worker credential transport policy. This runs before any worker discovery,
+ * registration, or assignment polling and is also enforced by the HTTP client.
+ * TLS certificate trust remains the responsibility of the underlying runtime.
+ */
+export function normalizeWorkerControlPlaneUrl(value) {
+  const url = new URL(value);
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error("GPULINK_CONTROL_PLANE_URL must not embed credentials, query, or fragment");
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error("GPULINK_CONTROL_PLANE_URL requires HTTPS outside localhost loopback");
+  }
+  return url.toString().replace(/\/$/u, "");
+}
+
 export function loadWorkerConfig(environment = process.env) {
   const token = environment.GPULINK_WORKER_TOKEN?.trim();
   if (!token || token.length < 32) {
@@ -22,9 +39,9 @@ export function loadWorkerConfig(environment = process.env) {
   if (!name) throw new Error("GPULINK_WORKER_NAME is required");
 
   return Object.freeze({
-    controlPlaneUrl: new URL(
+    controlPlaneUrl: normalizeWorkerControlPlaneUrl(
       environment.GPULINK_CONTROL_PLANE_URL?.trim() || "http://127.0.0.1:8088",
-    ).toString().replace(/\/$/u, ""),
+    ),
     token,
     name,
     version: "0.1.0",
