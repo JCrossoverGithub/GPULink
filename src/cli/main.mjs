@@ -3,7 +3,7 @@ import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
 import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
 import { runLocalStatus } from "./local-status.mjs";
-import { runLocalStart, runLocalStop } from "./local-lifecycle.mjs";
+import { runLocalStart, runLocalStop, runLocalWorkerStart, runLocalWorkerStop } from "./local-lifecycle.mjs";
 import { defaultLocalSetupDirectory, parseGlobalCliOptions } from "./setup-directory.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -60,7 +60,15 @@ try {
       process.exitCode = runLocalInit(arguments_);
       break;
     case "local":
-      process.exitCode = arguments_[0] === "status"
+      process.exitCode = arguments_[0] === "worker"
+        ? arguments_[1] === "start"
+          ? await runLocalWorkerStart(arguments_.slice(2), selectedDirectory)
+          : arguments_[1] === "stop"
+            ? await runLocalWorkerStop(arguments_.slice(2), selectedDirectory)
+            : arguments_[1] === "status"
+              ? await runLocalStatus(arguments_.slice(2), selectedDirectory)
+              : (console.error("Usage: gpulink local worker start --accept-assigned-work | stop | status"), 2)
+        : arguments_[0] === "status"
         ? await runLocalStatus(arguments_.slice(1), selectedDirectory)
         : arguments_[0] === "start"
           ? await runLocalStart(arguments_.slice(1), selectedDirectory)
@@ -210,6 +218,9 @@ function usage(error = true) {
   const output = error ? console.error : console.log;
   output(`Usage:
   gpulink [--config-dir DIRECTORY] init local [output-directory]
+  gpulink [--config-dir DIRECTORY] local worker start --accept-assigned-work
+  gpulink [--config-dir DIRECTORY] local worker stop
+  gpulink [--config-dir DIRECTORY] local worker status
   gpulink [--config-dir DIRECTORY] local start
   gpulink [--config-dir DIRECTORY] local stop
   gpulink [--config-dir DIRECTORY] local status

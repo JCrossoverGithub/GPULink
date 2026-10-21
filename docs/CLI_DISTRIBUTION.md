@@ -128,7 +128,7 @@ management. Local smoke remains independently owned and temporary.
 
 `gpulink local start`, `gpulink local status`, and `gpulink local stop`
 are an **opt-in single-machine development workflow** in Linux (including
-WSL). They manage **only the local control plane**, not GPU workers or jobs.
+WSL). These three commands manage **only the local control plane**; separate worker commands are documented below.
 `start` launches a detached, installation-owned supervisor; the supervisor
 alone owns the control-plane child process. The CLI verifies installation
 identity and Linux kernel process birth metadata, then communicates through
@@ -178,5 +178,38 @@ supervisor crash may still occupy port 8088.
 
 The lifecycle retains the Linux-only, control-plane-only boundary. It
 is **not** a production service manager, crash-proof daemon, or Windows
-lifecycle implementation. Local GPU worker startup and remote worker
-enrollment remain separate milestones.
+lifecycle implementation. Remote worker enrollment remains a separate milestone.
+
+## Linux managed local GPU worker preview
+
+The installed CLI can explicitly manage one GPU worker using the **same
+installation-owned Linux supervisor** and `run/start.lock` shared with the
+control plane. No Windows service-management permission is inferred.
+
+```sh
+gpulink --config-dir /private/local/instance local start
+gpulink --config-dir /private/local/instance local worker start --accept-assigned-work
+gpulink --config-dir /private/local/instance local status
+gpulink --config-dir /private/local/instance local worker stop
+gpulink --config-dir /private/local/instance local stop
+```
+
+**Starting an actual worker can execute already-queued GPU jobs or adapter
+sessions.** `local worker start` therefore refuses unless the operator
+supplies the explicit `--accept-assigned-work` flag. Merely installing,
+configuring, checking status, or running the automated PR acceptance script
+does not start a worker or exercise the physical GPU. The worker uses only
+the generated local worker credential and localhost URL. It does not add
+remote worker enrollment or network trust rules. Tests do not start a real
+GPU worker without a separate, explicit operator action.
+
+The worker has its own `worker.owner.json` and private `worker.sock`, with
+verified supervisor process birth and installation binding. The supervisor
+alone owns the worker child handle. `local worker stop` requests graceful
+shutdown through that verified private IPC channel, and never signals a
+PID from a file. `local stop` refuses while any worker ownership record or
+IPC socket remains, so shutdown order is worker then control plane.
+Unknown or stale worker records and interrupted supervisor state must be
+investigated manually; no automatic process adoption, record deletion, or
+unverified signal is authorized. This remains a local developer preview,
+not a production host orchestrator.

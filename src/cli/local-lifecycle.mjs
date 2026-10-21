@@ -15,6 +15,8 @@ const MAX_RECORD_BYTES = 4096;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const managedScript = path.join(root, 'src/cli/local-managed-supervisor.mjs');
 const controlScript = path.join(root, 'src/control-plane/main.mjs');
+const workerScript = path.join(root, 'src/worker/main.mjs');
+const ROLES = Object.freeze(['control-plane', 'worker']);
 
 function assertLinux() {
   if (process.platform !== 'linux') throw new Error('Local persistent lifecycle preview currently requires Linux (including WSL). No Windows process-control authority is granted.');
@@ -24,14 +26,15 @@ function privateDirectory(dir) {
   if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0)
     throw new Error('Unsafe local run directory (must be a private real directory).');
 }
-function paths(setup) {
+function paths(setup, role = ROLED) {
+  if (!ROLES.includes(role)) throw new Error('Unsupported local service role.');
   const directory = path.join(setup.directory, 'run');
-  const socket = path.join(directory, 'control-plane.sock');
+  const socket = path.join(directory, `${role}.sock`);
   if (Buffer.byteLength(socket) >= 100) throw new Error('Local setup path is too long for a safe Unix control socket.');
-  return { directory, socket, record: path.join(directory, 'control-plane.owner.json'), lock: path.join(directory, 'start.lock') };
+  return { directory, socket, record: path.join(directory, `${role}.owner.json`), lock: path.join(directory, 'start.lock') };
 }
-function readOwnedRecord(setup) {
-  const { directory, record } = paths(setup);
+function readOwnedRecord(setup, role = ROLED) {
+  const { directory, record } = paths(setup, role);
   privateDirectory(directory);
   const first = lstatSync(record);
   if (!first.isFile() || first.isSymbolicLink() || first.size > MAX_RECORD_BYTES || (first.mode & 0o077) !== 0)
@@ -46,7 +49,7 @@ function readOwnedRecord(setup) {
     if (bytes.length > MAX_RECORD_BYTES) throw new Error('Oversized managed process record.');
     value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } finally { closeSync(fd); }
-  if (!validateOwnershipRecord(value, setup, ROLED)) throw new Error('Invalid installation-bound process record.');
+  if (!validateOwnershipRecord(value, setup, role)) throw new Error('Invalid installation-bound process record.');
   const birth = observeLinuxBirth(value.pid);
   if (!birth || birth.bootId !== value.birth.bootId || birth.startTicks !== value.birth.startTicks)
     throw new Error('Managed process birth cannot be verified (missing or stale).');
@@ -87,35 +90,45 @@ function rpc(socketPath, request, timeoutMs = 1600) {
     socket.once('end', () => finish(new Error('Incomplete local IPC response.')));
   });
 }
-function verifiedReply(reply, record) {
-  return reply && reply.schemaVersion === 1 && reply.role === ROLED &&
+function verifiedReply(reply, record, role = ROLED) {
+  return reply && reply.schemaVersion === 1 && reply.role === role &&
     reply.launchId === record.launchId && reply.pid === record.pid &&
     ['starting', 'ready', 'stopping'].includes(reply.state);
 }
-async function inspectManaged(setup) {
+async function inspectManaged(setup, role = ROLED) {
   assertLinux();
-  const owner = readOwnedRecord(setup);
-  const { socket } = paths(setup);
+  const owner = readOwnedRecord(setup, role);
+  const { socket } = paths(setup, role);
   socketSafe(socket);
   const reply = await rpc(socket, { op: 'status', launchId: owner.launchId });
-  if (!verifiedReply(reply, owner)) throw new Error('Managed endpoint identity disagrees with the process record.');
+  if (!verifiedReply(reply, owner, role)) throw new Error('Managed endpoint identity disagrees with the process record.');
   // Check the kernel identity a second time after the socket roundtrip.
   const birth = observeLinuxBirth(owner.pid);
   if (!birth || birth.bootId !== owner.birth.bootId || birth.startTicks !== owner.birth.startTicks)
     throw new Error('Managed process identity changed during inspection.');
   return { record: owner, state: reply.state };
 }
-export async function inspectManagedLocal(setup) {
+export async function inspectManagedLocal(setup, role = ROLED) {
   if (process.platform !== 'linux') return null;
-  try { return (await inspectManaged(setup)).state; }
+  try { return (await inspectManaged(setup, role)).state; }
   catch { return null; }
 }
-function prepareStart(setup) {
-  const p = paths(setup);
+function entryExists(filename) {
+  try { lstatSync(filename); return true; }
+  catch (error) { if (error?.code === 'ENOENT') return false; throw error; }
+}
+function prepareStart(setup, role = ROLED) {
+  const p = paths(setup, role);
   if (!existsSync(p.directory)) mkdirSync(p.directory, { mode: 0o700 });
   privateDirectory(p.directory);
-  if (existsSync(p.record) || existsSync(p.socket))
+  if (entryExists(p.record) || entryExists(p.socket))
     throw new Error('Existing process record or socket; refuse to replace it. Inspect status and reconcile manually if stale.');
+  // Never attach a newly started control plane to unverified orphan worker state.
+  if (role === ROLED) {
+    const worker = paths(setup, 'worker');
+    if (entryExists(worker.record) || entryExists(worker.socket))
+      throw new Error('Worker runtime identity must be reconciled before restarting the control plane.');
+  }
   // Exclusive directory lock prevents competing starts; stale lock is deliberately not stolen.
   mkdirSync(p.lock, { mode: 0o700 });
   return p;
@@ -128,15 +141,34 @@ function cleanSupervisorEnvironment() {
 }
 export async function runLocalStart(args, directory, { output = console } = {}) {
   if (args.length !== 0) { output.error('Usage: gpulink [--config-dir DIRECTORY] local start'); return 2; }
+  return startManagedRole(directory, ROLED, output);
+}
+// An existing worker immediately polls for leases and can execute allocated GPU work.
+// The CLI therefore requires conspicuous explicit consent before starting it.
+export async function runLocalWorkerStart(args, directory, { output = console } = {}) {
+  if (args.length !== 1 || args[0] !== '--accept-assigned-work') {
+    output.error('Usage: gpulink [--config-dir DIRECTORY] local worker start --accept-assigned-work');
+    output.error('WARNING: a started GPU worker may immediately execute already-queued assignments.');
+    return 2;
+  }
+  return startManagedRole(directory, 'worker', output);
+}
+async function startManagedRole(directory, role, output) {
   if (!directory) { output.error('No local installation selected.'); return 1; }
   let lock;
   try {
     assertLinux();
     const setup = readLocalSmokeSetup(directory);
-    const p = prepareStart(setup);
+    if (role === 'worker') {
+      const control = await inspectManaged(setup, ROLED);
+      if (control.state !== 'ready') throw new Error('The installation-owned control plane must be ready before starting a GPU worker.');
+    }
+    const p = prepareStart(setup, role);
     lock = p.lock;
     const launchId = randomBytes(32).toString('hex');
-    const child = spawn(process.execPath, [managedScript, setup.directory, launchId], {
+    const child = spawn(process.execPath,
+      role === ROLED ? [managedScript, setup.directory, launchId] :
+        [managedScript, setup.directory, launchId, 'worker'], {
       cwd: setup.directory, env: cleanSupervisorEnvironment(), stdio: 'ignore', detached: true,
       windowsHide: true,
     });
@@ -145,11 +177,13 @@ export async function runLocalStart(args, directory, { output = console } = {}) 
     while (Date.now() < deadline) {
       if (existsSync(p.record)) {
         try {
-          const inspected = await inspectManaged(setup);
+          const inspected = await inspectManaged(setup, role);
           if (inspected.record.launchId !== launchId || inspected.record.pid !== child.pid)
             throw new Error('Unexpected supervisor identity; no process authority granted.');
           if (inspected.state === 'ready') {
-            output.log('PASS: installation-owned local control plane started (Linux preview; no GPU worker started).');
+            output.log(role === ROLED
+              ? 'PASS: installation-owned local control plane started (Linux preview; no GPU worker started).'
+              : 'PASS: installation-owned local GPU worker registered and running; assigned GPU work is enabled.');
             return 0;
           }
           if (inspected.state === 'stopping') throw new Error('Supervisor exited during startup.');
@@ -160,37 +194,53 @@ export async function runLocalStart(args, directory, { output = console } = {}) 
       await delay(125);
     }
     throw new Error('Managed service did not become ready; inspect its private run records. No PID was signaled.');
-  } catch (error) { output.error(`Local start refused: ${error.message}`); return 1; }
+  } catch (error) { output.error(`Local ${role === ROLED ? 'start' : 'worker start'} refused: ${error.message}`); return 1; }
   finally { if (lock) { try { rmdirSync(lock); } catch { /* preserve unexpected lock state */ } } }
 }
 export async function runLocalStop(args, directory, { output = console } = {}) {
   if (args.length !== 0) { output.error('Usage: gpulink [--config-dir DIRECTORY] local stop'); return 2; }
+  return stopManagedRole(directory, ROLED, output);
+}
+export async function runLocalWorkerStop(args, directory, { output = console } = {}) {
+  if (args.length !== 0) { output.error('Usage: gpulink [--config-dir DIRECTORY] local worker stop'); return 2; }
+  return stopManagedRole(directory, 'worker', output);
+}
+async function stopManagedRole(directory, role, output) {
   if (!directory) { output.error('No local installation selected.'); return 1; }
   let lock;
   try {
     assertLinux();
     const setup = readLocalSmokeSetup(directory);
-    const p = paths(setup);
+    const p = paths(setup, role);
     // The same exclusive operation lock is used by start AND stop. Never
     // steal a stale lock or continue while another lifecycle operation runs.
     privateDirectory(p.directory);
     mkdirSync(p.lock, { mode: 0o700 });
     lock = p.lock;
+    if (role === ROLED) {
+      // Stop workers before their control plane. Unknown worker records block
+      // unsafe teardown until an operator investigates them.
+      const worker = paths(setup, 'worker');
+      if (entryExists(worker.record) || entryExists(worker.socket))
+        throw new Error('Stop or reconcile the managed local GPU worker before stopping its control plane.');
+    }
     // Never kill a PID read from a file. Ask a verified local supervisor to stop its own child.
-    const observed = await inspectManaged(setup);
+    const observed = await inspectManaged(setup, role);
     const reply = await rpc(p.socket, { op: 'stop', launchId: observed.record.launchId }, 1800);
-    if (!verifiedReply(reply, observed.record) || reply.state !== 'stopping')
+    if (!verifiedReply(reply, observed.record, role) || reply.state !== 'stopping')
       throw new Error('Supervisor did not acknowledge shutdown.');
     const deadline = Date.now() + 12_000;
     while (Date.now() < deadline) {
       if (!existsSync(p.record) && !existsSync(p.socket)) {
-        output.log('PASS: managed local control plane stopped gracefully; SQLite preserved.');
+        output.log(role === ROLED
+          ? 'PASS: managed local control plane stopped gracefully; SQLite preserved.'
+          : 'PASS: managed local GPU worker stopped gracefully; control plane was preserved.');
         return 0;
       }
       await delay(125);
     }
     throw new Error('Graceful shutdown has not completed; no unverified process was signaled.');
-  } catch (error) { output.error(`Local stop refused: ${error.message}`); return 1; }
+  } catch (error) { output.error(`Local ${role === ROLED ? 'stop' : 'worker stop'} refused: ${error.message}`); return 1; }
   finally {
     // Only release the directory we successfully created, never a
     // conflicting preexisting lock owned by another command.
@@ -202,16 +252,23 @@ export async function runLocalStop(args, directory, { output = console } = {}) {
 // The socket is local-only and directory permission-scoped; this is not a remote auth protocol.
 export async function runManagedSupervisor(args) {
   assertLinux();
-  if (args.length !== 2 || !/^[a-f0-9]{64}$/u.test(args[1])) throw new Error('Invalid internal supervisor arguments.');
+  if (![2, 3].includes(args.length) || !/^[a-f0-9]{64}$/u.test(args[1]) ||
+      (args.length === 3 && args[2] !== 'worker'))
+    throw new Error('Invalid internal supervisor arguments.');
+  const role = args.length === 3 ? 'worker' : ROLED;
   const setup = readLocalSmokeSetup(args[0]);
+  if (role === 'worker') {
+    const control = await inspectManaged(setup, ROLED);
+    if (control.state !== 'ready') throw new Error('Managed local control plane is not ready.');
+  }
   const launchId = args[1];
-  const p = paths(setup);
+  const p = paths(setup, role);
   privateDirectory(p.directory);
   if (existsSync(p.record) || existsSync(p.socket)) throw new Error('Managed runtime already has an identity record or socket.');
   const birth = observeLinuxBirth(process.pid);
   if (!birth) throw new Error('Linux kernel process identity unavailable.');
   const record = {
-    schemaVersion: 1, role: ROLED, installationFingerprint: installationFingerprint(setup),
+    schemaVersion: 1, role, installationFingerprint: installationFingerprint(setup),
     pid: process.pid, birth: { kind: 'linux-procfs', ...birth }, launchId,
   };
   let service;
@@ -239,7 +296,7 @@ export async function runManagedSupervisor(args) {
           if (service && service.exitCode === null) service.kill('SIGTERM');
         }
       }
-      socket.end(`${JSON.stringify({ schemaVersion: 1, role: ROLED, pid: process.pid, launchId, state })}\n`);
+      socket.end(`${JSON.stringify({ schemaVersion: 1, role, pid: process.pid, launchId, state })}\n`);
     });
   });
   function safeCleanup() {
@@ -299,10 +356,11 @@ export async function runManagedSupervisor(args) {
     finish();
     throw error;
   }
-  const profile = setup.profiles['control-plane.env'];
+  const profile = setup.profiles[role === ROLED ? 'control-plane.env' : 'worker.env'];
+  const serviceScript = role === ROLED ? controlScript : workerScript;
   const keep = cleanSupervisorEnvironment();
   try {
-    service = spawn(process.execPath, [controlScript], {
+    service = spawn(process.execPath, [serviceScript], {
       cwd: setup.directory, env: { ...keep, ...profile }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
     });
     service.stderr.resume();
@@ -316,12 +374,20 @@ export async function runManagedSupervisor(args) {
         const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
         try {
           const message = JSON.parse(line);
-          if (message.event === 'control_plane_started' &&
+          if (role === ROLED && message.event === 'control_plane_started' &&
               message.address === CONTROL_HOST && message.port === CONTROL_PORT) {
             const response = await fetch(`http://${CONTROL_HOST}:${CONTROL_PORT}/readyz`, {
               signal: AbortSignal.timeout(1600),
             }).catch(() => null);
             if (response?.ok && state === 'starting') state = 'ready';
+          }
+          if (role === 'worker' && message.event === 'worker_registered' &&
+              message.name === setup.profiles['worker.env'].GPULINK_WORKER_NAME &&
+              /^worker_[a-z0-9]+$/u.test(message.workerId ?? '') &&
+              Number.isSafeInteger(message.gpuCount) && message.gpuCount >= 0 &&
+              state === 'starting') {
+            const control = await inspectManaged(setup, ROLED).catch(() => null);
+            if (control?.state === 'ready') state = 'ready';
           }
         } catch { /* no log echo or secret disclosure */ }
       }
