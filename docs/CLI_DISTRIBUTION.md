@@ -213,3 +213,14 @@ Unknown or stale worker records and interrupted supervisor state must be
 investigated manually; no automatic process adoption, record deletion, or
 unverified signal is authorized. This remains a local developer preview,
 not a production host orchestrator.
+
+## Opt-in installed real-GPU acceptance
+
+To verify the complete **installed** Linux/WSL developer path on an NVIDIA GPU
+host, follow [INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md](INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md).
+The checked-in `scripts/acceptance/installed-local-gpu-diagnostic.sh` gate
+installs the private CLI into a disposable consumer directory, registers one
+worker, runs **one explicitly authorized** bounded GPU-status diagnostic,
+verifies persistent SQLite completion after a control-plane restart, and
+shuts down services in dependency order. It is **not** run by CI or the
+normal test command; only syntax, contract, and refusal tests run unattended.
