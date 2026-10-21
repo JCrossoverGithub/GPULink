@@ -66,6 +66,7 @@ test('status does not claim a managed identity from absent runtime files', async
 });
 
 test('stop uses the exclusive lifecycle lock and does not steal another operation lock', async (t) => {
+  if (process.platform !== 'linux') return t.skip('Linux-only lifecycle lock contention; unsupported platforms refuse before lock acquisition.');
   const f = fixture(t);
   const run = path.join(f.dir, 'run');
   mkdirSync(run, { mode: 0o700 });
@@ -75,6 +76,18 @@ test('stop uses the exclusive lifecycle lock and does not steal another operatio
   assert.equal(await runLocalStop([], f.dir, { output: { log(){}, error(m){ errors.push(m); } } }), 1);
   assert.equal(lstatSync(lock).isDirectory(), true);
   assert.match(errors.join(' '), /EEXIST/u);
+});
+test('unsupported platforms refuse local stop before touching an existing operation lock', async (t) => {
+  if (process.platform === 'linux') return t.skip('Linux lifecycle lock contention is tested separately.');
+  const f = fixture(t);
+  const run = path.join(f.dir, 'run');
+  mkdirSync(run, { mode: 0o700 });
+  const lock = path.join(run, 'start.lock');
+  mkdirSync(lock, { mode: 0o700 });
+  const errors = [];
+  assert.equal(await runLocalStop([], f.dir, { output: { log(){}, error(m){ errors.push(m); } } }), 1);
+  assert.match(errors.join(' '), /requires Linux/u);
+  assert.equal(lstatSync(lock).isDirectory(), true);
 });
 test('stop releases only its own operation lock after refused verification', async (t) => {
   if (process.platform !== 'linux') return t.skip('Linux-only lifecycle');
