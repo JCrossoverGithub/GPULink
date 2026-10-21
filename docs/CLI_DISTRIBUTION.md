@@ -95,10 +95,11 @@ and `processOwnership` (`unverified`). A plausible `/readyz` response is
 **not** proof of GPULink identity. Offline is an observational success;
 unknown or responding-but-unverified endpoints cause a nonzero exit code.
 
-This is only the safe observation foundation. Verified worker health and
-Managed Linux lifecycle status uses a private supervisor IPC channel
-as described below. This is not general production supervision. It is not
-remote GPU enrollment or a network-cluster deployment command.
+This paragraph describes unmanaged, read-only observation. The separately
+managed Linux control-plane and worker lifecycle uses private supervisor IPC
+as described below; it can report `ready-managed-local` when verified.
+Neither path is production supervision, remote GPU enrollment, or a
+network-cluster deployment command.
 
 ## Installation-scoped process-record inspection (read-only foundation)
 
@@ -119,9 +120,10 @@ adds an installation-private supervisor IPC channel. Windows lacks a validated
 kernel-birth probe in this increment,
 so existing records there remain `unverifiable` and cannot authorize action.
 
-This feature does not create ownership records or automatically enroll workers;
-it is a contract and read-only inspection foundation for future lifecycle
-management. Local smoke remains independently owned and temporary.
+Read-only record inspection creates no ownership records and enrolls no
+workers. The managed Linux lifecycle described below creates its own
+installation-bound records and socket under an explicit operator action.
+Local smoke remains independently owned and temporary.
 
 
 ## Linux managed control-plane lifecycle preview
@@ -176,9 +178,10 @@ before any manual recovery; do not delete owner records merely because a
 PID is absent or a Unix socket is unresponsive. A process that survives a
 supervisor crash may still occupy port 8088.
 
-The lifecycle retains the Linux-only, control-plane-only boundary. It
-is **not** a production service manager, crash-proof daemon, or Windows
-lifecycle implementation. Remote worker enrollment remains a separate milestone.
+These Linux process-identity and lock safeguards also apply to the
+separately opted-in local GPU worker lifecycle described next. This is
+**not** a production service manager, crash-proof daemon, Windows-native
+lifecycle implementation, or remote worker enrollment.
 
 ## Linux managed local GPU worker preview
 

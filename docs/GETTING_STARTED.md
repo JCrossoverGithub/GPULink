@@ -14,10 +14,12 @@ not a public GPU service.
 **Choose your role first.** Application developers, adapter authors, and GPU
 operators have different prerequisites and security responsibilities.
 
-This guide describes the currently implemented interfaces at the GPULink
-`4810e925` source checkpoint and the separately validated October 2026
-cross-machine CaptionLink integration. It is **not** a promise of general
-one-command installation or safe untrusted-code execution.
+This guide describes the accepted developer workflows through the
+October 20, 2026 installed-local diagnostic milestone (PR #25) and the
+separately validated two-machine CaptionLink integration. See the
+[capability status matrix](CAPABILITY_STATUS.md) for implemented, tested,
+published, and still-unproven boundaries. Neither milestone provides a
+general one-command cross-host installer or safe untrusted-code execution.
 
 ## Deployment choices
 
@@ -203,11 +205,24 @@ Treat these as separate implementation targets. Do not invent a universal
 single-command installer before deciding which role, trust boundary and host
 runtime it is actually installing.
 
-## Initialize a localhost-only GPULink deployment
+## Local GPU operator preview — source-built CLI
 
-For an isolated, independently owned development instance, run
-`npm run cli -- init local`. See the
-[local self-hosted setup guide](SELF_HOSTED_LOCAL.md) for generated
-role-scoped credentials, safety boundaries, offline checks, and
-deliberate startup instructions. This command does not install
-dependencies, start services, or enable cross-machine access.
+For a local, independently owned development installation, build a private
+CLI artifact in a GPULink source checkout with Node.js 24+ (`npm ci`, then
+`npm run build:cli`). Install its tarball in a **separate** consumer
+directory and use the resulting `gpulink` command. See
+[CLI distribution and lifecycle](CLI_DISTRIBUTION.md) for the precise
+commands and platform boundaries. `gpulink init local` creates a private
+localhost configuration; it does not start services or enroll a worker.
+
+On Linux (including WSL), operators can deliberately start the managed
+local control plane and, with `--accept-assigned-work`, a GPU worker.
+A separate [repository-owned hardware acceptance](INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md)
+requires explicit consent and runs one bounded NVIDIA GPU-status diagnostic,
+verifying durable completion and cleanup. It is **not automatic CI**, a
+remote-cluster installer, arbitrary-code execution, or a CUDA benchmark.
+
+Application developers using an **existing authorized deployment** should
+use their Client SDK and credential instead; they do not need the local
+operator CLI, a GPU, Docker or WSL. An independent multi-host operator
+bootstrap and enrollment workflow remains an open milestone.

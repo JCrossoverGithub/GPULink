@@ -44,59 +44,33 @@ infrastructure.
 
 ## Current status
 
-Phases 0 through 4 of the current architecture rework are complete.
+**Developer-platform acceptance (October 20, 2026):** GPULink has a
+source-built, independently installable CLI preview with a managed local
+control plane, an explicitly opted-in GPU worker, and a repository-owned,
+real-hardware diagnostic acceptance gate. The installed Linux/WSL workflow
+passed against a physical GPU, including authoritative scheduling, durable
+SQLite job completion, verified shutdown, and restart. See
+[installed GPU diagnostic acceptance](docs/INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md).
 
-AWS/K3s is the authoritative GPULink production environment as of 2026-10-13.
+**Historical distributed-environment acceptance (October 13, 2026):** the
+AWS/K3s + PostgreSQL deployment completed its Phase 4E migration and
+production workload gate. This is dated acceptance evidence, **not** a claim
+that a live deployment was just rechecked, a turnkey multi-host installer,
+or a generally available GPU service. See
+[Phase 4E evidence](docs/security/aws-phase4e-production-acceptance-2026-10-13.md).
 
-Accepted production capabilities include:
+**Application and SDK evidence:** jobs, streaming sessions, and the
+client/adapter contracts are implemented. The .NET Client SDK has a
+published **preview**; the TypeScript Client SDK and Adapter SDK are still
+private, pre-v1 tooling. An operator-trusted CaptionLink Multitalker
+integration was accepted across two machines on October 20, 2026; that
+is not independently reproducible operator onboarding or an untrusted-code
+sandbox. See [getting started](docs/GETTING_STARTED.md).
 
-- Terraform-managed AWS infrastructure in us-east-1;
-- a pinned K3s host on Ubuntu 24.04;
-- PostgreSQL 17 on dedicated encrypted gp3 storage;
-- immutable PostgreSQL and control-plane images distributed through ECR;
-- host-side ECR authentication without exposing AWS credentials to Pods;
-- pgBackRest continuous WAL archival, off-host S3 backup storage, isolated
-  restore verification, and named point-in-time recovery;
-- public Traefik HTTPS ingress, trusted public TLS, and cert-manager
-  steady-state certificate management;
-- physical RTX 3070 Ti, RTX 3090 Ti, and RTX 4060 worker identities;
-- fleet-wide diagnostics and real CUDA benchmark acceptance;
-- heterogeneous scheduling, drain/resume, and stale-worker recovery;
-- a two-replica control plane with cross-replica scheduler exclusion and
-  durable event delivery;
-- Kubernetes-native immutable-image application rollback;
-- sustained Phase 4D staging acceptance;
-- authoritative DigitalOcean-to-AWS PostgreSQL migration;
-- preservation of worker identities and durable event ordering across the
-  migration;
-- final first-attempt production CUDA execution through the public AWS
-  endpoint.
-
-The physical GPU fleet is:
-
-- MAINPC — RTX 3070 Ti 8 GB;
-- JPCMAIN — RTX 3090 Ti 24 GB;
-- laptop — RTX 4060 8 GB.
-
-The former DigitalOcean deployment is frozen and retained only as a rollback
-target. Its control plane must remain stopped while AWS is authoritative.
-
-Application-platform development is accepted on
-`feature/phase6a-streaming-asr-foundation` through pushed checkpoint
-`8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` (2026-10-16), **not yet
-merged into `main` or deployed to AWS**. The independent TypeScript Client SDK
-and experimental Adapter SDK have passed external npm-package acceptance;
-operator-approved, separately packaged CUDA inference has also run through
-the GPULink session path on a physical GPU. This is a small deterministic
-inference fixture, **not** pretrained streaming ASR, a public SDK v1 release,
-or safe untrusted-code execution. The earlier `37dc692` snapshot remains a
-historical source-audit baseline. See the
-[verified developer-platform milestone status](docs/developer-platform/verified-milestone-status.md)
-for scoped evidence and remaining product gaps.
-
-See docs/ROADMAP.md for the current project plan and
-docs/security/aws-phase4e-production-acceptance-2026-10-13.md for the
-production-migration evidence.
+For feature-by-feature evidence and publication/deployment limitations, see
+[Capability Status](docs/CAPABILITY_STATUS.md). Historical development
+checkpoints remain in the [milestone record](docs/developer-platform/verified-milestone-status.md)
+and [Roadmap](docs/ROADMAP.md); they are not current release instructions.
 
 ## Start developing with GPULink
 
@@ -158,15 +132,16 @@ It provides reusable infrastructure for:
 - durable lifecycle state;
 - retries and worker recovery;
 - batch execution;
-- future persistent real-time sessions.
+- persistent real-time sessions and authenticated relay transport.
 
 Applications consume those primitives while keeping their own product behavior
 outside the scheduler.
 
-The first real-time integration target is **CaptionLink**, which will use
-GPULink to allocate compatible GPU resources for live speech inference while
-keeping audio capture, caption rendering, and accessibility UX inside
-CaptionLink.
+CaptionLink is the first operator-trusted real-time integration. Its
+Multitalker inference was accepted across a separate client machine and GPU
+worker on October 20, 2026. Audio capture, rendering, and accessibility UX
+remain CaptionLink responsibilities; a turnkey integration installer is
+not yet claimed.
 
 Future reference applications may demonstrate other uses of the same framework,
 including batch scheduling, secure remote inference access, organizational fleet
@@ -178,8 +153,10 @@ boundary and execution model.
 
 ## Current architecture
 
-GPULink production uses AWS/K3s for the authoritative control-plane and
-persistence tier.
+The dated October 13, 2026 production acceptance used AWS/K3s for the
+authoritative control-plane and persistence tier. The following diagram is
+that accepted deployment topology, not a universal installation recipe or
+a current live-environment health assertion.
 
 The former DigitalOcean deployment is frozen and retained only as a rollback
 target. Its control plane remains stopped while AWS is authoritative.
@@ -313,33 +290,19 @@ See [Production Operations](docs/PRODUCTION_OPERATIONS.md).
 
 ## Backup and recovery
 
-The transitional DigitalOcean production deployment continues to create
-verified PostgreSQL custom-format backups with checksums, structural validation,
-database-state metadata, and automated disposable restore verification.
+The October 13, 2026 Phase 4E acceptance migrated authoritative production
+state from DigitalOcean to AWS/K3s. DigitalOcean remained a **stopped,
+frozen rollback target**; it is not the current production writer in that
+accepted deployment. See the
+[Phase 4E migration evidence](docs/security/aws-phase4e-production-acceptance-2026-10-13.md).
 
-Those DigitalOcean backups remain on the same host as the authoritative
-production database. That limitation remains until production state is migrated
-to AWS.
-
-The AWS/K3s reference environment has independently accepted the Phase 4
-off-host recovery path:
-
-- pgBackRest full and incremental backups;
-- S3-backed off-host backup storage;
-- continuous WAL archival;
-- a 60-second PostgreSQL `archive_timeout` for low-write WAL switching;
-- named point-in-time recovery;
-- isolated restore rehearsals that do not mount the production PostgreSQL PVC;
-- recurring host-side backup automation;
-- Kubernetes restore-verification automation;
-- an operator disaster-recovery runbook.
-
-This proves that the AWS recovery chain is not dependent on the EC2 database
-volume alone. It does not mean that the DigitalOcean production database has
-already been migrated or retired.
-
-See [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md) and the recovery
-acceptance records under `docs/security/`.
+AWS reference-environment recovery acceptance includes pgBackRest full and
+incremental backups, off-host S3 WAL archival, isolated restore rehearsal,
+and named point-in-time recovery. These are historical acceptance results,
+not a guaranteed recovery-time objective or an assertion of present-day
+operational health. See the
+[Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md) and
+[operator recovery runbook](docs/security/aws-postgres-disaster-recovery-runbook.md).
 
 ## Operations console
 
@@ -391,14 +354,16 @@ export GPULINK_TEST_POSTGRES_URL='postgresql://gpulink:gpulink-dev-only@127.0.0.
 npm run check
 ```
 
-The Phase 3 production baseline passed all 88 tests.
+The repository test count changes as work is added. Hardware acceptance is
+separately and explicitly opted in; see
+[Installed Local GPU Diagnostic Acceptance](docs/INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md).
 
 ## Command-line operations
 
 Configure the public URL and the credential appropriate to the operation:
 
 ```bash
-export GPULINK_URL=https://gpulink.schultzsystems.com
+export GPULINK_URL=https://gpulink.example.invalid  # replace with your authorized deployment
 export GPULINK_CLIENT_TOKEN=replace-me
 export GPULINK_ADMIN_TOKEN=replace-me
 ```
@@ -435,8 +400,8 @@ The current architecture rework is organized into major phases:
 - **Phase 2 — distributed scheduler/event correctness:** complete
 - **Phase 3 — production hardening and recovery:** complete
 - **Phase 4 — AWS + K3s production GPU fabric:** historically accepted in production on 2026-10-13
-- **Phase 5 — application platform (jobs, sessions, data plane, SDK):** in development; public SDK/adapter gates remain open
-- **Phase 6 — reference applications (CaptionLink first):** future
+- **Phase 5 — application platform:** jobs/sessions/transport and preview SDKs implemented; stable publication and general adoption remain open
+- **Phase 6 — reference applications:** CaptionLink two-machine operator-trusted integration accepted; wider reference onboarding remains open
 - **Phase 7 — private multi-user GPU fleet:** future
 - **Phase 8 — cross-trust distributed GPU network:** long-term future
 - **Phase 9 — optional capacity exchange:** long-term concept
@@ -444,6 +409,9 @@ The current architecture rework is organized into major phases:
 See [Roadmap](docs/ROADMAP.md) for details.
 
 ## Documentation
+- [Current capability and acceptance status](docs/CAPABILITY_STATUS.md)
+- [Getting started by role](docs/GETTING_STARTED.md)
+- [Installed CLI developer preview](docs/CLI_DISTRIBUTION.md)
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Application Framework](docs/APPLICATION_FRAMEWORK.md)
