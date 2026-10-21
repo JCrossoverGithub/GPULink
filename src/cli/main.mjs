@@ -5,6 +5,7 @@ import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
 import { runLocalStatus } from "./local-status.mjs";
 import { runLocalStart, runLocalStop, runLocalWorkerStart, runLocalWorkerStop } from "./local-lifecycle.mjs";
 import { defaultLocalSetupDirectory, parseGlobalCliOptions } from "./setup-directory.mjs";
+import { normalizeWorkerControlPlaneUrl } from "../worker/config.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -174,7 +175,14 @@ async function waitForJob(jobId) {
 }
 
 async function request(method, path, body, scope, extraHeaders = {}) {
-  const baseUrl = requiredEnvironment("GPULINK_URL").replace(/\/$/u, "");
+  // Match the already-accepted worker transport policy before any bearer is sent.
+  const rawUrl = requiredEnvironment("GPULINK_URL");
+  let baseUrl;
+  try {
+    baseUrl = normalizeWorkerControlPlaneUrl(rawUrl);
+  } catch {
+    throw new Error("GPULINK_URL requires HTTPS outside exact localhost loopback and must omit URL credentials, query, and fragment.");
+  }
   const token = requiredEnvironment(
     scope === "admin" ? "GPULINK_ADMIN_TOKEN" : "GPULINK_CLIENT_TOKEN",
   );
@@ -186,6 +194,7 @@ async function request(method, path, body, scope, extraHeaders = {}) {
       ...extraHeaders,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    redirect: "error",
     signal: AbortSignal.timeout(15_000),
   });
   const content = await response.json().catch(() => ({}));

@@ -151,6 +151,7 @@ consumers, nor a universal production deployment prescription.**
 Begin with [architecture](ARCHITECTURE.md),
 [production operations](PRODUCTION_OPERATIONS.md), and
 [approved adapter packaging](developer-platform/operator-trusted-adapter-package-workflow.md).
+For separate Host A/Host B operation, see the [independent two-host operator design contract](INDEPENDENT_TWO_HOST_OPERATOR.md). It is not an accepted installer or permission to start a worker.
 
 ### Offline configuration preflight
 
