@@ -44,6 +44,8 @@ infrastructure.
 
 ## Current status
 
+**Independent two-host operator acceptance (October 24, 2026):** On exact source revision `c88b9f8e795399d73d74b9b34a9c157728de2600`, separate physical hosts completed one approved RTX 3070 Ti GPU telemetry job over authenticated HTTPS. The result persisted with cleared leases; controlled control-plane/worker restart and scoped-auth/TLS/liveness checks passed; test-specific network exposure was removed. This operator-guided source-checkout acceptance is **not** a published remote installer, an arbitrary CUDA workload test, or independent newcomer onboarding. See [G9 evidence](docs/acceptance/independent-two-host-acceptance-2026-10-24.md).
+
 **Developer-platform acceptance (October 20, 2026):** GPULink has a
 source-built, independently installable CLI preview with a managed local
 control plane, an explicitly opted-in GPU worker, and a repository-owned,
