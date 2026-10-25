@@ -11,6 +11,8 @@ AWS production acceptance is **not** certification of a running service today.
 Historical design documents should not be interpreted as up-to-date install
 instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
+**Dated evidence addendum — October 24, 2026:** Independent source-checkout two-host acceptance passed on tested revision `c88b9f8e795399d73d74b9b34a9c157728de2600`, using one physical GPU telemetry diagnostic. The historical October 20 snapshot above is retained. See [G9 evidence](acceptance/independent-two-host-acceptance-2026-10-24.md) for the exact tested scope, limits, and teardown. This does **not** mean the two-host installation workflow is packaged or production-ready.
+
 | Capability | Implemented | Accepted evidence | Distribution / current limit |
 | --- | --- | --- | --- |
 | Scheduler, leases, workers and finite GPU jobs | Yes | Physical fleet, AWS/K3s history (October 13); fresh installed local diagnostic (October 20) | Approved jobs only; not raw shell or pooled VRAM |
@@ -23,7 +25,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | TypeScript Client SDK | Yes | Build/contract/external-consumer tests | `@gpulink/client` **private**, pre-v1, Node.js 24+; not a verified public npm release |
 | Adapter SDK and pinned subprocess packaging | Yes | Echo conformance, reviewable packaging, independently approved adapters | `@gpulink/adapter-sdk` **private**, pre-v1; approved subprocess is **not** a hostile-code sandbox |
 | Visual operations console | Yes (read-only) | Angular/Flask build and test coverage in CI | Not a general-purpose managed cluster control panel |
-| Independent clean-room multi-host installation | Not accepted as a packaged workflow | Historical AWS and CaptionLink two-host paths prove feasibility | Guided credential/TLS enrollment, reproducible teardown, and non-author-specific verification remain open |
+| Independent two-host operator deployment | Operator-guided source-checkout acceptance on October 24; packaged workflow not accepted | G0–G8 passed on separate physical hosts: one GPU diagnostic, lease cleanup, controlled restart, authentication/TLS checks, stale heartbeat, recovery, teardown | Manual TLS/credential/LAN provisioning; not yet a packaged or unguided third-party installation |
 
 ## How to verify the claimed boundaries
 
@@ -34,7 +36,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 ## Outstanding adoption and operational gates
 
-1. **Independent two-host operator acceptance:** clean, non-author-specific control-plane/worker setup, TLS and scoped-secret provisioning, one real authorized job/session, lease cleanup, safe teardown, and restart/recovery; no assumed AWS account, host name, WSL environment, or pre-existing certificates.
+1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. Externally installable control-plane/worker distributions, secure guided TLS/credential enrollment, version upgrades/rollback, and independent newcomer acceptance remain outstanding.
 2. **Disposable PostgreSQL CI acceptance:** run and clean up database-backed integration tests separately from normal GPU-free CI, including explicit scope acknowledgments.
 3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
 4. **Adapter portability and isolation:** accept at least one second independently authored, non-ASR workload; keep trusted operator approval separate from claims of arbitrary-code sandboxing.

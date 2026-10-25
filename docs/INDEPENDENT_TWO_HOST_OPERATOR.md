@@ -69,3 +69,7 @@ lease expiry alone does not authorize immediate reassignment or cleanup.
 
 **PR #28 acceptance:** zero-network tests of existing parsers and HTTPS/redirect
 policy plus documentation consistency. This does not count as G2–G9 acceptance.
+
+## Post-contract execution evidence — October 24, 2026
+
+This document's PR #28 *offline readiness* scope remains historical and is not retroactively recast as live acceptance. A separately authorized operator-guided test of exact revision `c88b9f8e795399d73d74b9b34a9c157728de2600` subsequently completed G0–G8 on two physical computers, including one physical `diagnostic.gpu-status` job, persistence/restart recovery, role authentication and TLS negatives, stale-heartbeat recovery, and reversible teardown. See [dated G9 evidence](acceptance/independent-two-host-acceptance-2026-10-24.md). This is not a tested installable cross-host workflow, uncontrolled failure recovery, or a general production-readiness claim.
