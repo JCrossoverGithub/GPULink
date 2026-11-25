@@ -5,7 +5,7 @@
  */
 import {createHash} from 'node:crypto';
 import {constants} from 'node:fs';
-import {copyFile, lstat, mkdir, open, readFile, readdir, realpath, rm, writeFile} from 'node:fs/promises';
+import {access, copyFile, lstat, mkdir, open, readFile, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
 const MAX_PROGRAM = 4 * 1024 * 1024; // Existing trusted catalog asset cap.
@@ -159,3 +159,71 @@ export async function operatorCatalogCandidate({bundleDir, interpreter = null, d
 }
 
 export const PACKAGE_FILE_NAMES = Object.freeze({recipe:SOURCE_NAME, lock:LOCK_NAME});
+
+/** Create a single-file Python batch starter. Does not execute or install it. */
+export async function initBatchAdapter({outDir, type, adapterId}) {
+  requireThat(typeof outDir === 'string' && path.isAbsolute(outDir), 'absolute_paths_required');
+  const manifest = validateManifest({schemaVersion:2, type, adapterId:adapterId ?? `${type}.v1`,
+    version:'1.0.0', executionMode:'bounded-process'});
+  const recipe = {schemaVersion:1, manifest, entry:'workload.py'};
+  const starter = await readFile(new URL('./batch-starter.py', import.meta.url));
+  try {await mkdir(outDir, {mode:0o700});}
+  catch {throw new AdapterPackageError('output_must_not_exist');}
+  try {
+    await writeFile(path.join(outDir, SOURCE_NAME), jsonBytes(recipe), {flag:'wx', mode:0o600});
+    await writeFile(path.join(outDir, recipe.entry), starter, {flag:'wx', mode:0o600});
+    return recipe;
+  } catch (e) {await rm(outDir, {recursive:true, force:true}); throw e;}
+}
+
+const absoluteSafe = value => typeof value === 'string' && path.isAbsolute(value) &&
+  value.length <= 4096 && !/[\x00-\x1f\x7f]/u.test(value) && path.normalize(value) === value;
+const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+
+/** Prepare a Linux/WSL review directory using the selected Python path, not
+ * its resolved symlink target. No code execution, dependency installation or
+ * approval. The interpreter and transitive dependencies remain operator-owned. */
+export async function preparePythonCatalog({bundleDir, interpreter, outDir, libraryPath = null}) {
+  requireThat(process.platform === 'linux', 'python_launcher_requires_linux');
+  requireThat([bundleDir, interpreter, outDir].every(absoluteSafe) &&
+    (libraryPath === null || absoluteSafe(libraryPath)), 'absolute_paths_required');
+  const {lock, programPath} = await inspectAdapter({bundleDir});
+  requireThat(lock.entry.endsWith('.py'), 'python_entry_required');
+  // Check a usable interpreter target without executing it or changing its argv path.
+  let resolvedInterpreter;
+  try {resolvedInterpreter = await realpath(interpreter); await access(interpreter, constants.X_OK);}
+  catch {throw new AdapterPackageError('interpreter_unavailable');}
+  await readRegular(resolvedInterpreter, MAX_INTERPRETER, true);
+  if (libraryPath !== null) {
+    requireThat(!/[:;$]/u.test(libraryPath), 'invalid_library_path');
+    await directory(libraryPath);
+  }
+  const shell = await realpath('/bin/bash');
+  const shellDigest = hash(await readRegular(shell, MAX_INTERPRETER, true));
+  // Never place generated files inside the immutable two-file bundle.
+  const actualBundle = await realpath(bundleDir);
+  const actualOutput = path.join(await realpath(path.dirname(outDir)), path.basename(outDir));
+  requireThat(actualOutput !== actualBundle && !actualOutput.startsWith(actualBundle + path.sep),
+    'output_inside_bundle');
+  const programDigest = hash(await readRegular(programPath, MAX_PROGRAM, true));
+  requireThat(programDigest === lock.sha256, 'artifact_digest_mismatch');
+  const launcherPath = path.join(outDir, 'launcher.sh');
+  const catalogPath = path.join(outDir, 'catalog.json');
+  requireThat([launcherPath, catalogPath, programPath].every(absoluteSafe), 'absolute_paths_required');
+  const launcher = Buffer.from('#!/bin/bash\nset -euo pipefail\n' +
+    (libraryPath === null ? '' : `export LD_LIBRARY_PATH=${shellQuote(libraryPath)}\n`) +
+    `exec ${shellQuote(interpreter)} -I -B "$1"\n`, 'utf8');
+  const catalog = {schemaVersion:1, adapters:[{manifest:lock.manifest,
+    ...(lock.completionMode ? {completionMode:lock.completionMode} : {}),
+    command:{executable:shell, sha256:shellDigest, args:[launcherPath,programPath], assets:[
+      {path:launcherPath,sha256:hash(launcher)}, {path:programPath,sha256:programDigest},
+    ]}}]};
+  const bytes = jsonBytes(catalog);
+  try {await mkdir(outDir, {mode:0o700});}
+  catch {throw new AdapterPackageError('output_must_not_exist');}
+  try {
+    await writeFile(launcherPath, launcher, {flag:'wx', mode:0o700});
+    await writeFile(catalogPath, bytes, {flag:'wx', mode:0o600});
+    return {catalogPath, launcherPath, sha256:hash(bytes)};
+  } catch (e) {await rm(outDir, {recursive:true, force:true}); throw e;}
+}
