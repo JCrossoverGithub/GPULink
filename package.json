@@ -12,6 +12,8 @@
     "worker": "node src/worker/main.mjs",
     "cli": "node src/cli/main.mjs",
     "build:cli": "node scripts/build-cli-package.mjs",
+    "build:cli:release": "node scripts/build-cli-release.mjs",
+    "test:cli:release": "node scripts/acceptance/cli-release-install.mjs",
     "test": "node --test --test-concurrency=1",
     "test:watch": "node --test --watch",
     "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --check scripts/migrate-sqlite-to-postgres.mjs && node --test --test-concurrency=1",
