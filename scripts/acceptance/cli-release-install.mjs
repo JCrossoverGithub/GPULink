@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
@@ -62,6 +62,8 @@ try {
   assert.match(help, /gpulink.*config-dir/);
   assert.match(help, /setup server --peer PRIVATE_IPV4/);
   assert.match(help, /join --invite FILE/);
+  assert.match(help, /worker approve-catalog/);
+  cli(['worker','approve-catalog'],2);
   cli(['join'],2);
   cli(['setup','server'],1);
   console.log('PASS: installed managed onboarding entry points; incomplete commands refused without provisioning');
@@ -161,6 +163,24 @@ try {
     assert.match(cli([...w,'worker','doctor','--live']),/PASS: trusted HTTPS and worker-role authorization/);
     assert.equal(JSON.parse(cli([...w,'worker','status'])).managedState,'not-running');
     cli([...w,'worker','start'],2);
+    const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+    const program = path.join(scratch,'never-run.sh');
+    writeFileSync(program,'exit 91\n',{mode:0o600});
+    const executable = realpathSync('/bin/sh');
+    const catalog = path.join(scratch,'reviewed.json');
+    writeFileSync(catalog,JSON.stringify({schemaVersion:1,adapters:[{
+      manifest:{schemaVersion:2,type:'example.packaged',adapterId:'example.packaged.v1',version:'1.0.0',executionMode:'streaming-gateway'},
+      command:{executable,sha256:sha(readFileSync(executable)),args:[program],assets:[{path:program,sha256:sha(readFileSync(program))}]},
+    }]}),{mode:0o600});
+    const approval = [...w,'worker','approve-catalog','--file',catalog,'--sha256',sha(readFileSync(catalog))];
+    cli(approval);
+    cli(approval,1);
+    assert.match(cli([...w,'worker','doctor']),/PASS: 1 approved subprocess adapter/);
+    writeFileSync(program,'changed');
+    cli([...w,'worker','doctor'],1);
+    cli([...w,'worker','clear-catalog']);
+    cli([...w,'worker','doctor']);
+    console.log('PASS: installed trusted workload approval, tamper refusal and removal; no workload execution');
     cli([...w,'worker','enroll','--bundle',bundle],1);
     cli([...w,'local','start'],1);
     const wrong = path.join(scratch,'s','wrong-bundle.json');

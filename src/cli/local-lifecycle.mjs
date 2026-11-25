@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readLocalSmokeSetup } from './local-smoke.mjs';
-import { readRemoteWorkerSetup } from './remote-worker-profile.mjs';
+import { readRemoteWorkerSetup, remoteWorkerCatalogPath } from './remote-worker-profile.mjs';
 import { installationFingerprint, observeLinuxBirth, validateOwnershipRecord } from './local-process-ownership.mjs';
 
 const ROLED = 'control-plane';
@@ -154,6 +154,17 @@ export async function runLocalWorkerStart(args, directory, { output = console } 
   }
   return startManagedRole(directory, 'worker', output);
 }
+// Serialize operator catalog changes with the existing start/stop lock.
+// Refuse stale or live ownership records; never infer permission from a PID.
+export async function withStoppedRemoteWorker(setup, action) {
+  assertLinux();
+  const p = prepareStart(setup, 'worker');
+  try {
+    // Recheck under lock: a competing start may have completed before mkdir.
+    if (entryExists(p.record) || entryExists(p.socket)) throw new Error('Worker runtime exists.');
+    return await action();
+  } finally { rmdirSync(p.lock); }
+}
 export function runRemoteWorkerStart(directory, {output = console} = {}) {
   return startManagedRole(directory, 'worker', output, true);
 }
@@ -268,6 +279,12 @@ export async function runManagedSupervisor(args) {
   if (role === 'worker' && !remote) {
     const control = await inspectManaged(setup, ROLED);
     if (control.state !== 'ready') throw new Error('Managed local control plane is not ready.');
+  }
+  // Only the operator-approved installation catalog is inherited. Stop/status
+  // deliberately do not read this catalog, so damaged assets cannot block stop.
+  if (remote) {
+    const catalog = remoteWorkerCatalogPath(setup);
+    if (catalog) setup.profiles['worker.env'].GPULINK_APPROVED_SUBPROCESS_CATALOG_PATH = catalog;
   }
   const launchId = args[1];
   const p = paths(setup, role);

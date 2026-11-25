@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createLocalSetup } from '../src/cli/local-init.mjs';
-import { readRemoteWorkerSetup, runWorkerBundle, runWorkerEnrollment, runWorkerCommand } from '../src/cli/remote-worker-profile.mjs';
+import { readRemoteWorkerSetup, remoteWorkerCatalogPath, runWorkerBundle, runWorkerEnrollment, runWorkerCommand } from '../src/cli/remote-worker-profile.mjs';
 import { installationFingerprint } from '../src/cli/local-process-ownership.mjs';
 const linux=process.platform==='linux';
 const output={log(){},error(){}};
@@ -71,4 +71,46 @@ test('remote worker requires assignment consent, stops only verified owned proce
     assert.equal(spawnSync(process.execPath,[cli,'--config-dir',dest,...args],{encoding:'utf8',timeout:5000}).status,1);
   }
   assert.equal(existsSync(path.join(dest,'run')),false);
+});
+
+test('reviewed catalog approval is non-overwriting, serialized, verified and removable without executing code', {skip:!linux}, async t=>{
+  const {createHash}=await import('node:crypto');
+  const {mkdirSync,realpathSync}=await import('node:fs');
+  const {root,bundle}=fixture(t),dest=path.join(root,'w');
+  assert.equal(runWorkerEnrollment(['--bundle',bundle],dest,output),0);
+  const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const program=path.join(root,'never-run.mjs');
+  const sentinel=path.join(root,'executed');
+  writeFileSync(program,`import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(sentinel)},'bad');`,{mode:0o600});
+  const executable=realpathSync('/bin/sh');
+  const source=path.join(root,'catalog.json');
+  const catalog={schemaVersion:1,adapters:[{manifest:{schemaVersion:2,type:'test.external',adapterId:'test.external.v1',version:'1.0.0',executionMode:'streaming-gateway'},command:{executable,sha256:sha(readFileSync(executable)),args:[program],assets:[{path:program,sha256:sha(readFileSync(program))}]}}]};
+  writeFileSync(source,JSON.stringify(catalog),{mode:0o600});
+  const args=['approve-catalog','--file',source,'--sha256',sha(readFileSync(source))];
+  const target=path.join(dest,'approved-subprocess.json');
+  const run=path.join(dest,'run');mkdirSync(run,{mode:0o700});
+  const lock=path.join(run,'start.lock');mkdirSync(lock,{mode:0o700});
+  assert.equal(await runWorkerCommand(args,dest,output),1);
+  assert.equal(existsSync(lock),true);rmSync(lock,{recursive:true});
+  assert.equal(await runWorkerCommand([...args.slice(0,4),'0'.repeat(64)],dest,output),1);
+  assert.equal(existsSync(target),false);
+  assert.equal(await runWorkerCommand(args,dest,output),0);
+  assert.equal(statSync(target).mode & 0o777,0o600);
+  const {loadApprovedSubprocessSessionAdapters}=await import('../src/worker/approved-subprocess-adapters.mjs');
+  assert.equal(remoteWorkerCatalogPath(readRemoteWorkerSetup(dest)),target);
+  assert.equal((await loadApprovedSubprocessSessionAdapters(target)).length,1);
+  assert.equal(await runWorkerCommand(args,dest,output),1);
+  assert.equal(existsSync(sentinel),false);
+  // No GPU needed for doctor; actual runtime readiness is a separate gate.
+  if (Number(process.versions.node.split('.')[0])>=24) assert.equal(await runWorkerCommand(['doctor'],dest,output),0);
+  writeFileSync(program,'tampered');
+  await assert.rejects(loadApprovedSubprocessSessionAdapters(target),/approved_file_hash_mismatch/);
+  assert.equal(await runWorkerCommand(['doctor'],dest,output),1);
+  assert.equal(await runWorkerCommand(['status'],dest,output),0);
+  const record=path.join(run,'worker.owner.json');writeFileSync(record,'{}',{mode:0o600});
+  assert.equal(await runWorkerCommand(['clear-catalog'],dest,output),1);
+  assert.equal(existsSync(target),true);rmSync(record);
+  assert.equal(await runWorkerCommand(['clear-catalog'],dest,output),0);
+  assert.equal(existsSync(target),false);assert.equal(existsSync(program),true);
+  assert.equal(existsSync(sentinel),false);
 });
