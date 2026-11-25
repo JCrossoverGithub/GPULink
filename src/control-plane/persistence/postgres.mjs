@@ -2513,7 +2513,7 @@ async function postgresReleaseJobCleanupHold(client,input,now) {
       AND safety_state='quarantined' AND subject_kind='job' AND attempt_id IS NULL
       AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=$5 AND j.status IN ('cancelled','failed')
         AND j.lease_id=$6 AND j.assigned_worker_id=$2 AND j.assigned_gpu_uuid=$3)
-      AND EXISTS (SELECT 1 FROM workers w WHERE w.id=$2 AND w.status='offline' AND w.drain_mode=1)
+      AND EXISTS (SELECT 1 FROM workers w WHERE w.id=$2 AND w.status='offline' AND w.drain_mode=TRUE)
       AND NOT EXISTS (SELECT 1 FROM execution_attempts a WHERE a.gpu_uuid=$3 AND a.status<>'terminated')
       AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.assigned_gpu_uuid=$3 AND j.status IN ('leased','running'))
       AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.assigned_gpu_uuid=$3 AND s.status IN ('allocated','connecting','active'))
