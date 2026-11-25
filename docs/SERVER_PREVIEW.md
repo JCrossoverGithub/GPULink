@@ -30,7 +30,7 @@ supported by this fixed-port preview. Never expose port 8088 directly.
 Use a short private path to fit the existing Unix socket path limit.
 The generated worker profile is reserved for the inherited loopback profile
 contract; do not copy it to another machine or start a local worker using
-a server installation. Remote worker enrollment is DEV-03.
+a server installation. Use the separate [remote worker preview](REMOTE_WORKER_PREVIEW.md) for worker bundle export and enrollment.
 
 ## HTTPS ingress (operator-managed)
 
