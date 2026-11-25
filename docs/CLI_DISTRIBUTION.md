@@ -1,8 +1,6 @@
 # GPULink CLI preview — package and configuration contract
 
-**Status:** source-built, private local-installation preview. Not an npm
-registry release, OS installer, production service supervisor,
-or automatic hardware setup.
+**Status:** private local-installation preview. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds a versioned dependency-bundled artifact for offline consumer installation; publication requires a separate release decision. Not an npm registry release, OS installer, production service supervisor, or automatic hardware setup.
 
 ## Roles and boundaries
 
