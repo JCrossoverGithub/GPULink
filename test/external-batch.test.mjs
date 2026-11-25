@@ -60,7 +60,12 @@ for (const [name, replacement] of [
   await assert.rejects(a.executeJob(job,ctx()),{code:'execution_failed'});
 });
 test('batch rejects successful-looking result followed by nonzero exit',{skip:!python},async t=>{
-  const {file}=await catalog(t,fixture.replace('send(END)\n            return 0','send(END)\n            return 2'));
+  const normalized=fixture.replace(/\r\n/gu,'\n');
+  const original='send(END)\n            return 0';
+  assert.equal(normalized.split(original).length,2,'fixture must contain exactly one successful END exit');
+  const broken=normalized.replace(original,'send(END)\n            return 2');
+  assert.notEqual(broken,normalized,'fixture must actually exit nonzero');
+  const {file}=await catalog(t,broken);
   const [a]=await loadApprovedSubprocessAdapters(file); await assert.rejects(a.executeJob(job,ctx()),{code:'execution_failed'});
 });
 test('batch cancellation waits for child close',{skip:!python},async t=>{
