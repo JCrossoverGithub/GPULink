@@ -12,6 +12,10 @@ sha256sum -c SHA256SUMS
 
 On Windows PowerShell compare `Get-FileHash .\gpulink-cli-0.1.0.tgz -Algorithm SHA256` to `SHA256SUMS` from the trusted run. Use the filename supplied by `release.json`. The root monorepo and CLI package remain private to prevent inadvertent npm publication.
 
+For the coordinated CLI, Client SDK, Adapter SDK and .NET candidate, see
+[distribution candidate installation](DISTRIBUTION_CANDIDATE.md).
+The existing CLI-only download remains available.
+
 ## Install outside Core
 
 From an unrelated user-owned directory, with the downloaded tarball (no source checkout and no dependency download required):
