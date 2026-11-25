@@ -37,7 +37,7 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
     writeFileSync(path.join(output, "package.json"), JSON.stringify({
       name: "@gpulink/cli",
       version: original.version,
-      description: "GPULink developer/operator CLI and matching local Core runtime (preview)",
+      description: "GPULink developer/operator CLI and matching Core runtime (preview)",
       private: true, // local installable tarball; never silently publish
       type: "module",
       license: "Apache-2.0",
@@ -47,9 +47,9 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
       files: ["src", "LICENSE", "README.md"],
     }, null, 2) + "\n");
     writeFileSync(path.join(output, "README.md"),
-      "# @gpulink/cli — Local developer preview\n\n" +
-      "A self-contained GPULink CLI + matching Core source runtime for independently owned local deployments. " +
-      "Requires Node.js 24+. No automatic daemon, GPU workload, external endpoint, or cloud provisioning.\n" +
+      "# @gpulink/cli — Developer preview\n\n" +
+      "A self-contained GPULink CLI + matching Core source runtime for independently owned local and Linux server deployments. " +
+      "Requires Node.js 24+. No automatic daemon, GPU workload, TLS ingress, or cloud provisioning.\n" +
       "This artifact is private/nonpublished pending clean-machine release acceptance.\n");
     if (!existsSync(path.join(output, "src/cli/main.mjs")) ||
         !existsSync(path.join(output, "src/control-plane/main.mjs")) ||
