@@ -55,6 +55,29 @@ export interface GPULinkClientOptions {
   token: string;
   timeoutMs?: number;
 }
+/** A bounded, read-only wait for an existing durable job. */
+export interface WaitForJobOptions {
+  /** Total observation budget, including requests. Default 60s; max 1 hour. */
+  timeoutMs?: number;
+  /** Delay between reads. Default 500ms; 100..30000ms. */
+  pollIntervalMs?: number;
+  /** Interrupts observation only, never the durable job. */
+  signal?: AbortSignal;
+}
+export interface GPULinkClientEnvironment {
+  readonly [name: string]: string | undefined;
+  GPULINK_BASE_URL?: string;
+  GPULINK_CLIENT_TOKEN?: string;
+}
+export class GPULinkJobWaitTimeoutError extends Error {
+  readonly code = 'JOB_WAIT_TIMEOUT';
+  readonly jobId: string;
+  constructor(jobId: string) {
+    super('GPULink job observation deadline exceeded; job may still be running');
+    this.name = 'GPULinkJobWaitTimeoutError';
+    this.jobId = jobId;
+  }
+}
 export class GPULinkApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -90,11 +113,69 @@ export class GPULinkClient {
     this.#token = options.token;
     this.#timeoutMs = timeout;
   }
+  /** Explicit environment selection: no file loading, global lookup or admin-token fallback. */
+  static fromEnv(env: GPULinkClientEnvironment): GPULinkClient {
+    if (!env || typeof env !== 'object') throw new TypeError('client environment required');
+    if (typeof env.GPULINK_BASE_URL !== 'string' || !env.GPULINK_BASE_URL.trim()) {
+      throw new TypeError('GPULINK_BASE_URL is required');
+    }
+    if (typeof env.GPULINK_CLIENT_TOKEN !== 'string' || !env.GPULINK_CLIENT_TOKEN.trim()) {
+      throw new TypeError('GPULINK_CLIENT_TOKEN is required');
+    }
+    return new GPULinkClient({baseUrl: env.GPULINK_BASE_URL, token: env.GPULINK_CLIENT_TOKEN});
+  }
   submitJob(body: JobSubmission, options: SubmitOptions = {}): Promise<{ job: JobRecord; duplicate: boolean }> {
     return this.#request('POST', '/v1/jobs', body, options);
   }
-  async getJob(id: string): Promise<{ job: JobRecord }> {
-    return this.#request('GET', `/v1/jobs/${part(id)}`);
+  async getJob(id: string, options: { signal?: AbortSignal } = {}): Promise<{ job: JobRecord }> {
+    return this.#request('GET', `/v1/jobs/${part(id)}`, undefined, options);
+  }
+  /** Return the authoritative terminal record, including failed or cancelled jobs.
+   * Timeout, abort and HTTP errors reject observation, not execution. No retries,
+   * submission, cancellation or other state mutations are performed here.
+   */
+  async waitForJob(id: string, options: WaitForJobOptions = {}): Promise<JobRecord> {
+    part(id);
+    if (!options || typeof options !== 'object') throw new TypeError('options must be an object');
+    if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) {
+      throw new TypeError('signal must be an AbortSignal');
+    }
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    const interval = options.pollIntervalMs ?? 500;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 3_600_000) {
+      throw new RangeError('timeoutMs must be 100..3600000');
+    }
+    if (!Number.isSafeInteger(interval) || interval < 100 || interval > 30_000) {
+      throw new RangeError('pollIntervalMs must be 100..30000');
+    }
+    options.signal?.throwIfAborted();
+    const controller = new AbortController();
+    const deadline = performance.now() + timeoutMs;
+    const expired = new GPULinkJobWaitTimeoutError(id);
+    const timer = setTimeout(() => controller.abort(expired), timeoutMs);
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    try {
+      for (;;) {
+        signal.throwIfAborted();
+        if (performance.now() >= deadline) throw expired;
+        const { job } = await this.getJob(id, {signal});
+        signal.throwIfAborted();
+        if (performance.now() >= deadline) throw expired;
+        if (!object(job) || job.id !== id || typeof job.status !== 'string') {
+          throw new Error('GPULink returned an invalid job record');
+        }
+        if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return job;
+        if (!['queued', 'leased', 'running'].includes(job.status)) {
+          throw new Error('GPULink returned an unknown job status');
+        }
+        await waitForPairing(Math.min(interval, Math.max(1, deadline - performance.now())), signal);
+      }
+    } catch (error) {
+      signal.throwIfAborted();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
   async listJobs(options: ListOptions = {}): Promise<{ jobs: JobRecord[] }> {
     return this.#request('GET', `/v1/jobs${query(options)}`);
@@ -298,7 +379,7 @@ function query(options: ListOptions): string {
   return params.size > 0 ? `?${params}` : '';
 }
 
-/** Interruptible delay used only by the session pairing loop. */
+/** Interruptible delay used by bounded observation loops. */
 function waitForPairing(delayMs: number, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {

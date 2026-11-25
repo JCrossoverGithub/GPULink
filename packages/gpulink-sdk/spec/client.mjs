@@ -40,6 +40,9 @@ test('TypeScript SDK uses public finite-job routes and idempotency', async () =>
     assert.ok(listed.jobs.some((job) => job.id === created.job.id));
     const cancelled = await client.cancelJob(created.job.id);
     assert.equal(cancelled.job.status, 'cancelled');
+    const terminal = await client.waitForJob(created.job.id);
+    assert.equal(terminal.id, created.job.id);
+    assert.equal(terminal.status, 'cancelled');
   } finally {
     await app.stop();
   }
