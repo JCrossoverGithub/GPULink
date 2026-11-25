@@ -101,3 +101,15 @@ not a batch semantic or GPU qualification test. Operators approve trusted code
 and runtime; do not launch escaping descendants. The client uses the existing
 job API and can retrieve persistent results after disconnecting. No registry
 publication, arbitrary-code sandbox or large artifact transport is implied.
+
+### Guided batch author and Python operator preview
+
+`gpulink-adapter-package init-batch --out author --type external.batch.NAME`
+creates a new recipe and single-file Python CPU echo starter. Edit `run(payload)`
+for your actual workload; the generated example is not a CUDA proof.
+`prepare-python --bundle bundle --interpreter /absolute/venv/bin/python --out review`
+creates a new Linux/WSL launcher and catalog with a review digest. Optional
+`--library-path /absolute/lib` is one explicit operator-selected directory.
+It preserves the Python invocation path (including virtualenv symlinks).
+No runtime installation, execution, automatic approval or dependency lock.
+See `docs/DEVELOPER_BATCH_QUICKSTART.md` in the repository.

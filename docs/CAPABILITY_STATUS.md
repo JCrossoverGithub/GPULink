@@ -32,7 +32,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | Managed LAN onboarding | Yes | PR #33 (November 25): physical WSL2 NAT provisioning, enrollment, remote diagnostic, durable result and automatic cleanup; 8 CI checks passed | Optional WSL2 NAT private LAN foreground session; no generalized native service installer or automatic in-place IP repair |
 | Installed trusted external GPU workloads | Yes | PR #34 (November 25): independently packaged external CUDA session, correct matrix result, persisted allocation/release, 8 CI checks passed | Existing GLIP subprocess/session backend; no hostile-code sandbox |
 | Uncertain running-job cleanup holds | Yes | PR #35 (November 25): 67 local tests, installed acceptance and 9 CI checks including PostgreSQL; [job cleanup safety](JOB_CLEANUP_SAFETY.md) | Conservative durable quarantine and explicit operator-attested recovery, not verified hardware isolation |
-| Installed durable external batch workloads | DEV-04B2 candidate | [External batch preview](EXTERNAL_BATCH_PREVIEW.md); physical GPU and installed acceptance pending | Operator-approved bounded JSON jobs, not arbitrary-code isolation or large artifacts |
+| Installed durable external batch workloads | Yes | PR #36 (November 25): independent installed CUDA batch, cancellation, quarantine, explicit recovery, restart persistence and 9 CI checks; [external batch preview](EXTERNAL_BATCH_PREVIEW.md) | Operator-approved bounded JSON jobs, not arbitrary-code isolation or large artifacts |
 
 ## How to verify the claimed boundaries
 
