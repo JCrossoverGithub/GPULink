@@ -145,11 +145,10 @@ export class Scheduler {
         // A logical lease becoming free does NOT prove an old GPU
         // process was reaped. Committed durable holds block reuse.
         // Read under the same scheduler transaction as placement.
-        const blockedGpuResources = new Set(
-          (await transaction.listBlockedGpuResources())
-            .map(({ workerId, gpuUuid }) =>
-              resourceKey(workerId, gpuUuid)),
-        );
+        const holds = await transaction.listBlockedGpuResources();
+        const blockedGpuResources = new Set(holds.map(({workerId,gpuUuid}) => resourceKey(workerId,gpuUuid)));
+        // Uncertain running jobs also block the same physical UUID after re-enrollment.
+        const quarantinedGpuUuids = new Set(holds.filter(h=>h.jobCleanup).map(h=>h.gpuUuid));
 
         const workers =
           await transaction
@@ -174,7 +173,7 @@ export class Scheduler {
                   workload
                     .assignedGpuUuid,
               )
-              .filter(Boolean),
+              .filter(Boolean).concat([...quarantinedGpuUuids]),
           );
 
         const queuedJobs =

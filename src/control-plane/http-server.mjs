@@ -133,6 +133,16 @@ export function createHttpServer({ service, database, scheduler }) {
         return sendJson(response, 200, { jobs: await database.listJobs({ status, limit }) });
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/admin/job-cleanup-holds") {
+        if (!authorize(service,request,response,["admin"])) return;
+        return sendJson(response,200,{holds:await database.listJobCleanupHolds()});
+      }
+      if (request.method === "POST" && url.pathname === "/v1/admin/job-cleanup-holds/release") {
+        if (!authorize(service,request,response,["admin"])) return;
+        const result=await service.releaseJobCleanupHold(await readJson(request));
+        await broadcastNewEvents(database,eventClients);
+        return sendJson(response,200,result);
+      }
       const jobPath = matchPath(url.pathname, "/v1/jobs/:id");
       if (request.method === "GET" && jobPath) {
         if (!authorize(service, request, response, ["client"])) return;

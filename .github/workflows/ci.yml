@@ -30,6 +30,33 @@ jobs:
       - if: runner.os == 'Linux'
         run: docker build -f deploy/digitalocean/Dockerfile -t gpulink-control-plane:test .
 
+  job-cleanup-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: gpulink_test
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: gpulink_job_cleanup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gpulink_test -d gpulink_job_cleanup_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test test/job-cleanup-postgres.test.mjs
+        env:
+          GPULINK_TEST_POSTGRES_URL: postgresql://gpulink_test:disposable-ci-only@127.0.0.1:5432/gpulink_job_cleanup_test
+          GPULINK_JOB_CLEANUP_TEST_DB_ACK: YES_DISPOSABLE
+
   dashboard:
     runs-on: ubuntu-latest
     steps:

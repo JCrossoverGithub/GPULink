@@ -331,6 +331,12 @@ function assertNoActiveWal(
 function validateSqliteSource(
   database,
 ) {
+  // The legacy migration copies workers/jobs/events, not execution ownership.
+  // Never discard a durable hold (including broker-owned holds) during migration.
+  const fenceTable = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gpu_resource_fences'").get();
+  if (fenceTable && database.prepare("SELECT 1 FROM gpu_resource_fences WHERE safety_state <> 'clear' LIMIT 1").get()) {
+    throw new Error("SQLite source contains unresolved GPU resource holds; migration refused");
+  }
   const integrity =
     database
       .prepare(

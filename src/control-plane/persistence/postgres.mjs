@@ -611,18 +611,15 @@ export class PostgresPersistence {
   }
 
   cancelJob(...args) {
-    return this.#call(
-      "cancelJob",
-      args,
-    );
+    return this.transaction(t => t.cancelJob(...args));
   }
 
   recoverExpiredJobs(...args) {
-    return this.#call(
-      "recoverExpiredJobs",
-      args,
-    );
+    return this.transaction(t => t.recoverExpiredJobs(...args));
   }
+
+  listJobCleanupHolds(...args) { return this.#call("listJobCleanupHolds", args); }
+  releaseJobCleanupHold(...args) { return this.transaction(t => t.releaseJobCleanupHold(...args)); }
 
   insertSession(...args) {
     return this.#call(
@@ -908,6 +905,8 @@ export class PostgresPersistence {
           ...args,
         );
 
+      case "listJobCleanupHolds": return postgresListJobCleanupHolds(queryable);
+      case "releaseJobCleanupHold": return postgresReleaseJobCleanupHold(queryable, ...args);
       case "insertSession":
         return postgresInsertSession(
           queryable,
@@ -1326,15 +1325,17 @@ async function postgresListBlockedGpuResources(queryable) {
   // Creation of previously absent rows MUST also join the scheduler
   // advisory lock; this stage provides no live broker writers.
   const result = await queryable.query(`
-    SELECT worker_id, gpu_uuid
-    FROM gpu_resource_fences
-    WHERE safety_state <> 'clear'
-    ORDER BY worker_id, gpu_uuid
-    FOR UPDATE NOWAIT
+    SELECT f.worker_id, f.gpu_uuid,
+      (f.safety_state='quarantined' AND f.attempt_id IS NULL AND f.subject_kind='job'
+        AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=f.subject_id AND j.status IN ('cancelled','failed')
+          AND j.lease_id=f.lease_id AND j.assigned_worker_id=f.worker_id AND j.assigned_gpu_uuid=f.gpu_uuid)) AS job_cleanup
+    FROM gpu_resource_fences f WHERE f.safety_state <> 'clear'
+    ORDER BY f.worker_id, f.gpu_uuid FOR UPDATE OF f NOWAIT
   `);
   return result.rows.map((row) => ({
     workerId: row.worker_id,
     gpuUuid: row.gpu_uuid,
+    ...(row.job_cleanup ? {jobCleanup:true} : {}),
   }));
 }
 
@@ -2450,132 +2451,74 @@ async function postgresFinishJob(
     : null;
 }
 
-async function postgresCancelJob(
-  queryable,
-  jobId,
-  now,
-) {
-  const result =
-    await queryable.query(
-      `
-        UPDATE jobs
-        SET
-          status = 'cancelled',
-          lease_expires_at = NULL,
-          updated_at = $1
-        WHERE
-          id = $2
-          AND status IN (
-            'queued',
-            'leased',
-            'running'
-          )
-        RETURNING *
-      `,
-      [
-        now,
-        jobId,
-      ],
-    );
-
-  return result.rowCount > 0
-    ? mapPostgresJob(
-        result.rows[0],
-      )
-    : null;
+// Serialize hold creation/release with placement, including absent fence rows.
+async function lockJobAllocation(client) {
+  await client.query('SELECT pg_advisory_xact_lock($1::integer,$2::integer)', [0x4750554c,0x494e4b31]);
 }
-
-
-async function postgresRecoverExpiredJobs(
-  queryable,
-  now,
-  offlineWorkerIds = [],
-) {
-  const exhaustedError =
-    JSON.stringify({
-      code: "lease_exhausted",
-      message:
-        "Job exhausted its execution attempts",
-    });
-
-  const result =
-    await queryable.query(
-      `
-        WITH candidates AS (
-          SELECT
-            id,
-            CASE
-              WHEN assigned_worker_id =
-                ANY($2::text[])
-              THEN 'heartbeat_timeout'
-              ELSE 'lease_expired'
-            END AS recovery_reason
-          FROM jobs
-          WHERE
-            status IN (
-              'leased',
-              'running'
-            )
-            AND (
-              (
-                lease_expires_at
-                  IS NOT NULL
-                AND lease_expires_at <= $1
-              )
-              OR assigned_worker_id =
-                ANY($2::text[])
-            )
-          FOR UPDATE
-        )
-        UPDATE jobs AS job
-        SET
-          status =
-            CASE
-              WHEN
-                job.attempt >=
-                job.max_attempts
-              THEN 'failed'
-              ELSE 'queued'
-            END,
-          assigned_worker_id = NULL,
-          assigned_gpu_uuid = NULL,
-          lease_id = NULL,
-          lease_expires_at = NULL,
-          error_json =
-            CASE
-              WHEN
-                job.attempt >=
-                job.max_attempts
-              THEN $3::jsonb
-              ELSE NULL
-            END,
-          updated_at = $1
-        FROM candidates
-        WHERE
-          job.id = candidates.id
-          AND job.status IN (
-            'leased',
-            'running'
-          )
-        RETURNING
-          job.*,
-          candidates.recovery_reason
-      `,
-      [
-        now,
-        offlineWorkerIds,
-        exhaustedError,
-      ],
-    );
-
-  return result.rows.map(
-    (row) => ({
-      job:
-        mapPostgresJob(row),
-      reason:
-        row.recovery_reason,
-    }),
-  );
+async function postgresQuarantineRunningJob(client, job, now) {
+  await client.query(`INSERT INTO gpu_resource_fences
+    (worker_id,gpu_uuid,epoch,safety_state,subject_kind,subject_id,lease_id,attempt_id,updated_at)
+    VALUES ($1,$2,1,'quarantined','job',$3,$4,NULL,$5)
+    ON CONFLICT(worker_id,gpu_uuid) DO UPDATE SET
+      epoch=gpu_resource_fences.epoch+1,safety_state='quarantined',subject_kind='job',
+      subject_id=EXCLUDED.subject_id,lease_id=EXCLUDED.lease_id,attempt_id=NULL,updated_at=EXCLUDED.updated_at
+    WHERE gpu_resource_fences.safety_state='clear'`,
+    [job.assigned_worker_id,job.assigned_gpu_uuid,job.id,job.lease_id,now]);
+}
+async function postgresCancelJob(client, jobId, now) {
+  await lockJobAllocation(client);
+  const {rows:[job]} = await client.query('SELECT * FROM jobs WHERE id=$1 FOR UPDATE',[jobId]);
+  if (job?.status==='running') await postgresQuarantineRunningJob(client,job,now);
+  const result=await client.query(`UPDATE jobs SET status='cancelled',lease_expires_at=NULL,updated_at=$1
+    WHERE id=$2 AND status IN ('queued','leased','running') RETURNING *`,[now,jobId]);
+  return result.rowCount ? mapPostgresJob(result.rows[0]) : null;
+}
+async function postgresRecoverExpiredJobs(client, now, offlineWorkerIds=[]) {
+  await lockJobAllocation(client);
+  const {rows}=await client.query(`SELECT * FROM jobs WHERE status IN ('leased','running')
+    AND (lease_expires_at <= $1 OR assigned_worker_id=ANY($2::text[])) ORDER BY id FOR UPDATE`,[now,offlineWorkerIds]);
+  const recovered=[];
+  for (const job of rows) {
+    const uncertain=job.status==='running';
+    if (uncertain) await postgresQuarantineRunningJob(client,job,now);
+    const terminal=uncertain || Number(job.attempt)>=Number(job.max_attempts);
+    const error=uncertain ? {code:'execution_cleanup_required',message:'Running execution lost authority; operator cleanup required before GPU reuse'} : terminal
+      ? {code:'lease_exhausted',message:'Job exhausted its execution attempts'} : null;
+    const result=await client.query(`UPDATE jobs SET status=$1,assigned_worker_id=$2,assigned_gpu_uuid=$3,
+      lease_id=$4,lease_expires_at=NULL,error_json=$5::jsonb,updated_at=$6 WHERE id=$7 RETURNING *`,
+      [terminal?'failed':'queued',uncertain?job.assigned_worker_id:null,uncertain?job.assigned_gpu_uuid:null,
+        uncertain?job.lease_id:null,error?JSON.stringify(error):null,now,job.id]);
+    recovered.push({job:mapPostgresJob(result.rows[0]),reason:offlineWorkerIds.includes(job.assigned_worker_id)?'heartbeat_timeout':'lease_expired'});
+  }
+  return recovered;
+}
+async function postgresListJobCleanupHolds(client) {
+  const {rows}=await client.query(`SELECT f.worker_id AS "workerId",f.gpu_uuid AS "gpuUuid",f.epoch,
+    f.subject_id AS "jobId",f.lease_id AS "leaseId"
+    FROM gpu_resource_fences f JOIN jobs j ON j.id=f.subject_id
+    WHERE f.safety_state='quarantined' AND f.attempt_id IS NULL AND f.subject_kind='job'
+      AND j.status IN ('cancelled','failed') AND j.lease_id=f.lease_id
+      AND j.assigned_worker_id=f.worker_id AND j.assigned_gpu_uuid=f.gpu_uuid
+    ORDER BY f.worker_id,f.gpu_uuid`);
+  return rows.map(row=>({...row,epoch:Number(row.epoch)}));
+}
+async function postgresReleaseJobCleanupHold(client,input,now) {
+  await lockJobAllocation(client);
+  const {workerId,gpuUuid,epoch,jobId,leaseId}=input;
+  // Serialize against re-registration/heartbeat on the original worker.
+  await client.query('SELECT id FROM workers WHERE id=$1 FOR UPDATE',[workerId]);
+  const result=await client.query(`UPDATE gpu_resource_fences SET safety_state='clear',subject_kind=NULL,
+    subject_id=NULL,lease_id=NULL,attempt_id=NULL,updated_at=$1
+    WHERE worker_id=$2 AND gpu_uuid=$3 AND epoch=$4 AND subject_id=$5 AND lease_id=$6
+      AND safety_state='quarantined' AND subject_kind='job' AND attempt_id IS NULL
+      AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=$5 AND j.status IN ('cancelled','failed')
+        AND j.lease_id=$6 AND j.assigned_worker_id=$2 AND j.assigned_gpu_uuid=$3)
+      AND EXISTS (SELECT 1 FROM workers w WHERE w.id=$2 AND w.status='offline' AND w.drain_mode=1)
+      AND NOT EXISTS (SELECT 1 FROM execution_attempts a WHERE a.gpu_uuid=$3 AND a.status<>'terminated')
+      AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.assigned_gpu_uuid=$3 AND j.status IN ('leased','running'))
+      AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.assigned_gpu_uuid=$3 AND s.status IN ('allocated','connecting','active'))
+    RETURNING epoch`,[now,workerId,gpuUuid,epoch,jobId,leaseId]);
+  return result.rowCount===1;
 }
 
 async function postgresCounts(

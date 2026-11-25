@@ -827,6 +827,21 @@ export class ControlPlaneService {
     return job;
   }
 
+  async releaseJobCleanupHold(raw) {
+    const object = requireObject(raw, "cleanup confirmation");
+    if (object.confirmStopped !== true) throw new ValidationError("Explicit physical cleanup confirmation is required");
+    const input = Object.fromEntries(["workerId","gpuUuid","jobId","leaseId"].map(key=>
+      [key,requireString(object[key],key,{maximum:128})]));
+    input.epoch = boundedInteger(object.epoch,"epoch",{minimum:1,maximum:Number.MAX_SAFE_INTEGER});
+    const now=this.clock();
+    await this.database.transaction(async t=>{
+      if (!await t.releaseJobCleanupHold(input,now)) throw new ConflictError("Cleanup hold mismatch, worker not drained/offline, or resource still occupied");
+      await t.appendEvent("job.cleanup_operator_confirmed",input.jobId,input,now);
+    });
+    await this.scheduler.runOnce();
+    return {released:true,operatorAttested:true};
+  }
+
   async cancelJob(jobId) {
     const now = this.clock();
 
