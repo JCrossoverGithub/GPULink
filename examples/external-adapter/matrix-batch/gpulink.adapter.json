@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "schemaVersion": 2,
+    "type": "external.batch.matrix",
+    "adapterId": "example.cuda.matrix.batch.v1",
+    "version": "1.0.0",
+    "executionMode": "bounded-process"
+  },
+  "entry": "matrix.py"
+}

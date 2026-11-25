@@ -1,3 +1,4 @@
+import { isBatchType } from '../shared/batch-contract.mjs';
 import { createId } from "../shared/ids.mjs";
 
 export class Scheduler {
@@ -370,6 +371,22 @@ export function choosePlacement(
             ),
         )
     ) {
+      continue;
+    }
+
+    // External batch types are reserved, and need exact ready v2 batch
+    // advertisements even if a legacy client omits capability constraints.
+    if (isBatchType(workload.capability)) continue;
+    if (isBatchType(workload.type)) {
+      const matches = (worker.adapterManifests ?? []).filter(m => m.type === workload.type);
+      if (matches.length !== 1 || matches[0].schemaVersion !== 2 ||
+          matches[0].executionMode !== 'bounded-process' || !capabilities.has(workload.type)) continue;
+      const health = (worker.adapterHealth ?? []).filter(h => h.type === workload.type &&
+        h.schemaVersion === 2 && h.adapterId === matches[0].adapterId);
+      if (health.length !== 1 || health[0].state !== 'ready' || health[0].code !== 'ready') continue;
+    } else if (workload.type && (worker.adapterManifests ?? []).some(m =>
+        m.type === workload.type && m.schemaVersion === 2)) {
+      // V2 session-only implementation cannot execute a legacy job.
       continue;
     }
 

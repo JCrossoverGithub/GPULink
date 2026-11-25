@@ -9,6 +9,8 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { ADAPTER_IPC_TYPES, decodeAdapterIpcText } from './adapter-ipc-v1.mjs';
 import { startAdapterSubprocess } from './adapter-subprocess-supervisor.mjs';
+import { executeBatchSubprocess } from './batch-subprocess.mjs';
+import { isBatchType, validBatchType } from '../shared/batch-contract.mjs';
 import { validateAdapterManifest } from '../shared/adapter-manifest.mjs';
 
 const CAT_LIMIT = 65_536;
@@ -63,6 +65,7 @@ function validateCatalog(value) {
   if (!sameKeys(value, ['schemaVersion', 'adapters']) || value.schemaVersion !== 1 ||
     !Array.isArray(value.adapters) || value.adapters.length > 64) throw bad('catalog_schema');
   const identities = new Set();
+  const batchTypes = new Set();
   for (const item of value.adapters) {
     if (![
       ['manifest', 'command'],
@@ -80,7 +83,13 @@ function validateCatalog(value) {
       throw bad('unsupported_completion_mode');
     }
     const m = validateAdapterManifest(item.manifest, 'approved subprocess adapter');
-    if (m.schemaVersion !== 2 || m.executionMode !== 'streaming-gateway') throw bad('adapter_manifest');
+    const batch = m.executionMode === 'bounded-process';
+    if (m.schemaVersion !== 2 || (batch ? !validBatchType(m.type) :
+        m.executionMode !== 'streaming-gateway' || isBatchType(m.type))) throw bad('adapter_manifest');
+    if (batch) {
+      if (item.manifest.type !== m.type || item.completionMode !== undefined || batchTypes.has(m.type)) throw bad('invalid_batch_spec');
+      batchTypes.add(m.type);
+    }
     if (identities.has(m.adapterId)) throw bad('duplicate_adapter_id');
     identities.add(m.adapterId);
     const c = item.command;
@@ -109,7 +118,7 @@ async function verifyCommand(command) {
 }
 
 /** Returns standard sessionAdapters; no client-controlled executable selection. */
-export async function loadApprovedSubprocessSessionAdapters(catalogPath = null) {
+export async function loadApprovedSubprocessAdapters(catalogPath = null) {
   if (catalogPath === null) return [];
   // Catalog needs path and ownership protection just as its approved assets do.
   if (!isAbsolute(catalogPath)) throw bad('absolute_catalog_required');
@@ -138,10 +147,25 @@ export async function loadApprovedSubprocessSessionAdapters(catalogPath = null) 
     async readinessProbe() {
       try { await verifyCommand(command); return true; } catch { return false; }
     },
-    async handleSession(session, context) {
-      return bridgeSubprocessSession(session, context, command, completionMode, executionLimits);
-    },
+    ...(manifest.executionMode === 'bounded-process' ? {
+      async executeJob(job, context) {
+        if (job.type !== manifest.type) throw bad('batch_type_mismatch');
+        await verifyCommand(command);
+        return executeBatchSubprocess(job, context, command, executionLimits);
+      },
+    } : {
+      async handleSession(session, context) {
+        return bridgeSubprocessSession(session, context, command, completionMode, executionLimits);
+      },
+    }),
   }));
+}
+
+// Historical session-only entry point: never silently load a batch as a session.
+export async function loadApprovedSubprocessSessionAdapters(catalogPath = null) {
+  const adapters = await loadApprovedSubprocessAdapters(catalogPath);
+  if (adapters.some(a => a.manifest.executionMode !== 'streaming-gateway')) throw bad('adapter_manifest');
+  return adapters;
 }
 
 /**

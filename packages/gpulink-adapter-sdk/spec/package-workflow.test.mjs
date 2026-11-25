@@ -114,3 +114,16 @@ test('CLI reports integrity, emits existing trusted catalog schema and never act
   assert.notEqual(wrong.status,0);
   assert.ok(!output.stdout.includes('GPULINK_CLIENT_TOKEN'));
 });
+
+test('batch package uses explicit reserved bounded-process manifest and no streaming completion mode', async t => {
+  const root=await temp(t); const sourceDir=await author(root);
+  const recipe=path.join(sourceDir,'gpulink.adapter.json');
+  const manifest={...spec.manifest,type:'external.batch.test',executionMode:'bounded-process'};
+  await writeFile(recipe,JSON.stringify({schemaVersion:1,manifest,entry:'echo.py'}));
+  const bundleDir=path.join(root,'batch');
+  const packed=await packAdapter({sourceDir,outDir:bundleDir});
+  assert.deepEqual(packed.lock.manifest,manifest);
+  if(pythonExecutable) assert.equal((await operatorCatalogCandidate({bundleDir,interpreter:pythonExecutable})).adapters[0].manifest.executionMode,'bounded-process');
+  await writeFile(recipe,JSON.stringify({...spec,manifest}));
+  await assert.rejects(packAdapter({sourceDir,outDir:path.join(root,'bad')}),fails('unsupported_completion_mode'));
+});

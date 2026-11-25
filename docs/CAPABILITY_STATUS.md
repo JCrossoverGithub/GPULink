@@ -30,20 +30,21 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | Visual operations console | Yes (read-only) | Angular/Flask build and test coverage in CI | Not a general-purpose managed cluster control panel |
 | Independent two-host operator deployment | Yes (manual operator-guided packaged path) | October 24 source-checkout acceptance; November 25 PR #32 packaged server/worker diagnostic and lifecycle acceptance | Manual ingress/enrollment; mixed protocol-compatible artifact revisions; no independent newcomer acceptance |
 | Managed LAN onboarding | Yes | PR #33 (November 25): physical WSL2 NAT provisioning, enrollment, remote diagnostic, durable result and automatic cleanup; 8 CI checks passed | Optional WSL2 NAT private LAN foreground session; no generalized native service installer or automatic in-place IP repair |
-| Installed trusted external GPU workloads | Yes | PR #34 (November 25): independently packaged external CUDA session, correct matrix result, persisted allocation/release, 8 CI checks passed | Existing GLIP subprocess/session backend; no arbitrary custom durable jobs or hostile-code sandbox |
-| Uncertain running-job cleanup holds | DEV-04B1 candidate | [Job cleanup safety](JOB_CLEANUP_SAFETY.md); PostgreSQL and installed acceptance pending | Conservative durable quarantine and explicit operator-attested recovery, not verified hardware isolation or external batch dispatch |
+| Installed trusted external GPU workloads | Yes | PR #34 (November 25): independently packaged external CUDA session, correct matrix result, persisted allocation/release, 8 CI checks passed | Existing GLIP subprocess/session backend; no hostile-code sandbox |
+| Uncertain running-job cleanup holds | Yes | PR #35 (November 25): 67 local tests, installed acceptance and 9 CI checks including PostgreSQL; [job cleanup safety](JOB_CLEANUP_SAFETY.md) | Conservative durable quarantine and explicit operator-attested recovery, not verified hardware isolation |
+| Installed durable external batch workloads | DEV-04B2 candidate | [External batch preview](EXTERNAL_BATCH_PREVIEW.md); physical GPU and installed acceptance pending | Operator-approved bounded JSON jobs, not arbitrary-code isolation or large artifacts |
 
 ## How to verify the claimed boundaries
 
 - **Local installed GPU path:** [GPU diagnostic gate](INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md) and [CLI package/lifecycle](CLI_DISTRIBUTION.md).
 - **Consumer/adapter roles and two-machine evidence:** [Getting started](GETTING_STARTED.md), [TypeScript SDK](../packages/gpulink-sdk/README.md), [.NET SDK](../packages/gpulink-dotnet/GPULink.Client/README.md), and [Adapter SDK](../packages/gpulink-adapter-sdk/README.md).
 - **Historical AWS acceptance:** [Phase 4E migration](security/aws-phase4e-production-acceptance-2026-10-13.md) and [Roadmap](ROADMAP.md). These records are not a live status check.
-- **Current CI:** [GitHub Actions workflow](../.github/workflows/ci.yml) tests Linux/Windows Core, the dashboard, and the .NET SDK. It does not automatically perform physical GPU diagnostics or provision a disposable PostgreSQL instance for the optional integration suite.
+- **Current CI:** [GitHub Actions workflow](../.github/workflows/ci.yml) tests Linux/Windows Core, the dashboard, and the .NET SDK. It provisions disposable PostgreSQL for the job cleanup integration gate; physical GPU diagnostics and other optional integration suites are not automatically run.
 
 ## Outstanding adoption and operational gates
 
 1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 delivered the [remote worker preview](REMOTE_WORKER_PREVIEW.md) and passed guided physical acceptance (PR #32). The [managed LAN onboarding preview](MANAGED_LAN_PREVIEW.md) passed physical acceptance in PR #33. Version upgrades/rollback and independent newcomer acceptance remain outstanding.
-2. **Disposable PostgreSQL CI acceptance:** run and clean up database-backed integration tests separately from normal GPU-free CI, including explicit scope acknowledgments.
+2. **Disposable PostgreSQL CI acceptance:** job cleanup gate passed in PR #35; additional optional database integration suites remain separately scoped.
 3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
 4. **Adapter portability and isolation:** accept at least one second independently authored, non-ASR workload; keep trusted operator approval separate from claims of arbitrary-code sandboxing.
 5. **Operator upgrade / rollback and lifecycle ownership:** verify installation migration and crash recovery outside the original deployment, rather than extrapolating the local developer preview into production supervision.

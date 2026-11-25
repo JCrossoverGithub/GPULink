@@ -32,14 +32,16 @@ function validateEntry(entry) {
 }
 function validateManifest(m) {
   requireThat(exact(m, ['schemaVersion','type','adapterId','version','executionMode']) &&
-    m.schemaVersion === 2 && m.executionMode === 'streaming-gateway' &&
+    m.schemaVersion === 2 && (m.executionMode === 'bounded-process' ?
+      /^external\.batch\.[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(m.type) :
+      m.executionMode === 'streaming-gateway' && typeof m.type === 'string' && !m.type.startsWith('external.batch.')) &&
     typeof m.type === 'string' && m.type.length > 0 && m.type.length <= 100 &&
     typeof m.adapterId === 'string' && m.adapterId.length <= 200 && IDENTIFIER.test(m.adapterId) &&
     typeof m.version === 'string' && m.version.length <= 100 && SEMVER.test(m.version),
   'invalid_v2_manifest');
   // Stable field order for byte-identical package locks from equivalent recipes.
   return {schemaVersion:2, type:m.type, adapterId:m.adapterId,
-    version:m.version, executionMode:'streaming-gateway'};
+    version:m.version, executionMode:m.executionMode};
 }
 function readDescriptor(v, isLock) {
   const keys = ['schemaVersion', 'manifest', 'entry', ...(isLock ? ['sha256'] : [])];
@@ -48,7 +50,7 @@ function readDescriptor(v, isLock) {
     'invalid_package_descriptor');
   validateEntry(v.entry);
   const manifest = validateManifest(v.manifest);
-  requireThat(v.completionMode === undefined || v.completionMode === 'explicit-text-v1',
+  requireThat(v.completionMode === undefined || (manifest.executionMode === 'streaming-gateway' && v.completionMode === 'explicit-text-v1'),
     'unsupported_completion_mode');
   if (isLock) requireThat(typeof v.sha256 === 'string' && HEX.test(v.sha256), 'invalid_lock_hash');
   return {schemaVersion:1, manifest, entry:v.entry,

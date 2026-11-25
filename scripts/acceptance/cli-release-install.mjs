@@ -176,16 +176,19 @@ try {
     writeFileSync(catalog,JSON.stringify({schemaVersion:1,adapters:[{
       manifest:{schemaVersion:2,type:'example.packaged',adapterId:'example.packaged.v1',version:'1.0.0',executionMode:'streaming-gateway'},
       command:{executable,sha256:sha(readFileSync(executable)),args:[program],assets:[{path:program,sha256:sha(readFileSync(program))}]},
+    },{
+      manifest:{schemaVersion:2,type:'external.batch.packaged',adapterId:'example.packaged.batch.v1',version:'1.0.0',executionMode:'bounded-process'},
+      command:{executable,sha256:sha(readFileSync(executable)),args:[program],assets:[{path:program,sha256:sha(readFileSync(program))}]},
     }]}),{mode:0o600});
     const approval = [...w,'worker','approve-catalog','--file',catalog,'--sha256',sha(readFileSync(catalog))];
     cli(approval);
     cli(approval,1);
-    assert.match(cli([...w,'worker','doctor']),/PASS: 1 approved subprocess adapter/);
+    assert.match(cli([...w,'worker','doctor']),/PASS: 2 approved subprocess adapter/);
     writeFileSync(program,'changed');
     cli([...w,'worker','doctor'],1);
     cli([...w,'worker','clear-catalog']);
     cli([...w,'worker','doctor']);
-    console.log('PASS: installed trusted workload approval, tamper refusal and removal; no workload execution');
+    console.log('PASS: installed mixed session/batch workload approval, tamper refusal and removal; no workload execution');
     cli([...w,'worker','enroll','--bundle',bundle],1);
     cli([...w,'local','start'],1);
     const wrong = path.join(scratch,'s','wrong-bundle.json');

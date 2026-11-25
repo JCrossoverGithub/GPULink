@@ -4,6 +4,7 @@ import { createId } from "../shared/ids.mjs";
 import { validateAdapterHealth } from "../shared/adapter-health.mjs";
 import { validateAdapterManifests } from "../shared/adapter-manifest.mjs";
 import { validateModelInventory } from "../shared/model-inventory.mjs";
+import { isBatchType, validBatchType, batchJson } from '../shared/batch-contract.mjs';
 import { validateWorkloadPayload } from "../shared/workload-contracts.mjs";
 import { validateSessionRequest } from "../shared/session-contract.mjs";
 import {
@@ -229,6 +230,7 @@ export class ControlPlaneService {
   ) {
     const request =
       validateSessionRequest(input);
+    if (isBatchType(request.capability)) throw new ValidationError("external batch type requires the job API");
 
     const now = this.clock();
 
@@ -791,6 +793,11 @@ export class ControlPlaneService {
     const job =
       await this.database.transaction(
         async (transaction) => {
+          const current = await transaction.getJob(jobId);
+          if (isBatchType(current?.type)) {
+            if (outcome === 'succeeded') batchJson(result, 'batch result');
+            else if (result !== null) throw new ValidationError('failed batch must not contain a result');
+          }
           const stored =
             await transaction.finishJob(
               jobId,
@@ -1033,6 +1040,14 @@ function validateJob(input, idempotencyHeader, now) {
   const object = requireObject(input, "job");
   const constraints = optionalObject(object.constraints, "constraints");
   const type = requireString(object.type, "type", { maximum: 100 });
+  const payload = validateWorkloadPayload(type, optionalObject(object.payload, "payload"));
+  const requiredCapabilities = stringArray(constraints.capabilities ?? [type], "constraints.capabilities");
+  if (isBatchType(type)) {
+    if (!validBatchType(type)) throw new ValidationError("invalid external batch type");
+    if (!requiredCapabilities.includes(type)) throw new ValidationError("external batch requires its own capability");
+    batchJson(payload, "batch input");
+  }
+
   const gpuCount = boundedInteger(constraints.gpuCount, "constraints.gpuCount", {
     minimum: 1,
     maximum: 1,
@@ -1053,12 +1068,9 @@ function validateJob(input, idempotencyHeader, now) {
       maximum: 1_000_000,
       fallback: 1,
     }),
-    requiredCapabilities: stringArray(
-      constraints.capabilities ?? [object.type],
-      "constraints.capabilities",
-    ),
+    requiredCapabilities,
     requestedModel: optionalString(constraints.model, "constraints.model", null, { maximum: 300 }),
-    payload: validateWorkloadPayload(type, optionalObject(object.payload, "payload")),
+    payload,
     maxAttempts: boundedInteger(object.maxAttempts, "maxAttempts", {
       minimum: 1,
       maximum: 20,

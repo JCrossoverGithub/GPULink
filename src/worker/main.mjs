@@ -1,14 +1,15 @@
 import { WorkerAgent } from "./agent.mjs";
 import { loadWorkerConfig } from "./config.mjs";
 import { loadApprovedSessionAdapters } from "./approved-session-adapters.mjs";
-import { loadApprovedSubprocessSessionAdapters } from "./approved-subprocess-adapters.mjs";
+import { loadApprovedSubprocessAdapters } from "./approved-subprocess-adapters.mjs";
 
 const config = loadWorkerConfig();
+const subprocessAdapters = await loadApprovedSubprocessAdapters(config.approvedSubprocessCatalogPath);
 const sessionAdapters = [
   ...await loadApprovedSessionAdapters(config.approvedAdapterCatalogPath),
-  ...await loadApprovedSubprocessSessionAdapters(config.approvedSubprocessCatalogPath),
+  ...subprocessAdapters.filter(a => a.manifest.executionMode === 'streaming-gateway'),
 ];
-const agent = new WorkerAgent(config, { sessionAdapters });
+const agent = new WorkerAgent(config, { sessionAdapters, batchAdapters: subprocessAdapters.filter(a => a.manifest.executionMode === 'bounded-process') });
 await agent.start();
 
 let stopping = false;

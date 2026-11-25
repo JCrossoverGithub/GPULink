@@ -88,3 +88,16 @@ See `docs/developer-platform/adapter-sdk-developer-contract-v0.1.md` for the
 pre-v1 export matrix, error/compatibility policy, author steps and opt-in
 packaged real-GPU acceptance. Existing echo helpers are **not** general-purpose
 streaming and model readiness/consumption are workload-specific.
+
+### Durable external batch preview (DEV-04B2)
+
+The package recipe also accepts a v2 `bounded-process` manifest with a unique
+`external.batch.*` type and no `completionMode` field. Use the same pack,
+inspect and operator catalog review workflow. Batch uses the existing GLIP
+HELLO/READY handshake, one JSON object TEXT input, empty END, one JSON object
+TEXT output, empty END acknowledgment and exit 0. Each JSON object is limited
+to 32 KiB UTF-8. The echo conformance command remains a streaming echo test,
+not a batch semantic or GPU qualification test. Operators approve trusted code
+and runtime; do not launch escaping descendants. The client uses the existing
+job API and can retrieve persistent results after disconnecting. No registry
+publication, arbitrary-code sandbox or large artifact transport is implied.
