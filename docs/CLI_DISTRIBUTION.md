@@ -1,6 +1,6 @@
 # GPULink CLI preview — package and configuration contract
 
-**Status:** private local-installation preview. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds a versioned dependency-bundled artifact for offline consumer installation; publication requires a separate release decision. Not an npm registry release, OS installer, production service supervisor, or automatic hardware setup.
+**Status:** private local and Linux server-installation preview. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds a versioned dependency-bundled artifact for offline consumer installation; publication requires a separate release decision. Not an npm registry release, OS installer, production service supervisor, or automatic hardware setup.
 
 ## Roles and boundaries
 
@@ -39,7 +39,7 @@ candidate, not a globally published command yet. To invoke `gpulink` by name,
 place the consumer directory's `node_modules/.bin` on your `PATH` or install
 the tarball to a user-owned npm prefix. **Do not elevate privileges.**
 
-## Configuration discovery (local preview only)
+## Configuration discovery (local and server previews)
 
 - `gpulink init local` creates a new private installation at
   `~/.gpulink/instances/local`, independent of the current directory and CLI
@@ -53,8 +53,8 @@ the tarball to a user-owned npm prefix. **Do not elevate privileges.**
   setups, it refuses inherited conflicting profile environment values.
 - To interact with a non-local GPULink deployment, keep using explicit
   `GPULINK_URL` / scoped credentials for now; `--config-dir` currently only
-  accepts the generated localhost profile contract, not arbitrary production
-  configuration files.
+  accepts generated local or server profiles, not arbitrary production
+  configuration files. See [SERVER_PREVIEW.md](SERVER_PREVIEW.md) for the separate server profile.
 - Existing `data/self-hosted-local` installations are **not moved or modified**.
   Pass their absolute path through `--config-dir`, or as the legacy final
   argument to `local smoke`.
@@ -76,7 +76,7 @@ occupied port. Document architecture/hardware support accurately; do not
 conflate CLI portability with native GPU worker support.
 
 Publishing, compatibility policy, signing/provenance, upgrade/recovery,
-non-local installation support, and production-grade service supervision
+remote worker enrollment, and production-grade service supervision
 remain separate future milestones. A Linux-only developer preview is described below.
 
 ## Read-only local status (single-machine development)
@@ -225,3 +225,9 @@ worker, runs **one explicitly authorized** bounded GPU-status diagnostic,
 verifies persistent SQLite completion after a control-plane restart, and
 shuts down services in dependency order. It is **not** run by CI or the
 normal test command; only syntax, contract, and refusal tests run unattended.
+
+## Independent Linux server preview
+
+See [SERVER_PREVIEW.md](SERVER_PREVIEW.md) for the separate server profile,
+reused owned lifecycle and operator-managed HTTPS ingress. Remote worker
+enrollment remains a separate feature.

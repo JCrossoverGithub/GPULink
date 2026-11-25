@@ -15,6 +15,8 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 | Capability | Implemented | Accepted evidence | Distribution / current limit |
 | --- | --- | --- | --- |
+| Versioned CLI distribution | Yes | PR #30 (November 25): Node 24 local acceptance, Linux/Windows package CI passed | Private downloadable CI candidate; not a registry release |
+| Linux server profile with operator-managed HTTPS ingress | Implemented (DEV-02 candidate) | Installed acceptance pending until reviewed CI/host evidence | Single loopback backend and separately configured proxy; no remote worker enrollment or public TLS provisioning |
 | Scheduler, leases, workers and finite GPU jobs | Yes | Physical fleet, AWS/K3s history (October 13); fresh installed local diagnostic (October 20) | Approved jobs only; not raw shell or pooled VRAM |
 | Linux/WSL local managed control plane | Yes | Source-built CLI install, start/status/stop and restart passed in PRs #22–#25 | Private CLI preview; localhost scope; not Windows-native service management |
 | Linux/WSL managed local GPU worker | Yes | One physical worker registered, accepted bounded job, and shut down in reverse dependency order (PRs #24–#25) | Explicit `--accept-assigned-work`; no remote enrollment through `local` |
@@ -36,7 +38,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 ## Outstanding adoption and operational gates
 
-1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. Externally installable control-plane/worker distributions, secure guided TLS/credential enrollment, version upgrades/rollback, and independent newcomer acceptance remain outstanding.
+1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 introduces the server profile. Secure guided remote worker enrollment, end-to-end external-host acceptance, version upgrades/rollback, and independent newcomer acceptance remain outstanding.
 2. **Disposable PostgreSQL CI acceptance:** run and clean up database-backed integration tests separately from normal GPU-free CI, including explicit scope acknowledgments.
 3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
 4. **Adapter portability and isolation:** accept at least one second independently authored, non-ASR workload; keep trusted operator approval separate from claims of arbitrary-code sandboxing.

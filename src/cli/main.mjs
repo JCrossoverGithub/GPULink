@@ -1,9 +1,10 @@
 #!/usr/bin/env node
+import { defaultServerSetupDirectory, hasServerMarker, readServerSetup, runServerInit, runServerDoctor, runServerLifecycle } from "./server-profile.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
 import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
 import { runLocalStatus } from "./local-status.mjs";
-import { runLocalStart, runLocalStop, runLocalWorkerStart, runLocalWorkerStop } from "./local-lifecycle.mjs";
+import { inspectManagedLocal, runLocalStart, runLocalStop, runLocalWorkerStart, runLocalWorkerStop } from "./local-lifecycle.mjs";
 import { defaultLocalSetupDirectory, parseGlobalCliOptions } from "./setup-directory.mjs";
 import { normalizeWorkerControlPlaneUrl } from "../worker/config.mjs";
 import { existsSync, readFileSync } from "node:fs";
@@ -18,7 +19,8 @@ import {
 try {
   const { args, directory: explicitDirectory } = parseGlobalCliOptions(process.argv.slice(2));
   const [command, ...arguments_] = args;
-  const defaultDirectory = defaultLocalSetupDirectory();
+  const serverCommand = command === "server" || (command === "init" && arguments_[0] === "server") || (command === "doctor" && arguments_[0] === "server");
+  const defaultDirectory = serverCommand ? defaultServerSetupDirectory() : defaultLocalSetupDirectory();
   const selectedDirectory = explicitDirectory ??
     (existsSync(defaultDirectory) ? defaultDirectory : null);
   if (command === "--version" || command === "version") {
@@ -27,14 +29,25 @@ try {
   } else if (command === "--help" || command === "help" || command === "-h") {
     usage(false);
   } else {
-    // Only generated localhost installations are selected in this milestone.
-    // A remote/production deployment must still supply explicit environment configuration.
+    // Server management uses a separate profile and the same owned loopback backend.
+    // Local worker/smoke commands cannot operate on server installations.
+    if (serverCommand) {
+      process.exitCode = command === "init" ? runServerInit(arguments_.slice(1), explicitDirectory) :
+        command === "doctor" ? await runServerDoctor(arguments_.slice(1), selectedDirectory) :
+        await runServerLifecycle(arguments_, selectedDirectory);
+    } else {
+    if (command === "local" && hasServerMarker(selectedDirectory)) throw new Error("Server profile selected; use gpulink server start/status/stop. Local worker and smoke are not supported here.");
+    if (command === "local" && arguments_[0] === "smoke" && arguments_[2] && hasServerMarker(arguments_[2])) throw new Error("Local smoke cannot use a server profile.");
     if (selectedDirectory && command !== "init") {
       if (command === "local" && arguments_[0] === "smoke") {
         if (explicitDirectory && arguments_[2]) throw new Error("Choose either --config-dir or a positional setup directory, not both.");
         if (!arguments_[2]) arguments_[2] = selectedDirectory;
       } else if (["doctor", "workers", "jobs", "job", "wait", "submit-diagnostic", "submit-benchmark", "drain", "resume"].includes(command)) {
-        const profiles = readLocalSmokeSetup(selectedDirectory).profiles;
+        const isServer = hasServerMarker(selectedDirectory);
+        const setup = isServer ? readServerSetup(selectedDirectory) : readLocalSmokeSetup(selectedDirectory);
+        if (isServer && command === "doctor" && arguments_[0] === "worker") throw new Error("Server profiles do not manage GPU workers; remote enrollment is separate.");
+        if (isServer && command !== "doctor" && await inspectManagedLocal(setup) !== "ready") throw new Error("Server ownership is not verified; no API credential was sent.");
+        const profiles = setup.profiles;
         const role = command === "doctor" ? arguments_[0] :
           (["workers", "drain", "resume"].includes(command) ? "admin" : "client");
         const filename = role === "control-plane" ? "control-plane.env" :
@@ -142,6 +155,7 @@ try {
       usage(true);
       process.exitCode = 2;
   }
+    }
   }
 } catch (error) {
   console.error(error.message);
@@ -183,6 +197,7 @@ async function request(method, path, body, scope, extraHeaders = {}) {
   } catch {
     throw new Error("GPULINK_URL requires HTTPS outside exact localhost loopback and must omit URL credentials, query, and fragment.");
   }
+  if (baseUrl.startsWith("https:") && process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") throw new Error("Refusing HTTPS requests with TLS verification disabled.");
   const token = requiredEnvironment(
     scope === "admin" ? "GPULINK_ADMIN_TOKEN" : "GPULINK_CLIENT_TOKEN",
   );
@@ -227,6 +242,9 @@ function usage(error = true) {
   const output = error ? console.error : console.log;
   output(`Usage:
   gpulink [--config-dir DIRECTORY] init local [output-directory]
+  gpulink [--config-dir DIRECTORY] init server --public-url HTTPS_ORIGIN
+  gpulink [--config-dir DIRECTORY] server <start|status|stop>
+  gpulink [--config-dir DIRECTORY] doctor server [--live]
   gpulink [--config-dir DIRECTORY] local worker start --accept-assigned-work
   gpulink [--config-dir DIRECTORY] local worker stop
   gpulink [--config-dir DIRECTORY] local worker status
@@ -246,5 +264,7 @@ function usage(error = true) {
   gpulink --version | --help
 
 Default local setup: ~/.gpulink/instances/local
-Remote/non-local operations require separately configured GPULINK_* environment values.`);
+Default server setup: ~/.gpulink/instances/server
+Server management: Linux, loopback backend, operator-managed trusted HTTPS ingress.
+Remote clients/workers still require separately configured GPULINK_* environment values.`);
 }

@@ -51,7 +51,7 @@ function writePrivateFile(filename, contents) {
  * Create a fresh, localhost-only GPULink configuration. Never starts a service
  * or modifies an existing deployment. The generated values are never returned.
  */
-export function createLocalSetup(outputDirectory = defaultDirectory) {
+export function createLocalSetup(outputDirectory = defaultDirectory, { publicOrigin } = {}) {
   const directory = path.resolve(outputDirectory);
   if (existsSync(directory)) {
     throw new Error("Setup directory already exists; choose a new directory. Nothing was overwritten.");
@@ -96,12 +96,15 @@ export function createLocalSetup(outputDirectory = defaultDirectory) {
     for (const file of files) {
       writePrivateFile(path.join(directory, file), renderEnvironment(profiles[file]));
     }
+    if (publicOrigin !== undefined) {
+      writePrivateFile(path.join(directory, "server.json"), JSON.stringify({ schemaVersion: 1, publicOrigin }, null, 2) + "\n");
+    }
   } catch (error) {
     // This directory did not exist before this operation; remove only its contents.
     rmSync(directory, { recursive: true, force: true });
     throw error;
   }
-  return { directory, filenames: [...files] };
+  return { directory, filenames: publicOrigin === undefined ? [...files] : [...files, "server.json"] };
 }
 
 export function runLocalInit(args, output = console) {
