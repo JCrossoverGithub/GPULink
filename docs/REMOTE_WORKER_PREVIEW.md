@@ -146,3 +146,9 @@ Do not label the hardware exercise accepted before it actually runs.
 For the optional WSL2 NAT private LAN automation candidate (DEV-03B), see
 [managed LAN setup](MANAGED_LAN_PREVIEW.md). The manual operator-managed
 server and worker commands above remain available independently.
+
+## Trusted workload extension (DEV-04A candidate)
+
+The installed remote-worker CLI can explicitly approve an existing pinned
+subprocess catalog while stopped. See [installed workload preview](INSTALLED_WORKLOAD_PREVIEW.md)
+for trust boundaries, commands and pending acceptance.

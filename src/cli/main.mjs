@@ -260,6 +260,8 @@ function usage(error = true) {
   gpulink [--config-dir DIRECTORY] server <start|status|stop>
   gpulink [--config-dir SERVER] server worker-bundle --output FILE
   gpulink [--config-dir WORKER] worker enroll --bundle FILE [--ca-file PEM]
+  gpulink [--config-dir WORKER] worker approve-catalog --file FILE --sha256 REVIEWED_SHA256
+  gpulink [--config-dir WORKER] worker clear-catalog
   gpulink [--config-dir WORKER] worker doctor [--live] [--gpu]
   gpulink [--config-dir WORKER] worker start --accept-assigned-work
   gpulink [--config-dir WORKER] worker <status|stop>

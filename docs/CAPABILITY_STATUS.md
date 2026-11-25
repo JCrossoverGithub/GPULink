@@ -29,7 +29,8 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | Adapter SDK and pinned subprocess packaging | Yes | Echo conformance, reviewable packaging, independently approved adapters | `@gpulink/adapter-sdk` **private**, pre-v1; approved subprocess is **not** a hostile-code sandbox |
 | Visual operations console | Yes (read-only) | Angular/Flask build and test coverage in CI | Not a general-purpose managed cluster control panel |
 | Independent two-host operator deployment | Yes (manual operator-guided packaged path) | October 24 source-checkout acceptance; November 25 PR #32 packaged server/worker diagnostic and lifecycle acceptance | Manual ingress/enrollment; mixed protocol-compatible artifact revisions; no independent newcomer acceptance |
-| Managed LAN onboarding | DEV-03B candidate | Source regression and physical Windows/WSL acceptance required | Optional WSL2 NAT private LAN foreground session; no generalized native service installer |
+| Managed LAN onboarding | Yes | PR #33 (November 25): physical WSL2 NAT provisioning, enrollment, remote diagnostic, durable result and automatic cleanup; 8 CI checks passed | Optional WSL2 NAT private LAN foreground session; no generalized native service installer or automatic in-place IP repair |
+| Installed trusted external GPU workloads | DEV-04A candidate | Existing local CUDA session accepted October 16; installed catalog approval and cross-host matrix computation acceptance pending | Existing GLIP subprocess/session backend; no arbitrary custom durable jobs or hostile-code sandbox |
 
 ## How to verify the claimed boundaries
 
@@ -40,7 +41,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 ## Outstanding adoption and operational gates
 
-1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 delivered the [remote worker preview](REMOTE_WORKER_PREVIEW.md) and passed guided physical acceptance (PR #32). The [managed LAN onboarding candidate](MANAGED_LAN_PREVIEW.md), version upgrades/rollback, and independent newcomer acceptance remain outstanding.
+1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 delivered the [remote worker preview](REMOTE_WORKER_PREVIEW.md) and passed guided physical acceptance (PR #32). The [managed LAN onboarding preview](MANAGED_LAN_PREVIEW.md) passed physical acceptance in PR #33. Version upgrades/rollback and independent newcomer acceptance remain outstanding.
 2. **Disposable PostgreSQL CI acceptance:** run and clean up database-backed integration tests separately from normal GPU-free CI, including explicit scope acknowledgments.
 3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
 4. **Adapter portability and isolation:** accept at least one second independently authored, non-ASR workload; keep trusted operator approval separate from claims of arbitrary-code sandboxing.

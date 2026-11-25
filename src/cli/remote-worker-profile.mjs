@@ -1,5 +1,5 @@
-import { randomBytes, X509Certificate } from 'node:crypto';
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { randomBytes, X509Certificate, createHash } from 'node:crypto';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, linkSync, unlinkSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import https from 'node:https';
@@ -7,8 +7,9 @@ import { rootCertificates } from 'node:tls';
 import { normalizeServerOrigin, readServerSetup } from './server-profile.mjs';
 import { runDoctor } from './doctor.mjs';
 import { loadWorkerConfig } from '../worker/config.mjs';
+import { loadApprovedSubprocessSessionAdapters } from '../worker/approved-subprocess-adapters.mjs';
 import { discoverGpus, GPUInventoryError } from '../worker/gpu-inventory.mjs';
-import { inspectManagedLocal, runRemoteWorkerStart, runRemoteWorkerStop } from './local-lifecycle.mjs';
+import { inspectManagedLocal, runRemoteWorkerStart, runRemoteWorkerStop, withStoppedRemoteWorker } from './local-lifecycle.mjs';
 
 const marker = 'remote-worker.json';
 const caFile = 'worker-ca.pem';
@@ -103,6 +104,51 @@ export function readRemoteWorkerSetup(directory) {
   loadWorkerConfig(profile);
   return {directory:target,kind:'remote-worker',installationKey:value.installationKey,publicOrigin:value.publicOrigin,ca,profiles:{'worker.env':profile}};
 }
+const catalogName = 'approved-subprocess.json';
+export function remoteWorkerCatalogPath(setup) {
+  const file = path.join(setup.directory, catalogName);
+  if (!existsEntry(file)) return null;
+  readBounded(file, 65536); // strict owner-only, regular file, no symlinks
+  return file;
+}
+async function changeCatalog(command, args, directory, output) {
+  if (command === 'approve-catalog' ?
+      (args.length !== 4 || args[0] !== '--file' || args[2] !== '--sha256' || !secretPattern.test(args[3])) : args.length !== 0) {
+    output.error('Usage: worker approve-catalog --file FILE --sha256 REVIEWED_SHA256 | worker clear-catalog');
+    return 2;
+  }
+  try {
+    const setup = readRemoteWorkerSetup(directory);
+    return await withStoppedRemoteWorker(setup, async () => {
+      const target = path.join(setup.directory, catalogName);
+      if (command === 'clear-catalog') {
+        if (existsEntry(target)) {
+          const st = lstatSync(target);
+          if (!st.isFile() || st.isSymbolicLink() || st.uid !== process.getuid() || (st.mode & 0o077)) throw new Error('Unsafe catalog path.');
+          unlinkSync(target);
+        }
+        output.log('Catalog disabled for subsequent starts. Workload files retained.');
+        return 0;
+      }
+      if (existsEntry(target)) throw new Error('Catalog already approved; clear it explicitly while stopped.');
+      const bytes = readBounded(path.resolve(args[1]), 65536);
+      if (createHash('sha256').update(bytes).digest('hex') !== args[3]) throw new Error('Reviewed catalog digest mismatch.');
+      const temp = path.join(setup.directory, `.catalog-${randomBytes(16).toString('hex')}`);
+      writePrivate(temp, bytes);
+      try {
+        const adapters = await loadApprovedSubprocessSessionAdapters(temp);
+        if (!adapters.length) throw new Error('Empty catalog.');
+        linkSync(temp, target); // publish without overwriting existing approval
+        output.log(`Approved ${adapters.length} trusted subprocess adapter(s) for subsequent worker starts. No code executed.`);
+        return 0;
+      } finally { unlinkSync(temp); }
+    });
+  } catch (error) {
+    // Loader messages use stable codes; do not echo catalog contents or paths.
+    output.error(`Catalog operation refused${error.code && /^[a-z_]+$/u.test(error.code) ? `: ${error.code}` : ''}. Require stopped worker, private reviewed catalog, matching digest and pinned assets.`);
+    return 1;
+  }
+}
 // Read-only role check: an authenticated request to a random nonexistent worker's
 // leases route returns the existing structured 404. This is NOT registration.
 export function probeWorkerEndpoint(setup) {
@@ -129,7 +175,18 @@ export async function runWorkerDoctor(args, directory, output=console) {
   if (args.some(arg=>!['--live','--gpu'].includes(arg)) || new Set(args).size!==args.length) {output.error('Usage: gpulink worker doctor [--live] [--gpu]');return 2;}
   try {
     const setup=readRemoteWorkerSetup(directory);
+    const catalog = remoteWorkerCatalogPath(setup);
+    if (catalog) setup.profiles['worker.env'].GPULINK_APPROVED_SUBPROCESS_CATALOG_PATH = catalog;
     if (runDoctor(['worker'],setup.profiles['worker.env'],output)) return 1;
+    if (catalog) {
+      try {
+        const adapters = await loadApprovedSubprocessSessionAdapters(catalog);
+        output.log(`PASS: ${adapters.length} approved subprocess adapter(s) verified; no code executed.`);
+      } catch (error) {
+        output.error(`FAIL: approved subprocess catalog: ${error.code ?? 'verification_failed'}.`);
+        return 1;
+      }
+    }
     if (args.includes('--live')) {
       const result=await probeWorkerEndpoint(setup);
       if(result!=='authorized') {output.error(`FAIL: remote worker HTTPS/authorization: ${result}. Check endpoint, trusted CA, proxy and worker-role credential. No redirects followed.`);return 1;}
@@ -151,6 +208,7 @@ export async function runWorkerDoctor(args, directory, output=console) {
 }
 export async function runWorkerCommand(args,directory,output=console) {
   const [command,...rest]=args;
+  if(['approve-catalog','clear-catalog'].includes(command)) return changeCatalog(command,rest,directory,output);
   if(command==='enroll') return runWorkerEnrollment(rest,directory,output);
   if(command==='doctor') return runWorkerDoctor(rest,directory,output);
   if(command==='start') {

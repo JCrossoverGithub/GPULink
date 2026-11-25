@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "manifest": {
+    "schemaVersion": 2,
+    "type": "example.cuda.matrix",
+    "adapterId": "example.cuda.matrix.v1",
+    "version": "1.0.0",
+    "executionMode": "streaming-gateway"
+  },
+  "entry": "matrix.py",
+  "completionMode": "explicit-text-v1"
+}
