@@ -142,3 +142,7 @@ NVIDIA GPU, server-side inventory, planned idle stop/offline and same-ID
 rejoin, followed by a safe teardown. Record the reviewed artifact SHA,
 host roles (not secrets or private hostnames), GPU model, and observations.
 Do not label the hardware exercise accepted before it actually runs.
+
+For the optional WSL2 NAT private LAN automation candidate (DEV-03B), see
+[managed LAN setup](MANAGED_LAN_PREVIEW.md). The manual operator-managed
+server and worker commands above remain available independently.

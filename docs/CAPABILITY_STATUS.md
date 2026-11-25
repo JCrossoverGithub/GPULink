@@ -17,7 +17,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | --- | --- | --- | --- |
 | Versioned CLI distribution | Yes | PR #30 (November 25): Node 24 local acceptance, Linux/Windows package CI passed | Private downloadable CI candidate; not a registry release |
 | Linux server profile with operator-managed HTTPS ingress | Yes | PR #31 (November 25): installed Linux server lifecycle and real local HTTPS acceptance, all eight CI checks passed | Single loopback backend, separately configured proxy; no public TLS provisioning |
-| Managed remote worker profile | Implemented (DEV-03 candidate) | Packaged and physical cross-host acceptance pending | Trusted worker-role bundle, Linux/NVIDIA diagnostics only; no one-time invite or per-worker revocation |
+| Managed remote worker profile | Yes | [PR #32 acceptance](acceptance/installed-remote-worker-acceptance-2026-11-25.md) (November 25): installed cross-host HTTPS diagnostic, drain, stop, offline and same-identity rejoin; corrected commit CI passed | Trusted worker-role bundle, Linux/NVIDIA diagnostics only; no one-time invite or per-worker revocation |
 | Scheduler, leases, workers and finite GPU jobs | Yes | Physical fleet, AWS/K3s history (October 13); fresh installed local diagnostic (October 20) | Approved jobs only; not raw shell or pooled VRAM |
 | Linux/WSL local managed control plane | Yes | Source-built CLI install, start/status/stop and restart passed in PRs #22–#25 | Private CLI preview; localhost scope; not Windows-native service management |
 | Linux/WSL managed local GPU worker | Yes | One physical worker registered, accepted bounded job, and shut down in reverse dependency order (PRs #24–#25) | Explicit `--accept-assigned-work`; no remote enrollment through `local` |
@@ -28,7 +28,8 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | TypeScript Client SDK | Yes | Build/contract/external-consumer tests | `@gpulink/client` **private**, pre-v1, Node.js 24+; not a verified public npm release |
 | Adapter SDK and pinned subprocess packaging | Yes | Echo conformance, reviewable packaging, independently approved adapters | `@gpulink/adapter-sdk` **private**, pre-v1; approved subprocess is **not** a hostile-code sandbox |
 | Visual operations console | Yes (read-only) | Angular/Flask build and test coverage in CI | Not a general-purpose managed cluster control panel |
-| Independent two-host operator deployment | Operator-guided source-checkout acceptance on October 24; packaged workflow not accepted | G0–G8 passed on separate physical hosts: one GPU diagnostic, lease cleanup, controlled restart, authentication/TLS checks, stale heartbeat, recovery, teardown | Manual TLS/credential/LAN provisioning; not yet a packaged or unguided third-party installation |
+| Independent two-host operator deployment | Yes (manual operator-guided packaged path) | October 24 source-checkout acceptance; November 25 PR #32 packaged server/worker diagnostic and lifecycle acceptance | Manual ingress/enrollment; mixed protocol-compatible artifact revisions; no independent newcomer acceptance |
+| Managed LAN onboarding | DEV-03B candidate | Source regression and physical Windows/WSL acceptance required | Optional WSL2 NAT private LAN foreground session; no generalized native service installer |
 
 ## How to verify the claimed boundaries
 
@@ -39,7 +40,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 ## Outstanding adoption and operational gates
 
-1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 adds the [remote worker preview](REMOTE_WORKER_PREVIEW.md); packaged acceptance, physical external-host acceptance, version upgrades/rollback, and independent newcomer acceptance remain outstanding.
+1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 delivered the [remote worker preview](REMOTE_WORKER_PREVIEW.md) and passed guided physical acceptance (PR #32). The [managed LAN onboarding candidate](MANAGED_LAN_PREVIEW.md), version upgrades/rollback, and independent newcomer acceptance remain outstanding.
 2. **Disposable PostgreSQL CI acceptance:** run and clean up database-backed integration tests separately from normal GPU-free CI, including explicit scope acknowledgments.
 3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
 4. **Adapter portability and isolation:** accept at least one second independently authored, non-ASR workload; keep trusted operator approval separate from claims of arbitrary-code sandboxing.

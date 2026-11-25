@@ -49,7 +49,7 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
     writeFileSync(path.join(output, "README.md"),
       "# @gpulink/cli — Developer preview\n\n" +
       "A self-contained GPULink CLI + matching Core source runtime for independently owned local and Linux server deployments. " +
-      "Requires Node.js 24+. No automatic daemon, GPU workload, TLS ingress, or cloud provisioning.\n" +
+      "Requires Node.js 24+. No daemon, GPU workload, TLS ingress, or cloud provisioning merely by installation. Optional explicit managed LAN setup is a WSL2 NAT preview.\n" +
       "This artifact is private/nonpublished pending clean-machine release acceptance.\n");
     if (!existsSync(path.join(output, "src/cli/main.mjs")) ||
         !existsSync(path.join(output, "src/control-plane/main.mjs")) ||

@@ -58,7 +58,13 @@ try {
   invoke(process.execPath,[npmCli,'install','--global','--prefix',consumer,'--offline','--ignore-scripts','--no-audit','--no-fund',tarball], {cwd,env});
   assert.ok(existsSync(path.join(bin,process.platform === 'win32' ? 'gpulink.cmd' : 'gpulink')));
   assert.equal(cli(['--version']).trim(), release.version);
-  assert.match(cli(['--help']), /gpulink.*config-dir/);
+  const help = cli(['--help']);
+  assert.match(help, /gpulink.*config-dir/);
+  assert.match(help, /setup server --peer PRIVATE_IPV4/);
+  assert.match(help, /join --invite FILE/);
+  cli(['join'],2);
+  cli(['setup','server'],1);
+  console.log('PASS: installed managed onboarding entry points; incomplete commands refused without provisioning');
   console.log('PASS: installed artifact offline, direct gpulink invocation outside checkout');
   cli([...a,'init','local']);
   cli([...a,'doctor','control-plane']);
