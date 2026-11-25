@@ -391,6 +391,9 @@ export class SqlitePersistence {
     );
   }
 
+  listJobCleanupHolds(...args) { return this.#call("listJobCleanupHolds", args); }
+  releaseJobCleanupHold(...args) { return this.#call("releaseJobCleanupHold", args); }
+
   #call(method, args) {
     return this.#enqueue(() => {
       this.#assertOpen();

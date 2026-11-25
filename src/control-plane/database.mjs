@@ -381,13 +381,19 @@ export class ControlPlaneDatabase {
 
   listBlockedGpuResources() {
     return this.database.prepare(`
-      SELECT worker_id AS workerId, gpu_uuid AS gpuUuid
-      FROM gpu_resource_fences
-      WHERE safety_state <> 'clear'
-      ORDER BY worker_id, gpu_uuid
+      SELECT f.worker_id AS workerId, f.gpu_uuid AS gpuUuid,
+        CASE WHEN f.safety_state='quarantined' AND f.attempt_id IS NULL
+          AND f.subject_kind='job' AND EXISTS (
+            SELECT 1 FROM jobs j WHERE j.id=f.subject_id
+              AND j.status IN ('cancelled','failed') AND j.lease_id=f.lease_id
+              AND j.assigned_worker_id=f.worker_id AND j.assigned_gpu_uuid=f.gpu_uuid
+          ) THEN 1 ELSE 0 END AS jobCleanup
+      FROM gpu_resource_fences f
+      WHERE f.safety_state <> 'clear'
+      ORDER BY f.worker_id, f.gpu_uuid
     `).all().map((row) => ({
-      workerId: row.workerId,
-      gpuUuid: row.gpuUuid,
+      workerId: row.workerId, gpuUuid: row.gpuUuid,
+      ...(row.jobCleanup ? {jobCleanup: true} : {}),
     }));
   }
 
@@ -525,41 +531,107 @@ export class ControlPlaneDatabase {
     return row ? mapJob(row) : null;
   }
 
+  // A cancelled/expired running job may still be executing. Keep the
+  // physical resource fenced atomically with the logical transition.
+  #withJobHoldTransaction(callback) {
+    this.database.exec("SAVEPOINT job_hold_transition");
+    try {
+      const result = callback();
+      this.database.exec("RELEASE job_hold_transition");
+      return result;
+    } catch (error) {
+      this.database.exec("ROLLBACK TO job_hold_transition; RELEASE job_hold_transition");
+      throw error;
+    }
+  }
+
+  #quarantineRunningJob(job, now) {
+    this.database.prepare(`
+      INSERT INTO gpu_resource_fences
+        (worker_id,gpu_uuid,epoch,safety_state,subject_kind,subject_id,lease_id,attempt_id,updated_at)
+      VALUES (?,?,1,'quarantined','job',?,?,NULL,?)
+      ON CONFLICT(worker_id,gpu_uuid) DO UPDATE SET
+        epoch=gpu_resource_fences.epoch+1, safety_state='quarantined',
+        subject_kind='job',subject_id=excluded.subject_id,lease_id=excluded.lease_id,
+        attempt_id=NULL,updated_at=excluded.updated_at
+      WHERE gpu_resource_fences.safety_state='clear'
+    `).run(job.assignedWorkerId,job.assignedGpuUuid,job.id,job.leaseId,now);
+    // Never replace a preexisting broker/attempt hold.
+  }
+
   cancelJob(jobId, now) {
-    const row = this.database.prepare(`
-      UPDATE jobs SET status = 'cancelled', lease_expires_at = NULL, updated_at = ?
-      WHERE id = ? AND status IN ('queued', 'leased', 'running')
-      RETURNING *
-    `).get(now, jobId);
-    return row ? mapJob(row) : null;
+    return this.#withJobHoldTransaction(() => {
+      const job = this.getJob(jobId);
+      if (job?.status === 'running') this.#quarantineRunningJob(job, now);
+      const row = this.database.prepare(`
+        UPDATE jobs SET status = 'cancelled', lease_expires_at = NULL, updated_at = ?
+        WHERE id = ? AND status IN ('queued', 'leased', 'running') RETURNING *
+      `).get(now, jobId);
+      return row ? mapJob(row) : null;
+    });
   }
 
   recoverExpiredJobs(now, offlineWorkerIds = []) {
-    const offlineWorkerIdSet = new Set(offlineWorkerIds);
-    const active = this.listActiveJobs().filter((job) =>
-      (job.leaseExpiresAt !== null && job.leaseExpiresAt <= now) ||
-      offlineWorkerIdSet.has(job.assignedWorkerId));
-    const recovered = [];
+    return this.#withJobHoldTransaction(() => {
+      const offlineWorkerIdSet = new Set(offlineWorkerIds);
+      const active = this.listActiveJobs().filter((job) =>
+        (job.leaseExpiresAt !== null && job.leaseExpiresAt <= now) ||
+        offlineWorkerIdSet.has(job.assignedWorkerId));
+      const recovered = [];
+      for (const job of active) {
+        const reason = offlineWorkerIdSet.has(job.assignedWorkerId)
+          ? 'heartbeat_timeout' : 'lease_expired';
+        const uncertain = job.status === 'running';
+        if (uncertain) this.#quarantineRunningJob(job, now);
+        const terminal = uncertain || job.attempt >= job.maxAttempts;
+        const status = terminal ? 'failed' : 'queued';
+        const error = uncertain ? stringifyJson({code:'execution_cleanup_required',
+          message:'Running execution lost authority; operator cleanup required before GPU reuse'}) : terminal
+          ? stringifyJson({code:'lease_exhausted',message:'Job exhausted its execution attempts'}) : null;
+        const row = this.database.prepare(`
+          UPDATE jobs SET status=?, assigned_worker_id=?, assigned_gpu_uuid=?, lease_id=?,
+            lease_expires_at=NULL,error_json=?,updated_at=?
+          WHERE id=? AND status IN ('leased','running') RETURNING *
+        `).get(status, uncertain ? job.assignedWorkerId : null,
+          uncertain ? job.assignedGpuUuid : null, uncertain ? job.leaseId : null,
+          error,now,job.id);
+        if (row) recovered.push({job:mapJob(row),reason});
+      }
+      return recovered;
+    });
+  }
 
-    for (const job of active) {
-      const reason = offlineWorkerIdSet.has(job.assignedWorkerId)
-        ? "heartbeat_timeout"
-        : "lease_expired";
-      const terminal = job.attempt >= job.maxAttempts;
-      const status = terminal ? "failed" : "queued";
-      const error = terminal
-        ? stringifyJson({ code: "lease_exhausted", message: "Job exhausted its execution attempts" })
-        : null;
+  listJobCleanupHolds() {
+    return this.database.prepare(`
+      SELECT f.worker_id AS workerId,f.gpu_uuid AS gpuUuid,f.epoch,
+        f.subject_id AS jobId,f.lease_id AS leaseId
+      FROM gpu_resource_fences f JOIN jobs j ON j.id=f.subject_id
+      WHERE f.safety_state='quarantined' AND f.attempt_id IS NULL AND f.subject_kind='job'
+        AND j.status IN ('cancelled','failed') AND j.lease_id=f.lease_id
+        AND j.assigned_worker_id=f.worker_id AND j.assigned_gpu_uuid=f.gpu_uuid
+      ORDER BY f.worker_id,f.gpu_uuid
+    `).all().map(row => ({...row}));
+  }
+
+  releaseJobCleanupHold(input, now) {
+    return this.#withJobHoldTransaction(() => {
+      const {workerId,gpuUuid,epoch,jobId,leaseId} = input;
       const row = this.database.prepare(`
-        UPDATE jobs SET
-          status = ?, assigned_worker_id = NULL, assigned_gpu_uuid = NULL,
-          lease_id = NULL, lease_expires_at = NULL, error_json = ?, updated_at = ?
-        WHERE id = ? AND status IN ('leased', 'running')
-        RETURNING *
-      `).get(status, error, now, job.id);
-      if (row) recovered.push({ job: mapJob(row), reason });
-    }
-    return recovered;
+        UPDATE gpu_resource_fences SET safety_state='clear',subject_kind=NULL,
+          subject_id=NULL,lease_id=NULL,attempt_id=NULL,updated_at=?
+        WHERE worker_id=? AND gpu_uuid=? AND epoch=? AND subject_id=? AND lease_id=?
+          AND safety_state='quarantined' AND subject_kind='job' AND attempt_id IS NULL
+          AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=? AND j.status IN ('cancelled','failed')
+            AND j.lease_id=? AND j.assigned_worker_id=? AND j.assigned_gpu_uuid=?)
+          AND EXISTS (SELECT 1 FROM workers w WHERE w.id=? AND w.status='offline' AND w.drain_mode=1)
+          AND NOT EXISTS (SELECT 1 FROM execution_attempts a WHERE a.gpu_uuid=? AND a.status<>'terminated')
+          AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.assigned_gpu_uuid=? AND j.status IN ('leased','running'))
+          AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.assigned_gpu_uuid=? AND s.status IN ('allocated','connecting','active'))
+        RETURNING epoch
+      `).get(now,workerId,gpuUuid,epoch,jobId,leaseId,jobId,leaseId,workerId,gpuUuid,
+        workerId,gpuUuid,gpuUuid,gpuUuid);
+      return Boolean(row);
+    });
   }
 
   insertSession(session) {

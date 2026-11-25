@@ -52,14 +52,14 @@ try {
       if (command === "local" && arguments_[0] === "smoke") {
         if (explicitDirectory && arguments_[2]) throw new Error("Choose either --config-dir or a positional setup directory, not both.");
         if (!arguments_[2]) arguments_[2] = selectedDirectory;
-      } else if (["doctor", "workers", "jobs", "job", "wait", "submit-diagnostic", "submit-benchmark", "drain", "resume"].includes(command)) {
+      } else if (["doctor", "workers", "jobs", "job", "wait", "submit-diagnostic", "submit-benchmark", "drain", "resume", "cleanup-holds", "release-job-hold"].includes(command)) {
         const isServer = hasServerMarker(selectedDirectory);
         const setup = isServer ? readServerSetup(selectedDirectory) : readLocalSmokeSetup(selectedDirectory);
         if (isServer && command === "doctor" && arguments_[0] === "worker") throw new Error("Server profiles do not manage GPU workers; remote enrollment is separate.");
         if (isServer && command !== "doctor" && await inspectManagedLocal(setup) !== "ready") throw new Error("Server ownership is not verified; no API credential was sent.");
         const profiles = setup.profiles;
         const role = command === "doctor" ? arguments_[0] :
-          (["workers", "drain", "resume"].includes(command) ? "admin" : "client");
+          (["workers", "drain", "resume", "cleanup-holds", "release-job-hold"].includes(command) ? "admin" : "client");
         const filename = role === "control-plane" ? "control-plane.env" :
           role === "worker" ? "worker.env" :
           role === "admin" ? "admin.env" : "client.env";
@@ -155,6 +155,19 @@ try {
     case "wait":
       print(await waitForJob(requiredArgument(arguments_[0], "job id")));
       break;
+    case "cleanup-holds":
+      if (arguments_.length) throw new Error("cleanup-holds accepts no arguments");
+      print(await request("GET","/v1/admin/job-cleanup-holds",undefined,"admin"));
+      break;
+    case "release-job-hold": {
+      if (arguments_.length !== 6 || arguments_[5] !== "--confirm-stopped")
+        throw new Error("Specify worker ID, GPU UUID, epoch, job ID, lease ID and --confirm-stopped only after physical cleanup verification");
+      const [workerId,gpuUuid,epoch,jobId,leaseId] = arguments_;
+      if (!Number.isSafeInteger(Number(epoch)) || Number(epoch)<1) throw new Error("Invalid fence epoch");
+      print(await request("POST","/v1/admin/job-cleanup-holds/release",
+        {workerId,gpuUuid,epoch:Number(epoch),jobId,leaseId,confirmStopped:true},"admin"));
+      break;
+    }
     case "drain":
       print(await setDrain(requiredArgument(arguments_[0], "worker id"), true));
       break;
@@ -280,6 +293,8 @@ function usage(error = true) {
   gpulink [--config-dir DIRECTORY] submit-diagnostic [minimum-vram-mib]
   gpulink [--config-dir DIRECTORY] submit-benchmark [matrix-size] [warmup-iterations] [measured-iterations]
   gpulink [--config-dir DIRECTORY] wait <job-id>
+  gpulink [--config-dir DIRECTORY] cleanup-holds
+  gpulink [--config-dir DIRECTORY] release-job-hold WORKER GPU EPOCH JOB LEASE --confirm-stopped
   gpulink [--config-dir DIRECTORY] drain <worker-id>
   gpulink [--config-dir DIRECTORY] resume <worker-id>
   gpulink --version | --help

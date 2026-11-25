@@ -63,6 +63,8 @@ try {
   assert.match(help, /setup server --peer PRIVATE_IPV4/);
   assert.match(help, /join --invite FILE/);
   assert.match(help, /worker approve-catalog/);
+  assert.match(help, /cleanup-holds/);
+  assert.match(help, /release-job-hold/);
   cli(['worker','approve-catalog'],2);
   cli(['join'],2);
   cli(['setup','server'],1);
@@ -91,6 +93,8 @@ try {
     cli([...a,'local','start']);
     assert.equal(JSON.parse(cli([...a,'local','status'])).controlPlane,'ready-managed-local');
     assert.deepEqual(JSON.parse(cli([...a,'jobs'])).jobs,[]);
+    assert.deepEqual(JSON.parse(cli([...a,'cleanup-holds'])).holds,[]);
+    cli([...a,'release-job-hold'],1);
     cli([...a,'local','stop']);
     assert.equal(JSON.parse(cli([...a,'local','status'])).controlPlane,'offline');
     stopped = true;
@@ -128,6 +132,7 @@ try {
     assert.equal(JSON.parse(cli([...server,'server','status'])).controlPlane,'ready-managed-local');
     cli([...server,'server','start'],1);
     assert.deepEqual(JSON.parse(cli([...server,'jobs'])).jobs,[]);
+    assert.deepEqual(JSON.parse(cli([...server,'cleanup-holds'])).holds,[]);
     // Explicit TLS enforcement must reject an untrusted certificate even with
     // the insecure global Node setting. Never use that setting in deployment.
     env.NODE_TLS_REJECT_UNAUTHORIZED='0';

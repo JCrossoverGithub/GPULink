@@ -30,7 +30,8 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | Visual operations console | Yes (read-only) | Angular/Flask build and test coverage in CI | Not a general-purpose managed cluster control panel |
 | Independent two-host operator deployment | Yes (manual operator-guided packaged path) | October 24 source-checkout acceptance; November 25 PR #32 packaged server/worker diagnostic and lifecycle acceptance | Manual ingress/enrollment; mixed protocol-compatible artifact revisions; no independent newcomer acceptance |
 | Managed LAN onboarding | Yes | PR #33 (November 25): physical WSL2 NAT provisioning, enrollment, remote diagnostic, durable result and automatic cleanup; 8 CI checks passed | Optional WSL2 NAT private LAN foreground session; no generalized native service installer or automatic in-place IP repair |
-| Installed trusted external GPU workloads | DEV-04A candidate | Existing local CUDA session accepted October 16; installed catalog approval and cross-host matrix computation acceptance pending | Existing GLIP subprocess/session backend; no arbitrary custom durable jobs or hostile-code sandbox |
+| Installed trusted external GPU workloads | Yes | PR #34 (November 25): independently packaged external CUDA session, correct matrix result, persisted allocation/release, 8 CI checks passed | Existing GLIP subprocess/session backend; no arbitrary custom durable jobs or hostile-code sandbox |
+| Uncertain running-job cleanup holds | DEV-04B1 candidate | [Job cleanup safety](JOB_CLEANUP_SAFETY.md); PostgreSQL and installed acceptance pending | Conservative durable quarantine and explicit operator-attested recovery, not verified hardware isolation or external batch dispatch |
 
 ## How to verify the claimed boundaries
 

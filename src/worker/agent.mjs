@@ -10,6 +10,7 @@ import {
   DATA_PLANE_PATH,
 } from "../shared/data-plane-contract.mjs";
 
+import { createJobLeaseGuard } from "./job-lease-guard.mjs";
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
 import { discoverModelInventory } from "./model-cache.mjs";
@@ -151,20 +152,14 @@ export class WorkerAgent {
         try {
           const response = await this.client.leases(this.workerId);
 
-          const activeJobIds =
-            new Set(
-              response.jobs
-                .map((job) => job.id),
-            );
+          const activeJobIds = new Map(response.jobs.map(job => [job.id,job.leaseId]));
 
           for (
             const [jobId, entry]
             of this.inFlight
           ) {
             if (
-              !activeJobIds.has(
-                jobId,
-              )
+              !activeJobIds.has(jobId) || activeJobIds.get(jobId) !== entry.leaseId
             ) {
               entry.controller.abort(
                 new Error(
@@ -907,43 +902,58 @@ export class WorkerAgent {
 
   #runJob(job) {
     const controller = new AbortController();
-    const promise = this.#executeLease(job, controller.signal)
+    const promise = this.#executeLease(job, controller)
       .catch((error) => console.error(JSON.stringify({
         event: "job_execution_reporting_failed",
         jobId: job.id,
         message: error.message,
       })))
       .finally(() => this.inFlight.delete(job.id));
-    this.inFlight.set(job.id, { controller, promise });
+    this.inFlight.set(job.id, { controller, promise, leaseId: job.leaseId });
   }
 
-  async #executeLease(job, signal) {
+  async #executeLease(job, controller) {
+    const {signal} = controller;
     const lease = { workerId: this.workerId, leaseId: job.leaseId };
-    await this.client.startJob(job.id, lease);
+    const requestedAt = performance.now();
+    const started = await this.client.startJob(job.id, lease);
+    if (signal.aborted) return;
+    const guard = createJobLeaseGuard(controller, {jobId:job.id, ...lease});
+    const remaining = guard.arm(started, requestedAt);
+    if (!remaining) { guard.close(); return; }
     console.log(JSON.stringify({ event: "job_started", jobId: job.id, type: job.type }));
 
     if (!hasAdapter(job.type)) {
-      await this.client.finishJob(job.id, {
-        ...lease,
-        outcome: "failed",
-        error: { code: "adapter_not_installed", message: `No adapter installed for ${job.type}` },
-      });
+      try {
+        if (guard.check()) await this.client.finishJob(job.id, {
+          ...lease, outcome: "failed",
+          error: { code: "adapter_not_installed", message: `No adapter installed for ${job.type}` },
+        });
+      } finally { guard.close(); }
       return;
     }
 
-    const reportedLeaseRemainingMs = job.leaseExpiresAt - Date.now();
-    const renewIntervalMs = Math.max(
-      1_000,
-      Math.min(
-        this.config.heartbeatIntervalMs,
-        Math.floor(reportedLeaseRemainingMs / 3),
-      ),
-    );
-    const renewTimer = setInterval(() => {
-      this.client.renewJob(job.id, lease).catch((error) => {
-        console.error(JSON.stringify({ event: "lease_renewal_failed", jobId: job.id, message: error.message }));
-      });
-    }, renewIntervalMs);
+    let renewTimer;
+    let done = false;
+    const scheduleRenew = (duration) => {
+      if (done || signal.aborted) return;
+      const interval = Math.max(1, Math.min(this.config.heartbeatIntervalMs, Math.floor(duration / 3)));
+      renewTimer = setTimeout(async () => {
+        if (done || !guard.check()) return;
+        const sentAt = performance.now();
+        try {
+          const renewed = await this.client.renewJob(job.id, lease);
+          if (done) return;
+          const remaining = guard.arm(renewed, sentAt);
+          if (remaining) scheduleRenew(remaining);
+        } catch (error) {
+          if (done) return;
+          console.error(JSON.stringify({ event: "lease_renewal_failed", jobId: job.id, message: error.message }));
+          controller.abort(new Error("job lease renewal failed"));
+        }
+      }, interval);
+    };
+    scheduleRenew(remaining);
 
     try {
       const gpu = this.gpus.find((candidate) => candidate.uuid === job.assignedGpuUuid) ?? null;
@@ -953,9 +963,11 @@ export class WorkerAgent {
         gpu,
         benchmark: this.config.benchmark,
       });
+      if (!guard.check()) return; // No cleanup attestation is inferred from an abort.
       await this.client.finishJob(job.id, { ...lease, outcome: "succeeded", result });
       console.log(JSON.stringify({ event: "job_succeeded", jobId: job.id }));
     } catch (error) {
+      if (!guard.check()) return; // Server expires/quarantines; never release on uncertain cancellation.
       try {
         await this.client.finishJob(job.id, {
           ...lease,
@@ -966,7 +978,9 @@ export class WorkerAgent {
         if (reportingError.statusCode !== 409) throw reportingError;
       }
     } finally {
-      clearInterval(renewTimer);
+      done = true;
+      clearTimeout(renewTimer);
+      guard.close();
     }
   }
 }

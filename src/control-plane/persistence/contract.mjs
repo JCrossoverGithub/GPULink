@@ -17,6 +17,8 @@ export const PERSISTENCE_METHODS = Object.freeze([
   "finishJob",
   "cancelJob",
   "recoverExpiredJobs",
+  "listJobCleanupHolds",
+  "releaseJobCleanupHold",
   "insertSession",
   "getSession",
   "listSessions",
