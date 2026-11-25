@@ -10,6 +10,8 @@ import {
   DATA_PLANE_PATH,
 } from "../shared/data-plane-contract.mjs";
 
+import { validBatchType } from '../shared/batch-contract.mjs';
+import { validateAdapterManifest } from '../shared/adapter-manifest.mjs';
 import { createJobLeaseGuard } from "./job-lease-guard.mjs";
 import { ControlPlaneClient } from "./control-plane-client.mjs";
 import { discoverGpus } from "./gpu-inventory.mjs";
@@ -40,6 +42,21 @@ export class WorkerAgent {
       options.sessionAdapters ?? [],
     );
 
+    this.batchAdapters = new Map();
+    const ids = new Set(this.sessionAdapters.keys());
+    for (const adapter of options.batchAdapters ?? []) {
+      const manifest = validateAdapterManifest(adapter.manifest);
+      if (manifest.schemaVersion !== 2 || manifest.executionMode !== 'bounded-process' ||
+          !validBatchType(manifest.type) || ids.has(manifest.adapterId) ||
+          this.batchAdapters.has(manifest.type) || hasAdapter(manifest.type) ||
+          typeof adapter.executeJob !== 'function' || typeof adapter.readinessProbe !== 'function') {
+        throw new Error('Invalid or conflicting batch adapter');
+      }
+      ids.add(manifest.adapterId);
+      this.batchAdapters.set(manifest.type, adapter);
+    }
+    if (this.batchAdapters.size + this.sessionAdapters.size > 64) throw new Error('Too many adapters');
+    this.readyBatchTypes = new Set();
     this.readySessionAdapters = new Set();
     this.resolveAdapterHealth = options.resolveAdapterHealth ?? resolveAdapterHealth;
     this.discoverModelInventory = options.discoverModelInventory ?? (() =>
@@ -291,6 +308,13 @@ export class WorkerAgent {
       now,
     );
 
+    for (const type of this.batchAdapters.keys()) {
+      if (sessionTypes.has(type) || v1Types.has(type)) throw new Error('Conflicting batch capability');
+    }
+    // The readiness reporter is identity-based and does not call session handlers.
+    const batchReport = await probeSessionAdapters(this.batchAdapters, {...this.adapterContext, gpus:this.gpus}, now);
+    this.readyBatchTypes = new Set(batchReport.capabilities);
+
     const v1Capabilities = report.capabilities.filter(
       (capability) => v1Types.has(capability),
     );
@@ -298,24 +322,27 @@ export class WorkerAgent {
     const v1Health = report.adapterHealth.filter(
       (health) =>
         health.schemaVersion === 1 &&
-        !sessionTypes.has(health.type),
+        !sessionTypes.has(health.type) && !this.batchAdapters.has(health.type),
     );
 
     this.capabilities = [
       ...new Set([
         ...v1Capabilities,
         ...sessionReport.capabilities,
+        ...batchReport.capabilities,
       ]),
     ].sort();
 
     this.adapterManifests = [
       ...v1Manifests,
       ...sessionReport.adapterManifests,
+      ...batchReport.adapterManifests,
     ];
 
     this.adapterHealth = [
       ...v1Health,
       ...sessionReport.adapterHealth,
+      ...batchReport.adapterHealth,
     ];
 
     this.readySessionAdapters = new Set(
@@ -923,7 +950,8 @@ export class WorkerAgent {
     if (!remaining) { guard.close(); return; }
     console.log(JSON.stringify({ event: "job_started", jobId: job.id, type: job.type }));
 
-    if (!hasAdapter(job.type)) {
+    const batch = this.readyBatchTypes.has(job.type) ? this.batchAdapters.get(job.type) : null;
+    if (!hasAdapter(job.type) && !batch) {
       try {
         if (guard.check()) await this.client.finishJob(job.id, {
           ...lease, outcome: "failed",
@@ -957,7 +985,7 @@ export class WorkerAgent {
 
     try {
       const gpu = this.gpus.find((candidate) => candidate.uuid === job.assignedGpuUuid) ?? null;
-      const result = await this.executeJob(job, {
+      const result = await (batch ? batch.executeJob.bind(batch) : this.executeJob)(job, {
         ...this.adapterContext,
         signal,
         gpu,

@@ -63,3 +63,30 @@ test('PostgreSQL: running cancellation/expiry and release serialize with placeme
     } finally {await raw.end();await db.close();}
   }
 });
+
+test('PostgreSQL: external batch placement and bounded persisted result use existing job API',
+  {skip:url&&ack?false:'requires disposable PostgreSQL and GPULINK_JOB_CLEANUP_TEST_DB_ACK=YES_DISPOSABLE',timeout:30000},async()=>{
+  const db=new PostgresPersistence(url); const raw=new pg.Pool({connectionString:url,max:2});
+  const tag=randomUUID(), projectId=`batch-${tag}`, type=`external.batch.${tag}`;
+  const uuid=`GPU-${tag}`, clock=()=>1700000000000;
+  const config={heartbeatTimeoutMs:1000,leaseDurationMs:10000,vramSafetyMiB:512};
+  const scheduler=new Scheduler(db,{...config,clock});const service=new ControlPlaneService(db,scheduler,config,{clock});
+  const ids=[], jobs=[];
+  try {
+    await db.initialize();
+    const base={version:'test',labels:{},capabilities:[type],warmModels:[],gpus:[gpu({uuid,memoryTotalMiB:8192})]};
+    const legacy=await service.registerWorker({...base,name:`${tag}-legacy`}); ids.push(legacy.id);
+    const {job}=await service.submitJob({projectId,type,payload:{x:1}});jobs.push(job.id);assert.equal(job.status,'queued');
+    const manifest={schemaVersion:2,type,adapterId:`batch.${tag}`,version:'1.0.0',executionMode:'bounded-process'};
+    const w=await service.registerWorker({...base,name:`${tag}-batch`,adapterManifests:[manifest],adapterHealth:[{schemaVersion:2,type,adapterId:manifest.adapterId,state:'ready',code:'ready',checkedAt:clock()}]});ids.push(w.id);
+    await scheduler.runOnce(); const leased=await db.getJob(job.id); assert.equal(leased.assignedWorkerId,w.id);
+    const lease={workerId:w.id,leaseId:leased.leaseId}; await service.startJob(job.id,lease);
+    await assert.rejects(service.finishJob(job.id,{...lease,outcome:'succeeded',result:{x:'x'.repeat(32768)}}),/exceeds/);
+    await service.finishJob(job.id,{...lease,outcome:'succeeded',result:{x:2}});
+    assert.deepEqual((await db.getJob(job.id)).result,{x:2});
+    assert.equal((await db.getJob(job.id)).leaseExpiresAt,null);
+  } finally {
+    try {await raw.query('DELETE FROM events WHERE subject_id=ANY($1::text[])',[ids.concat(jobs)]);await raw.query('DELETE FROM jobs WHERE project_id=$1',[projectId]);await raw.query('DELETE FROM workers WHERE id=ANY($1::text[])',[ids]);}
+    finally {await raw.end();await db.close();}
+  }
+});

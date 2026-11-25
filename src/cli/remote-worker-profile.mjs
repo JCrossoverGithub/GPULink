@@ -7,7 +7,7 @@ import { rootCertificates } from 'node:tls';
 import { normalizeServerOrigin, readServerSetup } from './server-profile.mjs';
 import { runDoctor } from './doctor.mjs';
 import { loadWorkerConfig } from '../worker/config.mjs';
-import { loadApprovedSubprocessSessionAdapters } from '../worker/approved-subprocess-adapters.mjs';
+import { loadApprovedSubprocessAdapters } from '../worker/approved-subprocess-adapters.mjs';
 import { discoverGpus, GPUInventoryError } from '../worker/gpu-inventory.mjs';
 import { inspectManagedLocal, runRemoteWorkerStart, runRemoteWorkerStop, withStoppedRemoteWorker } from './local-lifecycle.mjs';
 
@@ -136,7 +136,7 @@ async function changeCatalog(command, args, directory, output) {
       const temp = path.join(setup.directory, `.catalog-${randomBytes(16).toString('hex')}`);
       writePrivate(temp, bytes);
       try {
-        const adapters = await loadApprovedSubprocessSessionAdapters(temp);
+        const adapters = await loadApprovedSubprocessAdapters(temp);
         if (!adapters.length) throw new Error('Empty catalog.');
         linkSync(temp, target); // publish without overwriting existing approval
         output.log(`Approved ${adapters.length} trusted subprocess adapter(s) for subsequent worker starts. No code executed.`);
@@ -180,7 +180,7 @@ export async function runWorkerDoctor(args, directory, output=console) {
     if (runDoctor(['worker'],setup.profiles['worker.env'],output)) return 1;
     if (catalog) {
       try {
-        const adapters = await loadApprovedSubprocessSessionAdapters(catalog);
+        const adapters = await loadApprovedSubprocessAdapters(catalog);
         output.log(`PASS: ${adapters.length} approved subprocess adapter(s) verified; no code executed.`);
       } catch (error) {
         output.error(`FAIL: approved subprocess catalog: ${error.code ?? 'verification_failed'}.`);
