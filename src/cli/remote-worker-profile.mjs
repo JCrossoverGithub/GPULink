@@ -7,7 +7,7 @@ import { rootCertificates } from 'node:tls';
 import { normalizeServerOrigin, readServerSetup } from './server-profile.mjs';
 import { runDoctor } from './doctor.mjs';
 import { loadWorkerConfig } from '../worker/config.mjs';
-import { discoverGpus } from '../worker/gpu-inventory.mjs';
+import { discoverGpus, GPUInventoryError } from '../worker/gpu-inventory.mjs';
 import { inspectManagedLocal, runRemoteWorkerStart, runRemoteWorkerStop } from './local-lifecycle.mjs';
 
 const marker = 'remote-worker.json';
@@ -136,7 +136,12 @@ export async function runWorkerDoctor(args, directory, output=console) {
       output.log('PASS: trusted HTTPS and worker-role authorization; no registration or assignment requested.');
     }
     if (args.includes('--gpu')) {
-      const gpus=await discoverGpus();
+      let gpus;
+      try { gpus=await discoverGpus(); }
+      catch (error) {
+        output.error(`FAIL: GPU discovery: ${error instanceof GPUInventoryError ? error.message : 'unexpected discovery error'}. Check NVIDIA driver/nvidia-smi access.`);
+        return 1;
+      }
       if (!gpus.length) {output.error('FAIL: no physical NVIDIA GPU discovered.');return 1;}
       output.log(`PASS: ${gpus.length} NVIDIA GPU(s) discovered through nvidia-smi. No workload executed.`);
       for(const gpu of gpus) output.log(`${gpu.name}: ${gpu.memoryTotalMiB} MiB`);
