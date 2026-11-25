@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { runManagedSetup } from "./managed-lan.mjs";
+import { joinInvitation } from "./managed-lan-invite.mjs";
 import { defaultServerSetupDirectory, hasServerMarker, readServerSetup, runServerInit, runServerDoctor, runServerLifecycle } from "./server-profile.mjs";
 import { defaultRemoteWorkerDirectory, hasRemoteWorkerMarker, runWorkerBundle, runWorkerCommand } from "./remote-worker-profile.mjs";
 import { runDoctor } from "./doctor.mjs";
@@ -32,7 +34,11 @@ try {
   } else {
     // Server management uses a separate profile and the same owned loopback backend.
     // Local worker/smoke commands cannot operate on server installations.
-    if (command === "worker") {
+    if (command === "setup") {
+      process.exitCode = await runManagedSetup(arguments_, explicitDirectory);
+    } else if (command === "join") {
+      process.exitCode = await joinInvitation(arguments_, explicitDirectory ?? defaultRemoteWorkerDirectory());
+    } else if (command === "worker") {
       process.exitCode = await runWorkerCommand(arguments_, arguments_[0] === "enroll" ? explicitDirectory : selectedDirectory);
     } else if (serverCommand) {
       process.exitCode = command === "server" && arguments_[0] === "worker-bundle" ? runWorkerBundle(arguments_.slice(1), selectedDirectory) : command === "init" ? runServerInit(arguments_.slice(1), explicitDirectory) :
@@ -245,6 +251,10 @@ function print(value) {
 function usage(error = true) {
   const output = error ? console.error : console.log;
   output(`Usage:
+  gpulink [--config-dir SERVER] setup server --peer PRIVATE_IPV4 [--port N] [--caddy PATH] [--apply]
+  gpulink [--config-dir SERVER] setup invite --output FILE
+  gpulink [--config-dir SERVER] setup cleanup
+  gpulink [--config-dir WORKER] join --invite FILE [--accept-assigned-work]
   gpulink [--config-dir DIRECTORY] init local [output-directory]
   gpulink [--config-dir DIRECTORY] init server --public-url HTTPS_ORIGIN
   gpulink [--config-dir DIRECTORY] server <start|status|stop>

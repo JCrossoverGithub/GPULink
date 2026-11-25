@@ -51,4 +51,4 @@ The build requires registry access to resolve the checked-in lockfile, uses `npm
 
 A build from a dirty checkout is explicitly a QA candidate (`sourceRevision: null`), not releasable. Clean reviewed CI builds identify the exact source commit. No publication, real GPU execution, real certificate issuance or cloud changes occur during candidate build. This is a versioned, locked build recipe; bit-for-bit cross-platform reproducibility, signatures, independent remote worker setup, upgrade/rollback and general availability are not certified by it.
 
-For a separately installed Linux GPU worker, see [REMOTE_WORKER_PREVIEW.md](REMOTE_WORKER_PREVIEW.md). Packaged authentication checks do not imply physical cross-host acceptance.
+For a separately installed Linux GPU worker, see [REMOTE_WORKER_PREVIEW.md](REMOTE_WORKER_PREVIEW.md). PR #32 records the separate guided physical acceptance. The optional [managed LAN onboarding preview](MANAGED_LAN_PREVIEW.md) automates the WSL2 NAT path after explicit opt-in; its physical acceptance is separate.
