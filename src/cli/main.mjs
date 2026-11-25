@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { defaultServerSetupDirectory, hasServerMarker, readServerSetup, runServerInit, runServerDoctor, runServerLifecycle } from "./server-profile.mjs";
+import { defaultRemoteWorkerDirectory, hasRemoteWorkerMarker, runWorkerBundle, runWorkerCommand } from "./remote-worker-profile.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
 import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
@@ -20,7 +21,7 @@ try {
   const { args, directory: explicitDirectory } = parseGlobalCliOptions(process.argv.slice(2));
   const [command, ...arguments_] = args;
   const serverCommand = command === "server" || (command === "init" && arguments_[0] === "server") || (command === "doctor" && arguments_[0] === "server");
-  const defaultDirectory = serverCommand ? defaultServerSetupDirectory() : defaultLocalSetupDirectory();
+  const defaultDirectory = command === "worker" ? defaultRemoteWorkerDirectory() : serverCommand ? defaultServerSetupDirectory() : defaultLocalSetupDirectory();
   const selectedDirectory = explicitDirectory ??
     (existsSync(defaultDirectory) ? defaultDirectory : null);
   if (command === "--version" || command === "version") {
@@ -31,11 +32,14 @@ try {
   } else {
     // Server management uses a separate profile and the same owned loopback backend.
     // Local worker/smoke commands cannot operate on server installations.
-    if (serverCommand) {
-      process.exitCode = command === "init" ? runServerInit(arguments_.slice(1), explicitDirectory) :
+    if (command === "worker") {
+      process.exitCode = await runWorkerCommand(arguments_, arguments_[0] === "enroll" ? explicitDirectory : selectedDirectory);
+    } else if (serverCommand) {
+      process.exitCode = command === "server" && arguments_[0] === "worker-bundle" ? runWorkerBundle(arguments_.slice(1), selectedDirectory) : command === "init" ? runServerInit(arguments_.slice(1), explicitDirectory) :
         command === "doctor" ? await runServerDoctor(arguments_.slice(1), selectedDirectory) :
         await runServerLifecycle(arguments_, selectedDirectory);
     } else {
+    if (hasRemoteWorkerMarker(selectedDirectory)) throw new Error("Remote worker profile selected; use gpulink worker commands.");
     if (command === "local" && hasServerMarker(selectedDirectory)) throw new Error("Server profile selected; use gpulink server start/status/stop. Local worker and smoke are not supported here.");
     if (command === "local" && arguments_[0] === "smoke" && arguments_[2] && hasServerMarker(arguments_[2])) throw new Error("Local smoke cannot use a server profile.");
     if (selectedDirectory && command !== "init") {
@@ -244,6 +248,11 @@ function usage(error = true) {
   gpulink [--config-dir DIRECTORY] init local [output-directory]
   gpulink [--config-dir DIRECTORY] init server --public-url HTTPS_ORIGIN
   gpulink [--config-dir DIRECTORY] server <start|status|stop>
+  gpulink [--config-dir SERVER] server worker-bundle --output FILE
+  gpulink [--config-dir WORKER] worker enroll --bundle FILE [--ca-file PEM]
+  gpulink [--config-dir WORKER] worker doctor [--live] [--gpu]
+  gpulink [--config-dir WORKER] worker start --accept-assigned-work
+  gpulink [--config-dir WORKER] worker <status|stop>
   gpulink [--config-dir DIRECTORY] doctor server [--live]
   gpulink [--config-dir DIRECTORY] local worker start --accept-assigned-work
   gpulink [--config-dir DIRECTORY] local worker stop
@@ -266,5 +275,6 @@ function usage(error = true) {
 Default local setup: ~/.gpulink/instances/local
 Default server setup: ~/.gpulink/instances/server
 Server management: Linux, loopback backend, operator-managed trusted HTTPS ingress.
-Remote clients/workers still require separately configured GPULINK_* environment values.`);
+Default remote worker setup: ~/.gpulink/instances/worker
+Remote workers use a private operator-exported bundle; external clients use separately configured GPULINK_* values.`);
 }

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readLocalSmokeSetup } from './local-smoke.mjs';
+import { readRemoteWorkerSetup } from './remote-worker-profile.mjs';
 import { installationFingerprint, observeLinuxBirth, validateOwnershipRecord } from './local-process-ownership.mjs';
 
 const ROLED = 'control-plane';
@@ -153,13 +154,19 @@ export async function runLocalWorkerStart(args, directory, { output = console } 
   }
   return startManagedRole(directory, 'worker', output);
 }
-async function startManagedRole(directory, role, output) {
+export function runRemoteWorkerStart(directory, {output = console} = {}) {
+  return startManagedRole(directory, 'worker', output, true);
+}
+export function runRemoteWorkerStop(directory, {output = console} = {}) {
+  return stopManagedRole(directory, 'worker', output, true);
+}
+async function startManagedRole(directory, role, output, remote = false) {
   if (!directory) { output.error('No local installation selected.'); return 1; }
   let lock;
   try {
     assertLinux();
-    const setup = readLocalSmokeSetup(directory);
-    if (role === 'worker') {
+    const setup = remote ? readRemoteWorkerSetup(directory) : readLocalSmokeSetup(directory);
+    if (role === 'worker' && !remote) {
       const control = await inspectManaged(setup, ROLED);
       if (control.state !== 'ready') throw new Error('The installation-owned control plane must be ready before starting a GPU worker.');
     }
@@ -168,7 +175,7 @@ async function startManagedRole(directory, role, output) {
     const launchId = randomBytes(32).toString('hex');
     const child = spawn(process.execPath,
       role === ROLED ? [managedScript, setup.directory, launchId] :
-        [managedScript, setup.directory, launchId, 'worker'], {
+        [managedScript, setup.directory, launchId, remote ? 'remote-worker' : 'worker'], {
       cwd: setup.directory, env: cleanSupervisorEnvironment(), stdio: 'ignore', detached: true,
       windowsHide: true,
     });
@@ -183,7 +190,7 @@ async function startManagedRole(directory, role, output) {
           if (inspected.state === 'ready') {
             output.log(role === ROLED
               ? 'PASS: installation-owned local control plane started (Linux preview; no GPU worker started).'
-              : 'PASS: installation-owned local GPU worker registered and running; assigned GPU work is enabled.');
+              : remote ? 'PASS: installation-owned remote GPU worker registered and running; assigned GPU work is enabled.' : 'PASS: installation-owned local GPU worker registered and running; assigned GPU work is enabled.');
             return 0;
           }
           if (inspected.state === 'stopping') throw new Error('Supervisor exited during startup.');
@@ -194,7 +201,7 @@ async function startManagedRole(directory, role, output) {
       await delay(125);
     }
     throw new Error('Managed service did not become ready; inspect its private run records. No PID was signaled.');
-  } catch (error) { output.error(`Local ${role === ROLED ? 'start' : 'worker start'} refused: ${error.message}`); return 1; }
+  } catch (error) { output.error(`${remote ? 'Remote' : 'Local'} ${role === ROLED ? 'start' : 'worker start'} refused: ${error.message}`); return 1; }
   finally { if (lock) { try { rmdirSync(lock); } catch { /* preserve unexpected lock state */ } } }
 }
 export async function runLocalStop(args, directory, { output = console } = {}) {
@@ -205,12 +212,12 @@ export async function runLocalWorkerStop(args, directory, { output = console } =
   if (args.length !== 0) { output.error('Usage: gpulink [--config-dir DIRECTORY] local worker stop'); return 2; }
   return stopManagedRole(directory, 'worker', output);
 }
-async function stopManagedRole(directory, role, output) {
+async function stopManagedRole(directory, role, output, remote = false) {
   if (!directory) { output.error('No local installation selected.'); return 1; }
   let lock;
   try {
     assertLinux();
-    const setup = readLocalSmokeSetup(directory);
+    const setup = remote ? readRemoteWorkerSetup(directory) : readLocalSmokeSetup(directory);
     const p = paths(setup, role);
     // The same exclusive operation lock is used by start AND stop. Never
     // steal a stale lock or continue while another lifecycle operation runs.
@@ -234,13 +241,13 @@ async function stopManagedRole(directory, role, output) {
       if (!existsSync(p.record) && !existsSync(p.socket)) {
         output.log(role === ROLED
           ? 'PASS: managed local control plane stopped gracefully; SQLite preserved.'
-          : 'PASS: managed local GPU worker stopped gracefully; control plane was preserved.');
+          : remote ? 'PASS: managed remote GPU worker exited; server was not stopped. Check server heartbeat/leases.' : 'PASS: managed local GPU worker stopped gracefully; control plane was preserved.');
         return 0;
       }
       await delay(125);
     }
     throw new Error('Graceful shutdown has not completed; no unverified process was signaled.');
-  } catch (error) { output.error(`Local ${role === ROLED ? 'stop' : 'worker stop'} refused: ${error.message}`); return 1; }
+  } catch (error) { output.error(`${remote ? 'Remote' : 'Local'} ${role === ROLED ? 'stop' : 'worker stop'} refused: ${error.message}`); return 1; }
   finally {
     // Only release the directory we successfully created, never a
     // conflicting preexisting lock owned by another command.
@@ -253,11 +260,12 @@ async function stopManagedRole(directory, role, output) {
 export async function runManagedSupervisor(args) {
   assertLinux();
   if (![2, 3].includes(args.length) || !/^[a-f0-9]{64}$/u.test(args[1]) ||
-      (args.length === 3 && args[2] !== 'worker'))
+      (args.length === 3 && !['worker','remote-worker'].includes(args[2])))
     throw new Error('Invalid internal supervisor arguments.');
   const role = args.length === 3 ? 'worker' : ROLED;
-  const setup = readLocalSmokeSetup(args[0]);
-  if (role === 'worker') {
+  const remote = args[2] === 'remote-worker';
+  const setup = remote ? readRemoteWorkerSetup(args[0]) : readLocalSmokeSetup(args[0]);
+  if (role === 'worker' && !remote) {
     const control = await inspectManaged(setup, ROLED);
     if (control.state !== 'ready') throw new Error('Managed local control plane is not ready.');
   }
@@ -384,10 +392,10 @@ export async function runManagedSupervisor(args) {
           if (role === 'worker' && message.event === 'worker_registered' &&
               message.name === setup.profiles['worker.env'].GPULINK_WORKER_NAME &&
               /^worker_[a-z0-9]+$/u.test(message.workerId ?? '') &&
-              Number.isSafeInteger(message.gpuCount) && message.gpuCount >= 0 &&
+              Number.isSafeInteger(message.gpuCount) && message.gpuCount >= (remote ? 1 : 0) &&
               state === 'starting') {
-            const control = await inspectManaged(setup, ROLED).catch(() => null);
-            if (control?.state === 'ready') state = 'ready';
+            const control = remote ? null : await inspectManaged(setup, ROLED).catch(() => null);
+            if (remote || control?.state === 'ready') state = 'ready';
           }
         } catch { /* no log echo or secret disclosure */ }
       }

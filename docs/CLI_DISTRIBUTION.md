@@ -229,5 +229,6 @@ normal test command; only syntax, contract, and refusal tests run unattended.
 ## Independent Linux server preview
 
 See [SERVER_PREVIEW.md](SERVER_PREVIEW.md) for the separate server profile,
-reused owned lifecycle and operator-managed HTTPS ingress. Remote worker
-enrollment remains a separate feature.
+reused owned lifecycle and operator-managed HTTPS ingress. See
+[REMOTE_WORKER_PREVIEW.md](REMOTE_WORKER_PREVIEW.md) for separately managed
+remote worker enrollment, diagnostics and lifecycle.

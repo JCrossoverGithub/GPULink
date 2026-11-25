@@ -1,6 +1,6 @@
 # Installable GPULink CLI — release candidate
 
-**Scope:** local and Linux server developer preview, not remote worker enrollment or a public v0.1 release. Linux/WSL managed local control-plane/worker commands are unchanged; Windows supports CLI configuration and diagnostics, not native managed services. Node.js 24+ and npm are required. GPU drivers and Python/model dependencies are not bundled. macOS acceptance is not yet claimed.
+**Scope:** local, Linux server and remote worker developer preview, not a public v0.1 release. Linux/WSL managed local control-plane/worker commands are unchanged; Windows supports CLI configuration and diagnostics, not native managed services. Node.js 24+ and npm are required. GPU drivers and Python/model dependencies are not bundled. macOS acceptance is not yet claimed.
 
 ## Obtain and verify the candidate
 
@@ -50,3 +50,5 @@ npm run test:cli:release -- data/cli-release
 The build requires registry access to resolve the checked-in lockfile, uses `npm ci --ignore-scripts`, bundles runtime dependencies with the existing CLI/Core packaging boundary, and refuses an existing output directory. The same artifact is accepted by the Linux and Windows CI jobs using an empty npm cache and `--offline`. The Linux acceptance explicitly starts and stops disposable local and server control planes sequentially (requires port 8088 free and OpenSSL available); the server check uses a temporary loopback HTTPS proxy and test certificate. It does not start a worker or use a GPU. The install check validates direct invocation from unrelated directories, distinct credentials, non-overwrite, diagnostics and package removal. Existing source-built CLI/GPU acceptance commands remain available unchanged.
 
 A build from a dirty checkout is explicitly a QA candidate (`sourceRevision: null`), not releasable. Clean reviewed CI builds identify the exact source commit. No publication, real GPU execution, real certificate issuance or cloud changes occur during candidate build. This is a versioned, locked build recipe; bit-for-bit cross-platform reproducibility, signatures, independent remote worker setup, upgrade/rollback and general availability are not certified by it.
+
+For a separately installed Linux GPU worker, see [REMOTE_WORKER_PREVIEW.md](REMOTE_WORKER_PREVIEW.md). Packaged authentication checks do not imply physical cross-host acceptance.

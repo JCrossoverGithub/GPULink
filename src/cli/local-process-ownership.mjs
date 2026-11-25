@@ -13,12 +13,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const DIGITS = /^[1-9][0-9]{0,24}$/u;
 
 export function installationFingerprint(setup) {
-  const key = setup?.profiles?.["control-plane.env"]?.GPULINK_DATA_PLANE_SIGNING_KEY;
+  const remote = setup?.kind === "remote-worker";
+  const key = remote ? setup.installationKey : setup?.profiles?.["control-plane.env"]?.GPULINK_DATA_PLANE_SIGNING_KEY;
   if (typeof key !== "string" || key.length < 32 || !path.isAbsolute(setup?.directory ?? "")) {
     throw new Error("Validated local setup required for ownership inspection.");
   }
   return createHash("sha256")
-    .update("GPULINK_LOCAL_OWNERSHIP_V1\0", "utf8")
+    .update(remote ? "GPULINK_REMOTE_WORKER_OWNERSHIP_V1\0" : "GPULINK_LOCAL_OWNERSHIP_V1\0", "utf8")
     .update(path.resolve(setup.directory), "utf8")
     .update("\0", "utf8")
     .update(key, "utf8")

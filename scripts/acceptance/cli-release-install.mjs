@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
@@ -136,6 +136,34 @@ try {
     env.GPULINK_CLIENT_TOKEN='invalid-test-token-not-a-real-secret';
     cli(['jobs'],1);
     delete env.GPULINK_URL; delete env.GPULINK_CLIENT_TOKEN;
+    // DEV-03: use the actual installed CLI and server, not a simulated token
+    // service. No worker starts; no GPU is required in unattended CI.
+    const bundle = path.join(scratch,'s','worker-bundle.json');
+    cli([...server,'server','worker-bundle','--output',bundle]);
+    assert.equal(statSync(bundle).mode & 0o777,0o600);
+    const grant = JSON.parse(readFileSync(bundle,'utf8'));
+    assert.deepEqual(Object.keys(grant).sort(),['publicOrigin','schemaVersion','workerToken']);
+    if(grant.workerToken !== control.GPULINK_WORKER_TOKEN) throw new Error('Exported wrong credential role');
+    const w = ['--config-dir','../w'];
+    const untrusted = ['--config-dir','../untrusted'];
+    cli([...untrusted,'worker','enroll','--bundle',bundle]);
+    env.NODE_TLS_REJECT_UNAUTHORIZED='0';
+    cli([...untrusted,'worker','doctor','--live'],1);
+    delete env.NODE_TLS_REJECT_UNAUTHORIZED;
+    cli([...w,'worker','enroll','--bundle',bundle,'--ca-file',cert]);
+    cli([...w,'worker','doctor']);
+    assert.match(cli([...w,'worker','doctor','--live']),/PASS: trusted HTTPS and worker-role authorization/);
+    assert.equal(JSON.parse(cli([...w,'worker','status'])).managedState,'not-running');
+    cli([...w,'worker','start'],2);
+    cli([...w,'worker','enroll','--bundle',bundle],1);
+    cli([...w,'local','start'],1);
+    const wrong = path.join(scratch,'s','wrong-bundle.json');
+    writeFileSync(wrong,JSON.stringify({...grant,workerToken:'0'.repeat(64)}),{mode:0o600,flag:'wx'});
+    const bad = ['--config-dir','../bad'];
+    cli([...bad,'worker','enroll','--bundle',wrong,'--ca-file',cert]);
+    cli([...bad,'worker','doctor','--live'],1);
+    assert.deepEqual(JSON.parse(cli([...server,'workers'])).workers,[]);
+    console.log('PASS: installed worker bundle/enrollment, role-only credentials, private CA trust, invalid TLS/auth rejection, no registration or GPU execution');
     cli([...server,'server','stop']);
     assert.equal(JSON.parse(cli([...server,'server','status'])).controlPlane,'offline');
     serverStopped = true;
