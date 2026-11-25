@@ -98,10 +98,7 @@ trusted; HTTP is allowed only on exact loopback. For this example:
 
 ```js
 import { GPULinkClient } from '@gpulink/client';
-const client = new GPULinkClient({
-  baseUrl: process.env.GPULINK_BASE_URL,
-  token: process.env.GPULINK_CLIENT_TOKEN,
-});
+const client = GPULinkClient.fromEnv(process.env);
 const {job} = await client.submitJob({
   projectId: 'scale-example',
   type: 'external.batch.scale',
@@ -113,7 +110,20 @@ console.log(job.id);
 ```
 
 Save the returned ID. In a later invocation of the application, call
-`client.getJob(jobId)` to retrieve status and result. The scale example should
+`client.getJob(jobId)` to retrieve status and result, or wait for a terminal
+record without using the operator CLI:
+
+```js
+const terminal = await client.waitForJob(jobId, { timeoutMs: 60_000 });
+if (terminal.status === 'succeeded') console.log(terminal.result);
+else console.error('Job ended:', terminal.status);
+```
+
+A wait timeout (`JOB_WAIT_TIMEOUT`) or caller abort stops observation only;
+it never cancels or resubmits a durable job. Retain the ID and reconnect
+when needed. Only `cancelJob(jobId)` requests job cancellation.
+
+The scale example should
 return `[2,4,6]` with `backend: "pytorch-cuda"` **only after** you replace the
 CPU starter with the example and execute successfully on a CUDA worker.
 Persist a distinct idempotency key for each intended logical job. No need for

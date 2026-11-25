@@ -14,6 +14,46 @@ Experimental application client for GPULink's existing `/v1` HTTP contract.
 Run `npm ci --ignore-scripts && npm run build && npm test` inside this package.
 This package is private until compatibility and security acceptance are complete.
 
+## Durable job quickstart (private preview)
+
+Use a matching installed SDK and an operator-provided endpoint and **client**
+credential. In Node, `GPULinkClient.fromEnv(process.env)` reads only
+`GPULINK_BASE_URL` and `GPULINK_CLIENT_TOKEN` from the supplied object. It does
+not load a file, inspect other profiles or fall back to admin credentials.
+The existing explicit constructor remains supported.
+
+```js
+import { GPULinkClient } from '@gpulink/client';
+const client = GPULinkClient.fromEnv(process.env);
+const { job } = await client.submitJob({
+  projectId: 'my-app',
+  type: 'external.batch.scale', // must be installed by the operator
+  constraints: { gpuCount: 1, minVramMiB: 1000 },
+  payload: { values: [1, 2, 3] },
+  maxAttempts: 1,
+}, { idempotencyKey: 'my-persisted-request-001' });
+console.log(job.id); // persist this ID before waiting
+const terminal = await client.waitForJob(job.id, { timeoutMs: 60_000 });
+if (terminal.status === 'succeeded') console.log(terminal.result);
+else console.error('Job ended:', terminal.status);
+```
+
+`waitForJob(id, { timeoutMs, pollIntervalMs, signal })` reads the existing
+job endpoint until `succeeded`, `failed` or `cancelled` and returns the
+complete job record. The observation deadline defaults to 60 seconds
+(100–3,600,000 ms); polling defaults to 500 ms (100–30,000 ms). An
+`AbortSignal` interrupts only observation. A `GPULinkJobWaitTimeoutError`
+(`code: JOB_WAIT_TIMEOUT`, `jobId`) means the job may still be running.
+HTTP/authentication/transport errors propagate without automatic retry.
+Resume observation with the same job ID; do not resubmit just because
+waiting timed out. Only explicit `cancelJob(id)` requests cancellation.
+`getJob(id)` remains compatible; it also accepts `{ signal }`.
+
+Never ship client secrets in browser code or commit credential files.
+Use trusted HTTPS remotely and the operator's private CA if required.
+For authoring/approval see the repository's `docs/DEVELOPER_BATCH_QUICKSTART.md`.
+Capability discovery and public registry distribution remain separate work.
+
 ## Authenticated streaming (Phase 5E-2)
 
 `await client.connectSession(sessionId, { connectTimeoutMs: 8000 })` requests
