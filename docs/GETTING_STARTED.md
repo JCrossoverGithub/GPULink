@@ -43,7 +43,10 @@ export and transfer an invitation; join on the GPU host (optionally `--name`);
 review and approve the intended adapter if needed; explicitly start the worker.
 Joining does not register a worker. The start step is when the GPU appears in
 Manager. Application developers using an existing authorized deployment do not
-need these operator steps.
+need these operator steps. Manager provides a **Connect a GPU worker** guide
+from Overview (empty cluster) and Workers, plus **Prepare and approve an adapter**
+from Adapters. These are terminal command guides, not remote execution or
+credential distribution; approval and start remain explicit local actions.
 
 ## Deployment choices
 

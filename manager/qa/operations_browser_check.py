@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright, expect
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BRIDGE = '--offline-bridge' in sys.argv
-p = subprocess.Popen(['node', 'manager/qa/preview-fixture.mjs', '--enable-controls', '--qa-disconnect', '--qa-named-workers'], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+p = subprocess.Popen(['node', 'manager/qa/preview-fixture.mjs', '--enable-controls', '--qa-disconnect', '--qa-named-workers', '--qa-polish'], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 try:
     url = p.stdout.readline().strip()
     assert url.startswith('http://127.0.0.1:')
@@ -56,6 +56,15 @@ try:
             expect(page.locator('.operation-notice')).to_contain_text('Core acknowledged: '+name,timeout=15000)
             expect(page.locator('#conn')).to_contain_text('Core snapshot',timeout=15000)
         nav('Workers')
+        page.get_by_role('button',name='Connect a GPU worker').click()
+        expect(page.locator('#guideBody')).to_contain_text('local-only installation')
+        expect(page.locator('#guideBody')).to_contain_text('does not register or execute workloads')
+        page.locator('#guideClose').click();assert not posts
+        nav('Adapters');page.get_by_role('button',name='Prepare and approve an adapter').click()
+        expect(page.locator('#guideBody')).to_contain_text('REVIEWED_SHA256')
+        expect(page.locator('#guideBody')).to_contain_text('does not sandbox arbitrary workloads')
+        page.locator('#guideClose').click();assert not posts
+        nav('Workers')
         expect(page.locator('#main').get_by_role('button',name='Inference 01 · aaaaaaaa',exact=True)).to_be_visible()
         expect(page.locator('#main').get_by_role('button',name='Inference 01 · bbbbbbbb',exact=True)).to_be_visible()
         expect(page.locator('#main').get_by_role('button',name='GPU worker · cccccccc',exact=True)).to_be_visible()
@@ -74,10 +83,11 @@ try:
         page.screenshot(path=str(pathlib.Path(tempfile.gettempdir())/'gpulink-operator-confirm.png'))
         page.locator('#operationDismiss').click();action('Drain worker')
         expect(page.locator('#drawerContent').get_by_role('button',name='Resume worker',exact=True)).to_be_enabled()
+        expect(page.locator('.operation-notice')).to_contain_text('Drain enabled. Existing workloads may continue.')
         page.screenshot(path=str(pathlib.Path(tempfile.gettempdir())/'gpulink-operator-drained.png'))
-        action('Resume worker');expect(page.locator('#drawerContent').get_by_role('button',name='Drain worker',exact=True)).to_be_enabled()
-        page.locator('#closeDrawer').click();nav('Jobs');page.locator('#recordFilter').select_option('pending');select('diagnostic.echo');action('Cancel job');expect(page.locator('#drawerContent')).to_contain_text('cancelled');assert page.locator('[data-operation="cancel-job"]').count()==0
-        page.locator('#closeDrawer').click();nav('Sessions');select('diagnostic.echo');action('Close session');expect(page.locator('#drawerContent')).to_contain_text('closed')
+        action('Resume worker');expect(page.locator('#drawerContent').get_by_role('button',name='Drain worker',exact=True)).to_be_enabled();expect(page.locator('.operation-notice')).to_contain_text('Drain disabled. Other placement restrictions still apply.')
+        page.locator('#closeDrawer').click();nav('Jobs');page.locator('#recordFilter').select_option('pending');refs=page.locator('td:first-child .muted[title]');expect(refs).to_have_count(2);assert len(set(refs.all_text_contents()))==2;select('diagnostic.echo');action('Cancel job');expect(page.locator('#drawerContent')).to_contain_text('cancelled');assert page.locator('[data-operation="cancel-job"]').count()==0;expect(page.locator('.operation-notice')).to_contain_text('Job cancellation recorded.')
+        page.locator('#closeDrawer').click();nav('Sessions');select('diagnostic.echo');action('Close session');expect(page.locator('#drawerContent')).to_contain_text('closed');expect(page.locator('.operation-notice')).to_contain_text('Session closure recorded.')
         page.locator('#closeDrawer').click();nav('Workers');select('qa-atlas')
         assert [post['action'] for post in posts]==['drain','resume','cancel-job','close-session']
         p.stdin.write('disconnect\n');p.stdin.flush();assert p.stdout.readline().strip()=='QA Core stopped'
