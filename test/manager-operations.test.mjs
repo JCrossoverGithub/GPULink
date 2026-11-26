@@ -71,3 +71,49 @@ test('gateway serializes mutations across tabs and invalidates the cached snapsh
     release();await check(await first,200,'acknowledged');assert.equal((await snapshot(url)).workers[0].drainMode,true);assert.equal(posts,1);
   }finally{release?.();if(manager?.listening)await close(manager);if(proxy?.listening)await close(proxy);await close(core);await ctx.close();}
 });
+
+test('guarded recovery requires exact hold, explicit attestation, offline drained worker and Core confirmation',async()=>{
+  const ctx=createTestContext({heartbeatTimeoutMs:1000});const core=createHttpServer(ctx);let manager,readonly;
+  try{
+    const origin=await listen(core),config={origin,adminToken:ctx.config.tokens.admin,clientToken:ctx.config.tokens.client};
+    const worker=await registerWorker(ctx,{name:'recover-qa',gpus:[gpu({uuid:'GPU-HOLD',memoryTotalMiB:8192})]});
+    const job=await submitJob(ctx);await ctx.service.startJob(job.id,{workerId:worker.id,leaseId:job.leaseId});await ctx.service.cancelJob(job.id);
+    const [hold]=await ctx.database.listJobCleanupHolds();const {leaseId,...identity}=hold;
+    const op={action:'recover-job-hold',...identity,confirmStopped:true,typedGpuUuid:hold.gpuUuid};
+    readonly=createManager(config);const ro=await listen(readonly);assert.equal((await operation(ro,'x',op)).status,405);
+    manager=createManager({...config,controls:true});const url=await listen(manager),initial=await snapshot(url),token=initial.controlToken;
+    assert.ok(!JSON.stringify(initial).includes(leaseId));
+    for(const bad of [{...op,confirmStopped:false},{...op,typedGpuUuid:'GPU-WRONG'},{...op,leaseId},{...op,epoch:0}])await check(await operation(url,token,bad),400,'invalid-request');
+    await check(await operation(url,token,op,{'X-GPULink-Control':'wrong'}),403,'forbidden');
+    await check(await operation(url,token,op),409,'state-changed');
+    await ctx.service.setWorkerDrain(worker.id,{drain:true});await check(await operation(url,token,op),409,'state-changed');
+    await ctx.service.setWorkerDrain(worker.id,{drain:false});ctx.advance(1001);await ctx.scheduler.runOnce();await check(await operation(url,token,op),409,'state-changed');
+    await ctx.service.setWorkerDrain(worker.id,{drain:true});
+    await check(await operation(url,token,{...op,epoch:op.epoch+1}),409,'state-changed');
+    assert.deepEqual(await ctx.database.listJobCleanupHolds(),[hold]);
+    await check(await operation(url,token,op),200,'acknowledged');assert.deepEqual(await ctx.database.listJobCleanupHolds(),[]);
+    const released=await snapshot(url);assert.equal(released.holds.length,0);assert.ok(released.events.some(e=>e.type==='job.cleanup_operator_confirmed'&&e.subjectId===job.id));assert.ok(!JSON.stringify(released).includes(leaseId));
+    await check(await operation(url,token,op),409,'state-changed');
+    assert.equal((await ctx.database.getWorker(worker.id)).drainMode,true);
+  }finally{if(manager?.listening)await close(manager);if(readonly?.listening)await close(readonly);await close(core);await ctx.close();}
+});
+
+test('recovery resolves private lease, refuses changed identity, never retries uncertain release',async()=>{
+  const ctx=createTestContext({heartbeatTimeoutMs:1000});const core=createHttpServer(ctx);let proxy;
+  try{
+    const origin=await listen(core),w=await registerWorker(ctx,{name:'recover-proxy',gpus:[gpu({uuid:'GPU-PRIVATE',memoryTotalMiB:8192})]});
+    const j=await submitJob(ctx);await ctx.service.startJob(j.id,{workerId:w.id,leaseId:j.leaseId});await ctx.service.cancelJob(j.id);await ctx.service.setWorkerDrain(w.id,{drain:true});ctx.advance(1001);await ctx.scheduler.runOnce();
+    const [hold]=await ctx.database.listJobCleanupHolds(),{leaseId,...identity}=hold;
+    const snap=await (await fetch(origin+'/v1/admin/operational-snapshot',{headers:{Authorization:'Bearer '+ctx.config.tokens.admin}})).text();
+    let mode='changed',posts=0;proxy=http.createServer(async(q,r)=>{
+      if(q.headers.authorization!=='Bearer admin'){r.writeHead(403);return r.end();}
+      if(q.method==='GET'){r.writeHead(200,{'Content-Type':'application/json'});return r.end(q.url.endsWith('operational-snapshot')?snap:JSON.stringify({holds:[{...hold,epoch:mode==='changed'?hold.epoch+1:hold.epoch}]}));}
+      posts++;const chunks=[];for await(const c of q)chunks.push(c);assert.equal(q.url,'/v1/admin/job-cleanup-holds/release');assert.deepEqual(JSON.parse(Buffer.concat(chunks)),{...hold,confirmStopped:true});
+      if(mode==='drop')return q.socket.destroy();r.writeHead(200,{'Content-Type':'application/json'});r.end(JSON.stringify({released:true,operatorAttested:false}));
+    });
+    const config={origin:await listen(proxy),adminToken:'admin',clientToken:'client'},op=parseOperation({action:'recover-job-hold',...identity,confirmStopped:true,typedGpuUuid:hold.gpuUuid});
+    assert.deepEqual(await executeOperation(config,op),{status:409,outcome:'state-changed'});assert.equal(posts,0);
+    for(mode of ['drop','bad-ack'])assert.deepEqual(await executeOperation(config,op),{status:502,outcome:'uncertain'});
+    assert.equal(posts,2);assert.deepEqual(await ctx.database.listJobCleanupHolds(),[hold]);
+  }finally{if(proxy?.listening)await close(proxy);await close(core);await ctx.close();}
+});

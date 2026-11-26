@@ -14,6 +14,8 @@ await ctx.service.submitSession({projectId:'qa-session',capability:'diagnostic.e
 if(process.argv.includes('--qa-many-hosts'))for(let i=4;i<=6;i++)await registerWorker(ctx,{name:'qa-extra-'+i,gpus:[gpu({uuid:'GPU-QA-'+i,name:'QA device 0'+i,memoryTotalMiB:8192})]});
 if(process.argv.includes('--qa-many-hosts'))await ctx.database.appendEvent('constructor',null,{},ctx.clock());
 if(process.argv.includes('--enable-controls'))await submitJob(ctx,{projectId:'qa-cancel-demo',constraints:{gpuCount:1,minVramMiB:999999,capabilities:['diagnostic.echo']}});
+// Dedicated recovery scenario: only synthetic execution exists; never use for a live installation.
+if(process.argv.includes('--qa-recovery')){await ctx.service.setWorkerDrain(w.id,{drain:true});ctx.advance(ctx.config.heartbeatTimeoutMs+1);await ctx.scheduler.runOnce();}
 const manager=createManager({origin:`http://127.0.0.1:${core.address().port}`,adminToken:ctx.config.tokens.admin,clientToken:ctx.config.tokens.client,fixture:true,controls:process.argv.includes('--enable-controls')});
 manager.listen(0,'127.0.0.1');await once(manager,'listening');console.log(`http://127.0.0.1:${manager.address().port}/`);
 console.log('Isolated QA Core, synthetic telemetry, in-memory SQLite. Ctrl+C closes both.');
