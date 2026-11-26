@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { Socket } from "node:net";
 import {
   launchSyntheticAsrRuntime,
   SyntheticAsrRuntimeError,
@@ -155,6 +156,43 @@ pythonTest("bounded pending samples prevent an unacknowledged backlog", async ()
     await Promise.all(rejected);
   }
 });
+
+// Reproduce pipe teardown ordering independently of OS buffer sizes and timing.
+for (const event of ["write callback", "stream error"]) {
+  for (const cancelFirst of [true, false]) {
+    pythonTest(`stdin ${event} ${cancelFirst ? "after cancellation preserves cancellation" : "before cancellation remains failure"}`, async (t) => {
+      const child = await launchSyntheticAsrRuntime(opt({ mode: "no_ack", ackTimeoutMs: 2_000 }));
+      let pipe, callback;
+      const original = Socket.prototype.write;
+      const hook = t.mock.method(Socket.prototype, "write", function (chunk, ...args) {
+        if (Buffer.isBuffer(chunk) && chunk.toString("utf8").includes('"type":"asr.ipc.audio.v1"')) {
+          pipe = this;
+          callback = args[0];
+          return original.call(this, chunk, () => {});
+        }
+        return original.call(this, chunk, ...args);
+      });
+      try {
+        const pending = child.sendAudio(audio());
+        hook.mock.restore();
+        assert.ok(pipe);
+        assert.equal(typeof callback, "function");
+        const closing = cancelFirst ? child.cancel() : child.waitForExit();
+        if (cancelFirst) assert.equal(child.snapshot().state, "cancelling");
+        const error = Object.assign(new Error("synthetic pipe teardown"), { code: "EPIPE" });
+        if (event === "write callback") callback(error);
+        else pipe.emit("error", error);
+        await assert.rejects(pending, assertCode(cancelFirst ? "session_cancelled" : "runtime_io_failed"));
+        const result = await closing;
+        assert.equal(result.state, cancelFirst ? "cancelled" : "failed");
+        assert.equal(child.snapshot().pendingSamples, 0);
+      } finally {
+        hook.mock.restore();
+        await child.cancel();
+      }
+    });
+  }
+}
 
 pythonTest("explicit cancellation reaps child and rejects pending ACKs", async () => {
   const child = await launchSyntheticAsrRuntime(opt({ mode: "no_ack", ackTimeoutMs: 2_000 }));

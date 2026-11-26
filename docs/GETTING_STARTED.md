@@ -28,6 +28,10 @@ For a coordinated set of independently installable candidate packages, see
 [distribution candidate installation](DISTRIBUTION_CANDIDATE.md) and
 [release delivery](RELEASE_DELIVERY.md).
 
+For a complete bounded CUDA reference application, see the
+[standalone vector-search example](../examples/vector-search/README.md) and
+[physical acceptance record](acceptance/independent-vector-search-2026-11-25.md).
+
 ## Deployment choices
 
 - **Run your own GPULink:** You or your organization deploy the control plane,

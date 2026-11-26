@@ -128,7 +128,9 @@ export async function launchSyntheticAsrRuntime({
     }
   }
   function fail(code) {
-    if (state === "failed" || state === "cancelled" || state === "completed") return;
+    // Cancellation owns teardown once requested. In-flight pipe callbacks and ACK
+    // deadlines may fire while the child exits; only close finalizes cancellation.
+    if (state === "cancelling" || state === "failed" || state === "cancelled" || state === "completed") return;
     state = "failed";
     const error = new SyntheticAsrRuntimeError(code);
     settleReady(error);

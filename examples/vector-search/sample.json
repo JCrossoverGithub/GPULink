@@ -1,0 +1,12 @@
+{
+  "query": [8, 3, -2, 5],
+  "items": [
+    {"id":"audio", "vector":[7, 4, -1, 5]},
+    {"id":"video", "vector":[6, 2, -2, 7]},
+    {"id":"render", "vector":[9, 0, -3, 2]},
+    {"id":"search", "vector":[3, 8, 4, 0]},
+    {"id":"storage", "vector":[-5, 3, 4, 2]},
+    {"id":"network", "vector":[0, 2, 1, 8]}
+  ],
+  "topK": 3
+}

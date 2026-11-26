@@ -33,6 +33,8 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | Installed trusted external GPU workloads | Yes | PR #34 (November 25): independently packaged external CUDA session, correct matrix result, persisted allocation/release, 8 CI checks passed | Existing GLIP subprocess/session backend; no hostile-code sandbox |
 | Uncertain running-job cleanup holds | Yes | PR #35 (November 25): 67 local tests, installed acceptance and 9 CI checks including PostgreSQL; [job cleanup safety](JOB_CLEANUP_SAFETY.md) | Conservative durable quarantine and explicit operator-attested recovery, not verified hardware isolation |
 | Installed durable external batch workloads | Yes | PR #36 (November 25): independent installed CUDA batch, cancellation, quarantine, explicit recovery, restart persistence and 9 CI checks; [external batch preview](EXTERNAL_BATCH_PREVIEW.md) | Operator-approved bounded JSON jobs, not arbitrary-code isolation or large artifacts |
+| Coordinated distribution and accepted-source delivery | Yes | PRs #39–#40 (November 25): four packages, Linux/Windows installation and verified release archive; [release delivery](RELEASE_DELIVERY.md) | CI candidate, no new public release or registry publication |
+| Independent vector-search reference application | Yes | [DEV-06 physical acceptance](acceptance/independent-vector-search-2026-11-25.md): separate application and worker, exact CUDA result, one attempt, teardown | Team-guided small batch example; independent newcomer acceptance remains outstanding |
 
 ## How to verify the claimed boundaries
 
@@ -46,7 +48,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 delivered the [remote worker preview](REMOTE_WORKER_PREVIEW.md) and passed guided physical acceptance (PR #32). The [managed LAN onboarding preview](MANAGED_LAN_PREVIEW.md) passed physical acceptance in PR #33. Version upgrades/rollback and independent newcomer acceptance remain outstanding.
 2. **Disposable PostgreSQL CI acceptance:** job cleanup gate passed in PR #35; additional optional database integration suites remain separately scoped.
 3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
-4. **Adapter portability and isolation:** accept at least one second independently authored, non-ASR workload; keep trusted operator approval separate from claims of arbitrary-code sandboxing.
+4. **Adapter portability and isolation:** DEV-06 accepted an independently packaged, team-authored non-ASR vector-search application; external newcomer acceptance and broader runtime portability remain outstanding. Keep trusted operator approval separate from claims of arbitrary-code sandboxing.
 5. **Operator upgrade / rollback and lifecycle ownership:** verify installation migration and crash recovery outside the original deployment, rather than extrapolating the local developer preview into production supervision.
 
 **No credentials, certificates, environment-specific fingerprints, personal host
