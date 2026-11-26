@@ -3,12 +3,16 @@ import {once} from 'node:events';
 import {createTestContext,gpu,registerWorker,submitJob} from '../../test/helpers.mjs';
 import {createHttpServer} from '../../src/control-plane/http-server.mjs';
 import {createManager} from '../gateway.mjs';
+import {adapterHealthReport} from '../../src/shared/adapter-health.mjs';
 const ctx=createTestContext({initialNow:Date.now()});
 const core=createHttpServer(ctx);await core.startEventNotifications();core.listen(0,'127.0.0.1');await once(core,'listening');
 const w=await registerWorker(ctx,{name:'qa-atlas',gpus:[gpu({uuid:'GPU-QA-1',name:'QA device 01',memoryTotalMiB:24576,memoryUsedMiB:1024}),gpu({uuid:'GPU-QA-2',index:1,name:'QA device 02',memoryTotalMiB:8192})]});
 const j=await submitJob(ctx,{payload:{echo:'test fixture only'}});await ctx.service.startJob(j.id,{workerId:j.assignedWorkerId,leaseId:j.leaseId});await ctx.service.cancelJob(j.id);
-await registerWorker(ctx,{name:'qa-orion',gpus:[gpu({uuid:'GPU-QA-3',name:'QA device 03',memoryTotalMiB:8192})]});
+await ctx.service.registerWorker({name:'qa-orion',version:'test',labels:{},capabilities:['diagnostic.echo'],warmModels:[],adapterManifests:[{schemaVersion:1,type:'diagnostic.echo',version:'1.0.0',executionMode:'in-process'}],adapterHealth:[adapterHealthReport('diagnostic.echo','ready',ctx.clock())],gpus:[gpu({uuid:'GPU-QA-3',name:'QA device 03',memoryTotalMiB:8192})]});
 await ctx.service.submitSession({projectId:'qa-session',capability:'diagnostic.echo',requirements:{minVramMiB:1}});
+// Optional extra hosts exercise topology grouping without changing the default fixture.
+if(process.argv.includes('--qa-many-hosts'))for(let i=4;i<=6;i++)await registerWorker(ctx,{name:'qa-extra-'+i,gpus:[gpu({uuid:'GPU-QA-'+i,name:'QA device 0'+i,memoryTotalMiB:8192})]});
+if(process.argv.includes('--qa-many-hosts'))await ctx.database.appendEvent('constructor',null,{},ctx.clock());
 const manager=createManager({origin:`http://127.0.0.1:${core.address().port}`,adminToken:ctx.config.tokens.admin,clientToken:ctx.config.tokens.client,fixture:true});
 manager.listen(0,'127.0.0.1');await once(manager,'listening');console.log(`http://127.0.0.1:${manager.address().port}/`);
 console.log('Isolated QA Core, synthetic telemetry, in-memory SQLite. Ctrl+C closes both.');
