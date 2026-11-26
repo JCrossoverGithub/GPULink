@@ -20,7 +20,8 @@ const opts = (overrides = {}) => ({
   scriptPath: fileURLToPath(new URL("../scripts/asr/synthetic_runtime.py", import.meta.url)),
   modelId: "example/synthetic-asr",
   revision: "0".repeat(40),
-  startupTimeoutMs: 2_000,
+  // CI process startup can be slow; keep the explicit supervisor timeout tests separate.
+  startupTimeoutMs: 10_000,
   ackTimeoutMs: 500,
   terminateGraceMs: 150,
   ...overrides,

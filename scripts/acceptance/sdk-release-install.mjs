@@ -2,7 +2,7 @@
 // Verify the actual SDK archives outside the repository. No worker or GPU execution.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,11 @@ try {
   assert.equal(spec.split("'../dist/index.js'").length,2);
   writeFileSync(path.join(scratch,'installed-job-wait.mjs'),spec.replace("'../dist/index.js'","'@gpulink/client'"));
   run(['--test','installed-job-wait.mjs']);
+  // Exercise the standalone application with the installed candidate SDK, not a Core import.
+  for (const name of ['search.mjs','reference.mjs','sample.json','test.mjs']) {
+    copyFileSync(path.join(root,'examples/vector-search',name),path.join(scratch,name));
+  }
+  run(['--test','test.mjs']);
   const bin = path.join(scratch,'node_modules/@gpulink/adapter-sdk/bin/package.mjs');
   assert.ok(existsSync(path.join(scratch,'node_modules/.bin',process.platform==='win32'?'gpulink-adapter-package.cmd':'gpulink-adapter-package')));
   run([bin,'init-batch','--out','author','--type','external.batch.release']);

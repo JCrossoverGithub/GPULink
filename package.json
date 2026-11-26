@@ -15,9 +15,9 @@
     "build:cli:release": "node scripts/build-cli-release.mjs",
     "test:cli:release": "node scripts/acceptance/cli-release-install.mjs",
     "test:sdk:release": "node scripts/acceptance/sdk-release-install.mjs",
-    "test": "node --test --test-concurrency=1",
-    "test:watch": "node --test --watch",
-    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --check scripts/migrate-sqlite-to-postgres.mjs && node --test --test-concurrency=1",
+    "test": "node --test --test-concurrency=1 \"test/**/*.mjs\" \"packages/gpulink-adapter-sdk/spec/*.test.mjs\"",
+    "test:watch": "node --test --watch \"test/**/*.mjs\" \"packages/gpulink-adapter-sdk/spec/*.test.mjs\"",
+    "check": "node --check src/control-plane/main.mjs && node --check src/worker/main.mjs && node --check src/cli/main.mjs && node --check scripts/migrate-sqlite-to-postgres.mjs && node --test --test-concurrency=1 \"test/**/*.mjs\" \"packages/gpulink-adapter-sdk/spec/*.test.mjs\"",
     "test:postgres": "node --test test/postgres-persistence.test.mjs",
     "migrate:sqlite-to-postgres": "node scripts/migrate-sqlite-to-postgres.mjs"
   },
