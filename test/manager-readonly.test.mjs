@@ -85,3 +85,20 @@ test('SQLite consistent resource snapshot: UUID allocation, scoped fence, global
     assert.equal((await db.listJobCleanupHolds()).length,1);
   }finally{raw.close();await db.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('only explicit valid worker display label is projected; duplicate labels never merge identity',async()=>{
+  const ctx=createTestContext({initialNow:Date.now()});const core=createHttpServer(ctx);let manager;
+  try{
+    const origin=await listen(core);
+    const labels={'gpulink.display-name':'Inference 01','private':'PRIVATE-LABEL-MARKER'};
+    const register=(name,labels)=>ctx.service.registerWorker({name,version:'test',labels,capabilities:['diagnostic.echo'],gpus:[gpu({uuid:'GPU-'+name,memoryTotalMiB:8192})]});
+    const a=await register('gpu-'+'a'.repeat(32),labels),b=await register('gpu-'+'b'.repeat(32),labels),c=await register('unnamed',{'gpulink.display-name':'<img>'});
+    const again=await register(a.name,labels);assert.equal(again.id,a.id);assert.notEqual(a.id,b.id);
+    manager=createManager({origin,adminToken:ctx.config.tokens.admin,clientToken:ctx.config.tokens.client});const url=await listen(manager);
+    const response=await fetch(url+'/api/snapshot',{headers});assert.equal(response.status,200);const text=await response.text(),s=JSON.parse(text);
+    assert.equal(s.workers.length,3);for(const w of [a,b]){const record=s.workers.find(x=>x.id===w.id);assert.equal(record.name,w.name);assert.equal(record.displayName,'Inference 01');}
+    assert.equal(s.workers.find(x=>x.id===c.id).displayName,undefined);assert.ok(!text.includes('PRIVATE-LABEL-MARKER'));assert.ok(!text.includes('"labels"'));assert.ok(!text.includes('<img>'));
+    const altered={...s,workers:s.workers.map(w=>({...w,displayName:'<script>',labels}))};
+    assert.ok(normalizeOperationalSnapshot(altered).workers.every(w=>!Object.hasOwn(w,'displayName')&&!Object.hasOwn(w,'labels')));
+  }finally{if(manager?.listening)await close(manager);if(core.listening)await close(core);await ctx.close();}
+});

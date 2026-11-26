@@ -16,6 +16,8 @@ if(process.argv.includes('--qa-many-hosts'))await ctx.database.appendEvent('cons
 if(process.argv.includes('--enable-controls'))await submitJob(ctx,{projectId:'qa-cancel-demo',constraints:{gpuCount:1,minVramMiB:999999,capabilities:['diagnostic.echo']}});
 // Dedicated recovery scenario: only synthetic execution exists; never use for a live installation.
 if(process.argv.includes('--qa-recovery')){await ctx.service.setWorkerDrain(w.id,{drain:true});ctx.advance(ctx.config.heartbeatTimeoutMs+1);await ctx.scheduler.runOnce();}
+// Duplicate display labels must not merge or confuse generated registrations.
+if(process.argv.includes('--qa-named-workers'))for(const [index,name,label] of [[7,'gpu-'+'a'.repeat(32),'Inference 01'],[8,'gpu-'+'b'.repeat(32),'Inference 01'],[9,'gpu-'+'c'.repeat(32),null]])await ctx.service.registerWorker({name,version:'test',labels:label?{'gpulink.display-name':label}:{},capabilities:['diagnostic.echo'],gpus:[gpu({uuid:'GPU-QA-'+index,name:'QA device 0'+index,memoryTotalMiB:8192})]});
 const manager=createManager({origin:`http://127.0.0.1:${core.address().port}`,adminToken:ctx.config.tokens.admin,clientToken:ctx.config.tokens.client,fixture:true,controls:process.argv.includes('--enable-controls')});
 manager.listen(0,'127.0.0.1');await once(manager,'listening');console.log(`http://127.0.0.1:${manager.address().port}/`);
 console.log('Isolated QA Core, synthetic telemetry, in-memory SQLite. Ctrl+C closes both.');

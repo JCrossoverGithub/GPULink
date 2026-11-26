@@ -40,16 +40,20 @@ and server profiles); prefix every command with `--config-dir` to select a
 nondefault installation. Keep the path short for the supervisor Unix socket.
 
 ```sh
-gpulink worker enroll --bundle "$HOME/gpulink-transfer/worker.json"
+gpulink worker enroll --bundle "$HOME/gpulink-transfer/worker.json" --name "Inference 01"
 # OR, for an operator-verified private CA:
-# gpulink worker enroll --bundle "$HOME/gpulink-transfer/worker.json" --ca-file /path/to/public-ca.pem
+# gpulink worker enroll --bundle "$HOME/gpulink-transfer/worker.json" --name "Inference 01" --ca-file /path/to/public-ca.pem
 
 gpulink worker doctor --live --gpu
 gpulink worker status
 ```
 
 Enrollment creates a private directory, stable random worker name and a
-separate local ownership key. It does not overwrite a profile, register a
+separate local ownership key. The optional `--name` sets a public display label,
+not the unique registration name; it is stored separately and propagated when
+registering. Names may contain 1–40 ASCII letters, digits, spaces, dots,
+underscores or hyphens, beginning and ending alphanumeric. Omit private data.
+Existing profiles remain valid; renaming is not implemented. It does not overwrite a profile, register a
 worker, start a service or allocate GPU work. Do not clone an enrolled
 configuration onto another machine. The worker profile has no client/admin
 or control-plane signing credentials. Do not create two GPULink workers

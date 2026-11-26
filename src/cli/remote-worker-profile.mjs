@@ -5,6 +5,7 @@ import path from 'node:path';
 import https from 'node:https';
 import { rootCertificates } from 'node:tls';
 import { normalizeServerOrigin, readServerSetup } from './server-profile.mjs';
+import { WORKER_DISPLAY_LABEL, validWorkerDisplayName } from '../shared/worker-display-name.mjs';
 import { runDoctor } from './doctor.mjs';
 import { loadWorkerConfig } from '../worker/config.mjs';
 import { loadApprovedSubprocessAdapters } from '../worker/approved-subprocess-adapters.mjs';
@@ -64,21 +65,34 @@ export function runWorkerBundle(args, directory, output = console) {
     return 0;
   } catch { output.error('Worker bundle export refused. Select a valid server profile and a new file in an owner-only directory.'); return 1; }
 }
+export const enrollmentUsage = 'Usage: gpulink [--config-dir WORKER] worker enroll --bundle FILE [--ca-file PEM] [--name NAME]';
+export function parseWorkerEnrollmentOptions(args) {
+  if (args[0] !== '--bundle' || !args[1] || args[1].startsWith('--')) throw new Error('Missing bundle');
+  const options = {bundle:args[1]};
+  for (let i=2;i<args.length;i+=2) {
+    const key={'--ca-file':'caFile','--name':'displayName'}[args[i]], value=args[i+1];
+    if (!['caFile','displayName'].includes(key) || Object.hasOwn(options,key) || !value || value.startsWith('--') || (key==='displayName' && !validWorkerDisplayName(value))) throw new Error('Invalid enrollment option');
+    options[key]=value;
+  }
+  return options;
+}
 export function runWorkerEnrollment(args, directory, output = console) {
-  if (![2,4].includes(args.length) || args[0] !== '--bundle' || (args.length === 4 && args[2] !== '--ca-file')) { output.error('Usage: gpulink [--config-dir WORKER] worker enroll --bundle FILE [--ca-file PEM]'); return 2; }
+  if (args.length===1 && args[0]==='--help') { output.log(enrollmentUsage); return 0; }
+  let options;
+  try { options=parseWorkerEnrollmentOptions(args); } catch { output.error(enrollmentUsage+'; NAME: 1–40 letters, digits, spaces, dots, underscores or hyphens, start/end alphanumeric.'); return 2; }
   let created = false, target;
   try {
     linux();
-    const bundle = parseBundle(JSON.parse(readBounded(path.resolve(args[1]),4096)));
-    const ca = args.length === 4 ? certificates(readBounded(path.resolve(args[3]),65536,false)).join('\n')+'\n' : null;
+    const bundle = parseBundle(JSON.parse(readBounded(path.resolve(options.bundle),4096)));
+    const ca = options.caFile ? certificates(readBounded(path.resolve(options.caFile),65536,false)).join('\n')+'\n' : null;
     target = path.resolve(directory ?? defaultRemoteWorkerDirectory());
     if (existsEntry(target)) throw new Error('Installation already exists.');
     mkdirSync(path.dirname(target), {recursive:true,mode:0o700});
     mkdirSync(target,{mode:0o700}); created = true;
-    const profile = {...bundle,workerName:`gpu-${randomBytes(16).toString('hex')}`,installationKey:randomBytes(32).toString('hex'),privateCa:ca !== null};
+    const profile = {...bundle,workerName:`gpu-${randomBytes(16).toString('hex')}`,installationKey:randomBytes(32).toString('hex'),privateCa:ca !== null,...(options.displayName?{displayName:options.displayName}:{})};
     writePrivate(path.join(target,marker),JSON.stringify(profile)+'\n');
     if (ca) writePrivate(path.join(target,caFile),ca);
-    output.log(`Created independent worker installation ${profile.workerName}. No network requests, GPU allocation or services started.`);
+    output.log(`Created independent worker installation ${profile.displayName ? profile.displayName+' ('+profile.workerName+')' : profile.workerName}. No network requests, GPU allocation or services started.`);
     output.log('Run worker doctor --live --gpu, then explicitly authorize assigned work. Securely remove transferred bundle copies when no longer needed.');
     return 0;
   } catch {
@@ -92,9 +106,10 @@ export function readRemoteWorkerSetup(directory) {
   const target = path.resolve(directory);
   privateDirectory(target);
   const value = JSON.parse(readBounded(path.join(target,marker),4096));
-  if (!exact(value,['schemaVersion','publicOrigin','workerToken','workerName','installationKey','privateCa']) || typeof value.workerName !== 'string' || !namePattern.test(value.workerName) || typeof value.installationKey !== 'string' || !secretPattern.test(value.installationKey) || typeof value.privateCa !== 'boolean') throw new Error('Invalid remote worker profile.');
+  if (!exact(value,['schemaVersion','publicOrigin','workerToken','workerName','installationKey','privateCa',...(Object.hasOwn(value??{},'displayName')?['displayName']:[])]) || (Object.hasOwn(value,'displayName') && !validWorkerDisplayName(value.displayName)) || typeof value.workerName !== 'string' || !namePattern.test(value.workerName) || typeof value.installationKey !== 'string' || !secretPattern.test(value.installationKey) || typeof value.privateCa !== 'boolean') throw new Error('Invalid remote worker profile.');
   parseBundle({schemaVersion:value.schemaVersion,publicOrigin:value.publicOrigin,workerToken:value.workerToken});
   const profile = {GPULINK_CONTROL_PLANE_URL:value.publicOrigin,GPULINK_WORKER_TOKEN:value.workerToken,GPULINK_WORKER_NAME:value.workerName,GPULINK_WORKER_CAPABILITIES:'diagnostic.echo,diagnostic.gpu-status'};
+  if (value.displayName) profile.GPULINK_WORKER_LABELS_JSON=JSON.stringify({[WORKER_DISPLAY_LABEL]:value.displayName});
   let ca = null;
   if (value.privateCa) {
     const filename = path.join(target,caFile);
@@ -102,7 +117,7 @@ export function readRemoteWorkerSetup(directory) {
     profile.NODE_EXTRA_CA_CERTS = filename;
   }
   loadWorkerConfig(profile);
-  return {directory:target,kind:'remote-worker',installationKey:value.installationKey,publicOrigin:value.publicOrigin,ca,profiles:{'worker.env':profile}};
+  return {directory:target,kind:'remote-worker',installationKey:value.installationKey,publicOrigin:value.publicOrigin,ca,displayName:value.displayName??null,profiles:{'worker.env':profile}};
 }
 const catalogName = 'approved-subprocess.json';
 export function remoteWorkerCatalogPath(setup) {
@@ -224,7 +239,7 @@ export async function runWorkerCommand(args,directory,output=console) {
       const run=path.join(setup.directory,'run');
       if (existsEntry(run)) privateDirectory(run);
       const absent=!existsEntry(run) || (!existsEntry(path.join(run,'worker.owner.json')) && !existsEntry(path.join(run,'worker.sock')) && !existsEntry(path.join(run,'start.lock')));
-      output.log(JSON.stringify({schemaVersion:1,scope:'remote-worker-preview',name:setup.profiles['worker.env'].GPULINK_WORKER_NAME,publicOrigin:setup.publicOrigin,managedState:state??(absent?'not-running':'unverified'),note:'Local ownership only; inspect server workers for heartbeat, GPU inventory and scheduling readiness.'},null,2));
+      output.log(JSON.stringify({schemaVersion:1,scope:'remote-worker-preview',name:setup.profiles['worker.env'].GPULINK_WORKER_NAME,...(setup.displayName?{displayName:setup.displayName}:{}),publicOrigin:setup.publicOrigin,managedState:state??(absent?'not-running':'unverified'),note:'Local ownership only; inspect server workers for heartbeat, GPU inventory and scheduling readiness.'},null,2));
       return state || absent ? 0 : 1;
     } catch {output.error('Invalid remote worker profile.');return 1;}
   }

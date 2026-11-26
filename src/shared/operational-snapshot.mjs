@@ -1,4 +1,5 @@
-// Read-only projection. No raw payloads, results, lease IDs, labels, or metadata.
+// Read-only projection. No raw payloads, results, lease IDs, label maps, or metadata.
+import { WORKER_DISPLAY_LABEL, validWorkerDisplayName } from './worker-display-name.mjs';
 const JOB=['queued','leased','running','succeeded','failed','cancelled'];
 const SESSION=['requested','allocated','connecting','active','interrupted','closed'];
 export const HISTORY_LIMIT=500;
@@ -13,7 +14,7 @@ const bool=x=>typeof x==='boolean'?x:invalid();
 const gpu=g=>({uuid:str(g.uuid),index:int(g.index),name:str(g.name),memoryTotalMiB:int(g.memoryTotalMiB),memoryUsedMiB:int(g.memoryUsedMiB),utilizationPercent:int(g.utilizationPercent),temperatureC:int(g.temperatureC),powerDrawWatts:g.powerDrawWatts===null?null:num(g.powerDrawWatts)});
 const manifest=m=>({schemaVersion:state(m.schemaVersion,[1,2]),type:str(m.type),adapterId:m.schemaVersion===2?str(m.adapterId):null,version:str(m.version),executionMode:str(m.executionMode)});
 const health=h=>({schemaVersion:state(h.schemaVersion,[1,2]),type:str(h.type),adapterId:h.schemaVersion===2?str(h.adapterId):null,state:state(h.state,['ready','unavailable','not-installed']),checkedAt:int(h.checkedAt)});
-const worker=w=>({id:str(w.id),name:str(w.name),version:str(w.version),status:state(w.status,['online','offline']),drainMode:bool(w.drainMode),lastSeenAt:int(w.lastSeenAt),gpus:list(w.gpus,16).map(gpu),capabilities:list(w.capabilities,256).map(x=>str(x)),adapterManifests:list(w.adapterManifests,64).map(manifest),adapterHealth:list(w.adapterHealth,64).map(health)});
+const worker=w=>({id:str(w.id),name:str(w.name),...(validWorkerDisplayName(w.displayName)?{displayName:w.displayName}:{}),version:str(w.version),status:state(w.status,['online','offline']),drainMode:bool(w.drainMode),lastSeenAt:int(w.lastSeenAt),gpus:list(w.gpus,16).map(gpu),capabilities:list(w.capabilities,256).map(x=>str(x)),adapterManifests:list(w.adapterManifests,64).map(manifest),adapterHealth:list(w.adapterHealth,64).map(health)});
 const placement=x=>({id:str(x.id),projectId:str(x.projectId),assignedWorkerId:optional(x.assignedWorkerId),assignedGpuUuid:optional(x.assignedGpuUuid),createdAt:int(x.createdAt),updatedAt:int(x.updatedAt)});
 const job=(j,projected=false)=>({...placement(j),type:str(j.type),status:state(j.status,JOB),attempt:int(j.attempt),maxAttempts:int(j.maxAttempts),minVramMiB:int(projected?j.minVramMiB:j.constraints.minVramMiB)});
 const session=(s,projected=false)=>({...placement(s),capability:str(s.capability),status:state(s.status,SESSION),interruptionCount:int(s.interruptionCount),minVramMiB:int(projected?s.minVramMiB:s.requirements.minVramMiB)});
@@ -26,7 +27,7 @@ export const EVENT_LIMIT=200;
 // All reads supplied by a single consistent persistence snapshot. Do not call
 // scheduler placement, acquire its locks, or infer eligibility for a workload.
 export async function collectOperationalState(reader,clock,heartbeatTimeoutMs){
-  const workers=await reader.listWorkers();
+  const workers=(await reader.listWorkers()).map(w=>({...w,displayName:w.labels?.[WORKER_DISPLAY_LABEL]}));
   const activeJobs=await reader.listActiveJobs();
   const activeSessions=await reader.listOccupyingSessions();
   const fences=await reader.listBlockedGpuResources();

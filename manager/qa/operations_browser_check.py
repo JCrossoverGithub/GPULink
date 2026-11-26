@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright, expect
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BRIDGE = '--offline-bridge' in sys.argv
-p = subprocess.Popen(['node', 'manager/qa/preview-fixture.mjs', '--enable-controls', '--qa-disconnect'], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+p = subprocess.Popen(['node', 'manager/qa/preview-fixture.mjs', '--enable-controls', '--qa-disconnect', '--qa-named-workers'], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 try:
     url = p.stdout.readline().strip()
     assert url.startswith('http://127.0.0.1:')
@@ -55,7 +55,21 @@ try:
             page.locator('#operationConfirm').click()
             expect(page.locator('.operation-notice')).to_contain_text('Core acknowledged: '+name,timeout=15000)
             expect(page.locator('#conn')).to_contain_text('Core snapshot',timeout=15000)
-        nav('Workers');select('qa-atlas');action('Drain worker',False);assert not posts
+        nav('Workers')
+        expect(page.locator('#main').get_by_role('button',name='Inference 01 · aaaaaaaa',exact=True)).to_be_visible()
+        expect(page.locator('#main').get_by_role('button',name='Inference 01 · bbbbbbbb',exact=True)).to_be_visible()
+        expect(page.locator('#main').get_by_role('button',name='GPU worker · cccccccc',exact=True)).to_be_visible()
+        page.locator('#search').fill('Inference 01')
+        expect(page.locator('#main').get_by_role('button',name='Inference 01 · aaaaaaaa',exact=True)).to_be_visible()
+        expect(page.locator('#main').get_by_role('button',name='qa-atlas',exact=True)).to_have_count(0)
+        select('Inference 01 · aaaaaaaa');expect(page.locator('#drawerTitle')).to_have_text('Inference 01 · aaaaaaaa')
+        page.locator('#drawerContent').get_by_text('Technical identifiers',exact=True).click()
+        expect(page.locator('#drawerContent').get_by_text('gpu-'+'a'*32,exact=True)).to_be_visible()
+        page.locator('#drawerContent').get_by_role('button',name='Drain worker',exact=True).click()
+        expect(page.locator('#operationTarget')).to_contain_text('gpu-'+'a'*32)
+        page.locator('#operationDismiss').click();assert not posts
+        page.locator('#closeDrawer').click();page.locator('#search').fill('')
+        select('qa-atlas');action('Drain worker',False);assert not posts
         page.locator('#drawerContent').get_by_role('button',name='Drain worker',exact=True).click()
         page.screenshot(path=str(pathlib.Path(tempfile.gettempdir())/'gpulink-operator-confirm.png'))
         page.locator('#operationDismiss').click();action('Drain worker')
