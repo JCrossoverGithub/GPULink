@@ -67,3 +67,6 @@ Use a fresh cache when testing the exact candidate rather than the previously pu
 The workflow reuses the existing CLI build, the locked TypeScript compiler, `npm pack`, `dotnet pack`, and the existing NuGet content verifier. The new coordinator refuses dirty build checkouts, wrong CLI provenance, unexpected SDK package contents, altered SDK metadata, extra candidate files and existing output directories. The install jobs verify the same combined artifact and exercise the existing CLI acceptance, offline npm SDK installation (including durable wait tests and adapter packaging), and local-feed .NET restoration into a fresh consumer. The existing separate CI contract suites remain required.
 
 The candidate is not a public release, signed attestation, bit-for-bit reproducibility claim, or proof of public registry ownership. Package publishing, signing/attestation, public prerelease numbering, upgrade policies and clean developer validation remain separate decisions. No GPU execution or external deployment is added by this workflow.
+
+For the accepted-main delivery archive, release authorization and conservative
+update procedure, see [release delivery](RELEASE_DELIVERY.md).

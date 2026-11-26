@@ -122,6 +122,59 @@ class CandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
             r.verify(self.output, self.revision)
 
+    def stage(self, output=None, revision=None):
+        git = r.git
+        with patch.object(r, 'git', side_effect=lambda *args: b'' if args[0] == 'status' else git(*args)):
+            r.stage_delivery(self.output, output or self.root / 'delivery', revision or self.revision)
+
+    def test_delivery_preserves_exact_candidate_bytes(self):
+        self.assemble()
+        self.stage()
+        delivery = self.root / 'delivery'
+        name = f'gpulink-distribution-v{self.version}-{self.revision}.zip'
+        archive = delivery / name
+        self.assertEqual({p.name for p in delivery.iterdir()}, {name, f'{name}.sha256'})
+        self.assertEqual((delivery / f'{name}.sha256').read_text(), f"{r.describe(archive)['sha256']}  {name}\n")
+        with zipfile.ZipFile(archive) as z:
+            expected = {p.relative_to(self.output).as_posix(): p.read_bytes() for p in self.output.rglob('*') if p.is_file()}
+            self.assertEqual(set(z.namelist()), set(expected))
+            self.assertEqual(len(z.namelist()), len(expected))
+            for filename, data in expected.items():
+                self.assertEqual(z.read(filename), data)
+
+    def test_delivery_rejects_wrong_revision(self):
+        self.assemble()
+        with self.assertRaisesRegex(ValueError, 'revision does not match checkout'):
+            self.stage(revision='0' * 40)
+        self.assertFalse((self.root / 'delivery').exists())
+
+    def test_delivery_rejects_dirty_checkout(self):
+        self.assemble()
+        git = r.git
+        with patch.object(r, 'git', side_effect=lambda *args: b' M package.json\n' if args[0] == 'status' else git(*args)):
+            with self.assertRaisesRegex(ValueError, 'Clean checkout required'):
+                r.stage_delivery(self.output, self.root / 'delivery', self.revision)
+        self.assertFalse((self.root / 'delivery').exists())
+
+    def test_delivery_rejects_tampered_candidate(self):
+        self.assemble()
+        (self.output / r.SUMS).write_text('tampered')
+        with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            self.stage()
+        self.assertFalse((self.root / 'delivery').exists())
+
+    def test_delivery_refuses_existing_and_nested_output(self):
+        self.assemble()
+        delivery = self.root / 'delivery'
+        delivery.mkdir()
+        (delivery / 'keep').write_text('preserve')
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            self.stage()
+        self.assertEqual((delivery / 'keep').read_text(), 'preserve')
+        with self.assertRaisesRegex(ValueError, 'outside candidate'):
+            self.stage(output=self.output / 'nested')
+        self.assertFalse((self.output / 'nested').exists())
+
 
 if __name__ == '__main__':
     unittest.main()
