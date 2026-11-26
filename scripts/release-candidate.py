@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 import xml.etree.ElementTree as ET
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = 'candidate.json'
@@ -145,6 +146,35 @@ def assemble(cli, sdk, output, revision):
         raise
 
 
+def stage_delivery(directory, output, revision):
+    """Archive already-built, verified candidate bytes; never publish or rebuild."""
+    require(revision == git('rev-parse', 'HEAD').decode().strip(), 'Expected revision does not match checkout')
+    require(not git('status', '--porcelain', '--untracked-files=all').strip(), 'Clean checkout required for release delivery')
+    verify(directory, revision)
+    require(not output.exists() and not output.is_symlink(), 'Delivery destination already exists')
+    require(not output.resolve().is_relative_to(directory.resolve()), 'Delivery must be outside candidate')
+    version, _, _, _ = contract()
+    name = f'gpulink-distribution-v{version}-{revision}.zip'
+    files = sorted([*json_file(directory / MANIFEST)['files'], MANIFEST, SUMS])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.mkdir(mode=0o700)
+    try:
+        archive = output / name
+        with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_STORED) as z:
+            for filename in files:
+                z.write(directory / filename, arcname=filename)
+        with zipfile.ZipFile(archive) as z:
+            require(z.namelist() == files and z.testzip() is None, 'Delivery archive members or CRC mismatch')
+            for filename in files:
+                require(digest(z.read(filename)) == describe(directory / filename)['sha256'],
+                        f'Delivery archive content mismatch: {filename}')
+        (output / f'{name}.sha256').write_text(f"{describe(archive)['sha256']}  {name}\n", encoding='utf-8', newline='\n')
+    except BaseException:
+        shutil.rmtree(output)
+        raise
+    print(f'PASS: release delivery staged for {revision}; no publication: {archive}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     verbs = parser.add_subparsers(dest='verb', required=True)
@@ -154,18 +184,23 @@ def main():
     build.add_argument('output', type=Path)
     check = verbs.add_parser('verify')
     check.add_argument('directory', type=Path)
-    for verb in (build, check):
+    stage = verbs.add_parser('stage')
+    stage.add_argument('directory', type=Path)
+    stage.add_argument('output', type=Path)
+    for verb in (build, check, stage):
         verb.add_argument('--revision', required=True)
     args = parser.parse_args()
     require(args.revision == git('rev-parse', 'HEAD').decode().strip(), 'Expected revision does not match checkout')
     if args.verb == 'assemble':
         assemble(args.cli, args.sdk, args.output, args.revision)
-    else:
+    elif args.verb == 'verify':
         verify(args.directory, args.revision)
+    else:
+        stage_delivery(args.directory, args.output, args.revision)
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, OSError, KeyError, TypeError, tarfile.TarError, subprocess.CalledProcessError) as exc:
+    except (ValueError, OSError, KeyError, TypeError, tarfile.TarError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
         raise SystemExit(f'STOP: {exc}') from exc

@@ -68,3 +68,23 @@ jobs:
       - run: npm run test:cli:release -- data/distribution-candidate/cli
       - run: npm run test:sdk:release -- data/distribution-candidate
       - run: python scripts/acceptance/dotnet-release-install.py data/distribution-candidate
+  release-delivery:
+    needs: [build, install]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpulink-distribution-candidate-${{ github.sha }}
+          path: data/distribution-candidate
+      - run: python scripts/release-candidate.py stage data/distribution-candidate data/release-delivery --revision "${{ github.sha }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpulink-release-delivery-${{ github.sha }}
+          path: data/release-delivery/*
+          if-no-files-found: error
+          retention-days: 14

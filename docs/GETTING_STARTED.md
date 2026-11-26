@@ -25,7 +25,8 @@ For the November 25 installed batch preview and the guided Python author/operato
 workflow, see [your first external batch workload](DEVELOPER_BATCH_QUICKSTART.md).
 
 For a coordinated set of independently installable candidate packages, see
-[distribution candidate installation](DISTRIBUTION_CANDIDATE.md).
+[distribution candidate installation](DISTRIBUTION_CANDIDATE.md) and
+[release delivery](RELEASE_DELIVERY.md).
 
 ## Deployment choices
 
