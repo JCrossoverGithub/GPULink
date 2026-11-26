@@ -20,10 +20,11 @@ try:
   page.locator('.c-slot').first.click();page.locator('#drawerTitle').get_by_text('QA device 01').wait_for();page.get_by_text('GPU-QA-1',exact=True).wait_for();page.screenshot(path=str(pathlib.Path(tempfile.gettempdir())/'gpulink-manager-inspection.png'),full_page=True);page.locator('#closeDrawer').click();
   for name in ['Workers','GPUs','Jobs','Sessions','Adapters','Events','Recovery','Settings','Overview']:
    page.locator('#nav').get_by_role('button',name=name,exact=True).click();assert page.locator('h1').inner_text()==('Cluster operations' if name=='Overview' else name)
+  page.locator('#nav').get_by_role('button',name='Events',exact=True).click();page.get_by_text('job.cancelled',exact=True).wait_for();assert page.get_by_role('table').is_visible();page.locator('#nav').get_by_role('button',name='Recovery',exact=True).click();page.get_by_text('Other scheduler safety fences',exact=True).wait_for();page.locator('#nav').get_by_role('button',name='Overview',exact=True).click();
   page.get_by_role('button',name='Topology',exact=True).click();page.locator('.topology-host').first.wait_for();page.get_by_role('button',name='Resources',exact=True).click();assert page.locator('#resourceTree').is_visible();page.get_by_role('button',name='Close resource tree').click();page.get_by_role('button',name='Rack',exact=True).click();
   for width in [1024,768,390]:
    page.set_viewport_size({'width':width,'height':950});page.wait_for_timeout(100);assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+1'),width
-  page.set_viewport_size({'width':1440,'height':1000});
+  page.set_viewport_size({'width':1440,'height':1000})
   if OFFLINE: page.evaluate('window.__qaDisconnect=true')
   else: p.stdin.write('disconnect\n');p.stdin.flush();page.wait_for_timeout(1200)
   page.locator('#refresh').click();page.get_by_text('Connection lost — last known snapshot',exact=True).wait_for(timeout=15000);assert page.get_by_text('qa-atlas',exact=True).first.is_visible();assert page.locator('.c-slot').first.get_by_text('Unknown',exact=True).is_visible();assert not errors,errors;assert (not requests if OFFLINE else all(m=='GET' and u.startswith(url) for m,u in requests)),requests;print('PASS: UI with actual Core snapshot, nine views, inspector, topology, tree, responsive, stale retention; no JS errors or external requests',flush=True);b.close()

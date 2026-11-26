@@ -21,11 +21,11 @@ export function loadProfile(directory){
   if(adminToken===clientToken)throw new Error('Role credentials must be distinct.');
   return {origin:'http://127.0.0.1:8088',adminToken,clientToken};
 }
-export function createManager(config){
+export function createManager(config,{monotonicNow=()=>performance.now()}={}){
   if(!/^http:\/\/127\.0\.0\.1:\d+$/.test(config.origin))throw new Error('Loopback Core required');
   const assets=new Map([...files].map(([url,[file,type]])=>[url,{body:readFileSync(path.join(root,'public',file)),type}]));
   let inflight=null,last=null,lastAt=0;
-  async function snapshot(){if(last&&Date.now()-lastAt<1000)return last;if(!inflight){inflight=readSnapshot(config).then(s=>{last={...s,context:config.fixture===true?'isolated-test':'local-installation'};lastAt=Date.now();return last;}).finally(()=>{inflight=null;});}return inflight;}
+  async function snapshot(){if(last&&monotonicNow()-lastAt<1000)return last;if(!inflight){inflight=readSnapshot(config).then(s=>{last={...s,context:config.fixture===true?'isolated-test':'local-installation'};lastAt=monotonicNow();return last;}).finally(()=>{inflight=null;});}return inflight;}
   const server=http.createServer(async(req,res)=>{
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Cross-Origin-Resource-Policy','same-origin');
     res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
