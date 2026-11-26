@@ -73,3 +73,32 @@ The package allowlist contains only the eight required Manager assets/modules an
 ## Optional worker display names
 
 The CLI `join` and `worker enroll` accept `--name NAME` for a public operator label. The registration name and local ownership key remain random and unchanged. Duplicate display names are distinguished by a short registration reference (full reference if the short references collide). Legacy generated names are compacted in Manager; exact registration names and worker IDs remain visible in technical identifiers and mutation confirmation. Other worker names are preserved. The label is presentation metadata, not proof of machine identity, scheduling authorization, or per-worker revocation. No rename action is exposed. Joining alone does not register a worker; the empty cluster explains the explicit start step.
+
+## DEV-08B — guided onboarding and product polish
+
+Overview (all three device views when a fresh snapshot has no workers), Workers,
+and Adapters provide contextual guides with selectable command templates. The
+managed-LAN invitation must still be exported in the server terminal and its
+secret code transferred separately. The browser does not create credentials,
+read arbitrary files, approve code, or execute shell commands. Adapter review
+and execution consent remain on the GPU host. The managed LAN invitation is
+not a one-time or individually revocable server credential.
+
+Workload rows include a short record reference and creation timestamp; a
+short-reference collision within the bounded view expands to the full ID.
+Events and resource links also distinguish workload records. The inspector
+retains exact identifiers. Overview tables wrap long resources, and racks
+no longer stretch to the tallest host in the row. Operation notices distinguish
+Core acknowledgement from subsequent observation of the requested logical
+state. A nonmatching or absent bounded record is not claimed as confirmation
+(except the exact cleanup hold, whose list is complete). Confirmed notices are
+historical observations, not guarantees of current state or physical cleanup.
+Uncertain mutations are never automatically retried. No gateway, Core, schema,
+credential, execution or dependency changes.
+
+QA: existing browser checks plus `python manager/qa/onboarding_browser_check.py`
+(`--offline-render` substitutes transport for sandbox execution). The empty
+fixture (`--qa-empty`) reports a disposable empty Core and simulated server
+installation label only. The optional `--qa-polish` fixture adds another
+queued workload for identical-project record distinction. Never use fixture
+commands or synthetic cleanup assertions on a real deployment.

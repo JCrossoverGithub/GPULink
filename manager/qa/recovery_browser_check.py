@@ -77,6 +77,7 @@ try:
         expect(page.locator('#main').get_by_role('button',name='QA device 02',exact=True)).to_have_count(0)
         assert len(posts)==1 and posts[0]['action']=='recover-job-hold' and 'leaseId' not in posts[0]
         expect(page.locator('#drawerTitle')).to_have_text('Cleanup hold released',timeout=15000)
+        expect(page.locator('.operation-notice')).to_contain_text('Exact hold absent.')
         expect(page.locator('#drawerContent')).to_contain_text('QA device 02')
         page.locator('#closeDrawer').click();nav('Events')
         expect(page.locator('#main')).to_contain_text('Cleanup confirmed by operator')
