@@ -22,6 +22,26 @@ jobs:
           path: data/cli-release/*
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci --prefix packages/gpulink-sdk --ignore-scripts --no-audit --no-fund
+      - run: npm run build --prefix packages/gpulink-sdk
+      - run: mkdir -p data/sdk-release
+      - run: npm pack ./packages/gpulink-sdk --offline --ignore-scripts --pack-destination data/sdk-release
+      - run: npm pack ./packages/gpulink-adapter-sdk --offline --ignore-scripts --pack-destination data/sdk-release
+      - run: dotnet pack packages/gpulink-dotnet/GPULink.Client/GPULink.Client.csproj --configuration Release --output data/sdk-release -p:ContinuousIntegrationBuild=true
+      - run: python scripts/release-candidate.py assemble data/cli-release data/sdk-release data/distribution-candidate --revision "${{ github.sha }}"
+      - run: python -m unittest discover -s scripts/acceptance -p test_release_candidate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpulink-distribution-candidate-${{ github.sha }}
+          path: data/distribution-candidate/
+          if-no-files-found: error
+          retention-days: 14
   install:
     needs: build
     strategy:
@@ -34,8 +54,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
       - uses: actions/download-artifact@v4
         with:
-          name: gpulink-cli-candidate-${{ github.sha }}
-          path: data/cli-release
-      - run: npm run test:cli:release -- data/cli-release
+          name: gpulink-distribution-candidate-${{ github.sha }}
+          path: data/distribution-candidate
+      - run: python scripts/release-candidate.py verify data/distribution-candidate --revision "${{ github.sha }}"
+      - run: npm run test:cli:release -- data/distribution-candidate/cli
+      - run: npm run test:sdk:release -- data/distribution-candidate
+      - run: python scripts/acceptance/dotnet-release-install.py data/distribution-candidate

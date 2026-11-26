@@ -24,6 +24,9 @@ general one-command cross-host installer or safe untrusted-code execution.
 For the November 25 installed batch preview and the guided Python author/operator
 workflow, see [your first external batch workload](DEVELOPER_BATCH_QUICKSTART.md).
 
+For a coordinated set of independently installable candidate packages, see
+[distribution candidate installation](DISTRIBUTION_CANDIDATE.md).
+
 ## Deployment choices
 
 - **Run your own GPULink:** You or your organization deploy the control plane,
