@@ -11,6 +11,7 @@ import {
 } from "node:url";
 
 import pg from "pg";
+import { collectOperationalState } from "../../shared/operational-snapshot.mjs";
 import { validateExecutionClaim, validateCurrentExecutionOwner, ExecutionClaimDenied } from "../execution-claim-authority.mjs";
 
 import {
@@ -297,6 +298,23 @@ export class PostgresPersistence {
     } finally {
       client.release();
     }
+  }
+
+  async readOperationalState(clock, heartbeatTimeoutMs) {
+    this.#assertReady();
+    const client=await this.#pool.connect();
+    try {
+      // Separate observation transaction, no advisory or fence row locks.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await client.query("SET LOCAL statement_timeout = '3000ms'");
+      const reader={...this.#createTransactionView(client),listBlockedGpuResources:()=>postgresListBlockedGpuResources(client,false)};
+      const snapshot=await collectOperationalState(reader,clock,heartbeatTimeoutMs);
+      await client.query("COMMIT");
+      return snapshot;
+    } catch(error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
   }
 
   async subscribeToEvents(listener) {
@@ -705,6 +723,8 @@ export class PostgresPersistence {
     );
   }
 
+  listRecentEventHeaders(...args) { return this.#call("listRecentEventHeaders",args); }
+
   listEventsAfter(...args) {
     return this.#call(
       "listEventsAfter",
@@ -978,6 +998,11 @@ export class PostgresPersistence {
           queryable,
           ...args,
         );
+
+      case "listRecentEventHeaders": {
+        return queryable.query('SELECT sequence,type,subject_id,created_at FROM events ORDER BY sequence DESC LIMIT $1',args)
+          .then(({rows})=>rows.map(row=>({sequence:Number(row.sequence),type:row.type,subjectId:row.subject_id,createdAt:Number(row.created_at)})));
+      }
 
       case "listEventsAfter":
         return postgresListEventsAfter(
@@ -1320,7 +1345,7 @@ function mapPostgresWorker(row) {
 }
 
 
-async function postgresListBlockedGpuResources(queryable) {
+async function postgresListBlockedGpuResources(queryable, lock = true) {
   // Row locks serialize changes to existing fence rows during placement.
   // Creation of previously absent rows MUST also join the scheduler
   // advisory lock; this stage provides no live broker writers.
@@ -1330,7 +1355,7 @@ async function postgresListBlockedGpuResources(queryable) {
         AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=f.subject_id AND j.status IN ('cancelled','failed')
           AND j.lease_id=f.lease_id AND j.assigned_worker_id=f.worker_id AND j.assigned_gpu_uuid=f.gpu_uuid)) AS job_cleanup
     FROM gpu_resource_fences f WHERE f.safety_state <> 'clear'
-    ORDER BY f.worker_id, f.gpu_uuid FOR UPDATE OF f NOWAIT
+    ORDER BY f.worker_id, f.gpu_uuid ${lock ? "FOR UPDATE OF f NOWAIT" : ""}
   `);
   return result.rows.map((row) => ({
     workerId: row.worker_id,

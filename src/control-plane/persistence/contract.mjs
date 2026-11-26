@@ -32,11 +32,13 @@ export const PERSISTENCE_METHODS = Object.freeze([
   "recoverInterruptedSessions",
   "appendEvent",
   "listEventsAfter",
+  "listRecentEventHeaders",
   "counts",
 ]);
 
 export const PERSISTENCE_CONTROL_METHODS = Object.freeze([
   "transaction",
+  "readOperationalState",
   "subscribeToEvents",
   "close",
 ]);

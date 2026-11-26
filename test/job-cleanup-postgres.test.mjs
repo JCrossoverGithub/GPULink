@@ -37,6 +37,19 @@ test('PostgreSQL: running cancellation/expiry and release serialize with placeme
     } finally {await lock.query('ROLLBACK');lock.release();if(cancellation)await cancellation;}
     const [hold]=(await db.listJobCleanupHolds()).filter(h=>h.jobId===j.id);
     assert.deepEqual(hold,{workerId:w.id,gpuUuid:uuid,epoch:1,jobId:j.id,leaseId:j.leaseId});
+    const snapshot=await db.readOperationalState(clock,config.heartbeatTimeoutMs);
+    assert.equal(snapshot.atomic,true);assert.equal(snapshot.devices.find(d=>d.workerId===w.id&&d.gpuUuid===uuid).state,'job-cleanup-hold');
+    assert.ok(snapshot.events.some(e=>e.subjectId===j.id));assert.ok(!JSON.stringify(snapshot).includes(j.leaseId));
+    // The manager must not join the scheduler's fence row locks. Read the
+    // committed hold while an independent connection owns the row lock.
+    const fenceWriter=await raw.connect();
+    try {
+      await fenceWriter.query('BEGIN');
+      await fenceWriter.query('UPDATE gpu_resource_fences SET updated_at=updated_at+1 WHERE worker_id=$1 AND gpu_uuid=$2',[w.id,uuid]);
+      const concurrent=await db.readOperationalState(clock,config.heartbeatTimeoutMs);
+      assert.equal(concurrent.devices.find(d=>d.workerId===w.id&&d.gpuUuid===uuid).state,'job-cleanup-hold');
+    } finally {await fenceWriter.query('ROLLBACK');fenceWriter.release();}
+
     await addWorker('duplicate');const queued=await addJob();assert.equal(queued.status,'queued');
     await assert.rejects(service.releaseJobCleanupHold({...hold,confirmStopped:true}),/mismatch/);
     await service.setWorkerDrain(w.id,{drain:true});now+=1001;await scheduler.runOnce();

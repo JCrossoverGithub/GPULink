@@ -1057,6 +1057,10 @@ export class ControlPlaneDatabase {
     `).all(sequence, limit).map(mapEvent);
   }
 
+  listRecentEventHeaders(limit) {
+    return this.database.prepare(`SELECT sequence,type,subject_id,created_at FROM events ORDER BY sequence DESC LIMIT ?`).all(limit).map(row=>({sequence:Number(row.sequence),type:row.type,subjectId:row.subject_id,createdAt:row.created_at}));
+  }
+
   counts() {
     const workerCounts = Object.fromEntries(this.database.prepare(`
       SELECT status, COUNT(*) AS count FROM workers GROUP BY status

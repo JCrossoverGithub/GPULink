@@ -1,3 +1,4 @@
+import { collectOperationalState } from "../../shared/operational-snapshot.mjs";
 import { ControlPlaneDatabase } from "../database.mjs";
 import {
   PERSISTENCE_METHODS,
@@ -376,6 +377,14 @@ export class SqlitePersistence {
       return event;
     });
   }
+
+  readOperationalState(clock, heartbeatTimeoutMs) {
+    // BEGIN IMMEDIATE is the existing SQLite serialized transaction boundary.
+    // No mutation is issued by this collector.
+    return this.transaction(t=>collectOperationalState(t,clock,heartbeatTimeoutMs));
+  }
+
+  listRecentEventHeaders(...args) { return this.#call("listRecentEventHeaders",args); }
 
   listEventsAfter(...args) {
     return this.#call(

@@ -29,6 +29,11 @@ export function createHttpServer({ service, database, scheduler }) {
         return sendMetrics(response, await database.counts());
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/admin/operational-snapshot") {
+        if (!authorize(service, request, response, ["admin"])) return;
+        return sendJson(response, 200, await database.readOperationalState(service.clock,service.config.heartbeatTimeoutMs));
+      }
+
       if (request.method === "GET" && url.pathname === "/v1/events") {
         if (!authorize(service, request, response, ["admin"])) return;
         return await openEventStream(request, response, database, eventClients);
