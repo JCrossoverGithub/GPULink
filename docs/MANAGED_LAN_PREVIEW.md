@@ -70,7 +70,7 @@ worker authority; rotation requires separate deployment administration.
 ## Worker
 
 ```sh
-gpulink --config-dir "$HOME/.gpulink/lan-w" join --invite /path/to/worker-invite.json
+gpulink --config-dir "$HOME/.gpulink/lan-w" join --invite /path/to/worker-invite.json --name "Inference 01"
 ```
 
 Enter the code at the hidden interactive prompt. The command imports the
@@ -78,7 +78,28 @@ bundle and CA into a fresh private installation and runs the existing live
 worker doctor (TLS, auth and physical GPU discovery). It does not start work
 unless `--accept-assigned-work` is explicitly supplied. If doctor fails, the
 created worker installation remains available for diagnosis; do not overwrite.
-When ready, use the existing `worker start --accept-assigned-work` command.
+`--name` is an optional public display label (1–40 ASCII letters, digits,
+spaces, dots, underscores or hyphens; start/end alphanumeric). It is shown in
+Manager with a short registration reference. It is not the unique Core
+registration name or local ownership key; duplicate labels are allowed. Do not
+put credentials or private identifiers in it. Existing worker profiles remain
+valid; do not rejoin to change the label. Renaming existing workers is not yet
+provided by the CLI.
+
+After a successful join, Manager remains empty until a worker registers.
+To run an approved external adapter, first review and approve its catalog
+using the digest emitted by `prepare-python` (see [batch quickstart](DEVELOPER_BATCH_QUICKSTART.md)).
+Then, when you authorize execution, start with the **same** installation:
+
+```sh
+gpulink --config-dir "$HOME/.gpulink/lan-w" worker start --accept-assigned-work
+```
+
+The explicit start can immediately run queued approved workloads. On the server,
+open Manager with `gpulink --config-dir YOUR_SERVER_DIRECTORY manager` to see
+registration and reported devices. The optional join flag `--accept-assigned-work`
+is appropriate only if you already authorize assigned work; it is not required
+for enrollment.
 Use the existing server `workers`, `jobs`, `submit-diagnostic`, `drain` and
 worker status/stop commands. Delete transferred encrypted files when done.
 

@@ -75,7 +75,7 @@ transitively locked runtime. Keep the bundle and review directories at the
 reviewed locations; protect them against untrusted writers.
 
 Read the program, launcher and catalog; independently review the Python
-runtime and compute the catalog hash after review. With the worker stopped
+runtime and compare the catalog SHA-256 against the digest printed by `prepare-python` (the approved digest must correspond to the actual reviewed bytes). With the worker stopped
 and any previous workloads safely drained/finished, explicitly approve:
 
 ```sh
@@ -84,7 +84,7 @@ gpulink --config-dir /absolute/worker worker approve-catalog \
 gpulink --config-dir /absolute/worker worker start --accept-assigned-work
 ```
 
-Substitute the reviewed digest and actual worker profile. Existing catalog
+Substitute the reviewed digest and actual worker profile. Do not skip review or blindly approve an arbitrary catalog. A successful approval does not start or register the worker; the explicit start above does. Existing catalog
 replacement requires the existing clear/review/approve workflow; this command
 never silently merges or replaces an active catalog. Existing streaming,
 direct executable and system Python package commands remain unchanged.

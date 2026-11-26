@@ -114,3 +114,28 @@ test('reviewed catalog approval is non-overwriting, serialized, verified and rem
   assert.equal(existsSync(target),false);assert.equal(existsSync(program),true);
   assert.equal(existsSync(sentinel),false);
 });
+
+test('display names are optional metadata, not registration or process identity', {skip:!linux},async t=>{
+  const {root,bundle}=fixture(t);
+  const a=path.join(root,'named-a'),b=path.join(root,'named-b'),old=path.join(root,'legacy');
+  for(const dest of [a,b])assert.equal(runWorkerEnrollment(['--bundle',bundle,'--name','Inference 01'],dest,output),0);
+  assert.equal(runWorkerEnrollment(['--bundle',bundle],old,output),0);
+  const first=readRemoteWorkerSetup(a),second=readRemoteWorkerSetup(b),legacy=readRemoteWorkerSetup(old);
+  assert.equal(first.displayName,'Inference 01');assert.equal(second.displayName,'Inference 01');
+  assert.match(first.profiles['worker.env'].GPULINK_WORKER_NAME,/^gpu-[a-f0-9]{32}$/u);
+  assert.notEqual(first.profiles['worker.env'].GPULINK_WORKER_NAME,second.profiles['worker.env'].GPULINK_WORKER_NAME);
+  assert.notEqual(installationFingerprint(first),installationFingerprint(second));
+  assert.equal(installationFingerprint(first),installationFingerprint(readRemoteWorkerSetup(a)));
+  assert.deepEqual(JSON.parse(first.profiles['worker.env'].GPULINK_WORKER_LABELS_JSON),{'gpulink.display-name':'Inference 01'});
+  const {loadWorkerConfig}=await import('../src/worker/config.mjs');
+  assert.deepEqual(loadWorkerConfig(first.profiles['worker.env']).labels,{'gpulink.display-name':'Inference 01'});
+  assert.equal(legacy.displayName,null);assert.equal(legacy.profiles['worker.env'].GPULINK_WORKER_LABELS_JSON,undefined);
+  assert.equal(existsSync(path.join(a,'run')),false);
+  let status;assert.equal(await runWorkerCommand(['status'],a,{log:line=>status=JSON.parse(line),error(){}}),0);
+  assert.equal(status.displayName,'Inference 01');assert.equal(status.managedState,'not-running');assert.equal(status.name,first.profiles['worker.env'].GPULINK_WORKER_NAME);
+  for(const args of [['--name',''],['--name','a\n'],['--name','<script>'],['--name',' x'],['--name','x'.repeat(41)],['--name','x','--name','y'],['--name'],['--ca-file']]){
+    const dest=path.join(root,'invalid');assert.equal(runWorkerEnrollment(['--bundle',bundle,...args],dest,output),2);assert.equal(existsSync(dest),false);
+  }
+  const marker=path.join(a,'remote-worker.json'),profile=JSON.parse(readFileSync(marker,'utf8'));
+  writeFileSync(marker,JSON.stringify({...profile,displayName:'<bad>'}));assert.throws(()=>readRemoteWorkerSetup(a));
+});

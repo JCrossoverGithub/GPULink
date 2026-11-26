@@ -34,6 +34,17 @@ For a complete bounded CUDA reference application, see the
 
 For a local operator browser interface, see [GPULink Manager](CLI_PREVIEW_RELEASE.md#open-gpulink-manager), included in the matching CLI distribution candidate on Linux/WSL.
 
+The November 26 [installed two-host Manager acceptance](acceptance/installed-manager-two-host-2026-11-26.md)
+verified the integrated distribution with physical CUDA and Manager drain/resume.
+For an operator setting up a new cluster on the supported WSL2 NAT path, follow
+[managed LAN onboarding](MANAGED_LAN_PREVIEW.md) in this order: install the
+matching candidate on both hosts; plan/apply server setup; launch Manager;
+export and transfer an invitation; join on the GPU host (optionally `--name`);
+review and approve the intended adapter if needed; explicitly start the worker.
+Joining does not register a worker. The start step is when the GPU appears in
+Manager. Application developers using an existing authorized deployment do not
+need these operator steps.
+
 ## Deployment choices
 
 - **Run your own GPULink:** You or your organization deploy the control plane,
@@ -207,13 +218,12 @@ authentication, or multi-tenant code isolation.
 
 ## Known developer-experience gaps
 
-- A guided operator bootstrap/worker enrollment flow is not yet accepted.
+- A guided, installed WSL2 LAN onboarding path is accepted with the project operator; unassisted newcomer onboarding and other network/platform paths remain outstanding.
 - The TypeScript and Adapter SDKs need publication and compatibility decisions.
 - The independently published .NET Client SDK is still a preview.
 - Independent first-use conformance should be executable from a clean external
   application directory without GPULink source imports.
-- A reproducible, safe cross-host setup/teardown and diagnostics workflow must
-  replace the many manual steps used in the initial integration.
+- Reduce manual transfer, approval and onboarding friction without weakening the accepted cross-host setup/teardown or explicit execution authorization.
 
 Treat these as separate implementation targets. Do not invent a universal
 single-command installer before deciding which role, trust boundary and host
@@ -238,5 +248,4 @@ remote-cluster installer, arbitrary-code execution, or a CUDA benchmark.
 
 Application developers using an **existing authorized deployment** should
 use their Client SDK and credential instead; they do not need the local
-operator CLI, a GPU, Docker or WSL. An independent multi-host operator
-bootstrap and enrollment workflow remains an open milestone.
+operator CLI, a GPU, Docker or WSL. The guided [managed LAN workflow](MANAGED_LAN_PREVIEW.md) is physically accepted; unassisted external developer acceptance remains open.

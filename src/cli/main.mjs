@@ -270,12 +270,12 @@ function usage(error = true) {
   gpulink [--config-dir SERVER] setup server --peer PRIVATE_IPV4 [--port N] [--caddy PATH] [--apply]
   gpulink [--config-dir SERVER] setup invite --output FILE
   gpulink [--config-dir SERVER] setup cleanup
-  gpulink [--config-dir WORKER] join --invite FILE [--accept-assigned-work]
+  gpulink [--config-dir WORKER] join --invite FILE [--name NAME] [--accept-assigned-work]
   gpulink [--config-dir DIRECTORY] init local [output-directory]
   gpulink [--config-dir DIRECTORY] init server --public-url HTTPS_ORIGIN
   gpulink [--config-dir DIRECTORY] server <start|status|stop>
   gpulink [--config-dir SERVER] server worker-bundle --output FILE
-  gpulink [--config-dir WORKER] worker enroll --bundle FILE [--ca-file PEM]
+  gpulink [--config-dir WORKER] worker enroll --bundle FILE [--ca-file PEM] [--name NAME]
   gpulink [--config-dir WORKER] worker approve-catalog --file FILE --sha256 REVIEWED_SHA256
   gpulink [--config-dir WORKER] worker clear-catalog
   gpulink [--config-dir WORKER] worker doctor [--live] [--gpu]

@@ -53,3 +53,14 @@ test('generated CA, encrypted invitation and actual TLS hostname checks',{skip:p
     assert.equal(await probeLan(work,{...plan,listen:'192.168.1.157',wsl:'127.0.0.1',port}),false);
   }finally{if(server)await new Promise(resolve=>server.close(resolve));rmSync(work,{recursive:true,force:true});}
 });
+
+test('join display name is opt-in, distinct from execution authorization; malformed options never prompt',async()=>{
+  const {parseJoinOptions,joinInvitation}=await import('../src/cli/managed-lan-invite.mjs');
+  assert.deepEqual(parseJoinOptions(['--invite','file']),{file:'file',start:false});
+  assert.deepEqual(parseJoinOptions(['--invite','file','--name','GPU 01']),{file:'file',start:false,displayName:'GPU 01'});
+  assert.deepEqual(parseJoinOptions(['--invite','file','--accept-assigned-work','--name','GPU 01']),{file:'file',start:true,displayName:'GPU 01'});
+  for(const args of [['--name','GPU 01'],['--invite','file','--name'],['--invite','file','--name','a\n'],['--invite','file','--name','<img>'],['--invite','file','--name','a','--name','b'],['--invite','file','--accept-assigned-work','--accept-assigned-work']]){
+    assert.throws(()=>parseJoinOptions(args));assert.equal(await joinInvitation(args,undefined,{log(){},error(){}}),2);
+  }
+  assert.equal(await joinInvitation(['--help'],undefined,{log:line=>assert.match(line,/--name NAME/),error(){}}),0);
+});

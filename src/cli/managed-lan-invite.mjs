@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
 import { readServerSetup, normalizeServerOrigin } from './server-profile.mjs';
+import { validWorkerDisplayName } from '../shared/worker-display-name.mjs';
 import { runWorkerEnrollment, runWorkerCommand } from './remote-worker-profile.mjs';
 const aad=Buffer.from('GPULink LAN invitation v1');
 const strict=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===keys.sort().join(',');
@@ -36,17 +37,33 @@ async function promptCode() {
   process.stderr.write('Invitation code (hidden): ');
   try{return (await rl.question('')).trim();}finally{rl.close();process.stderr.write('\n');}
 }
+const joinUsage='Usage: gpulink [--config-dir WORKER] join --invite FILE [--name NAME] [--accept-assigned-work]';
+export function parseJoinOptions(args) {
+  if(args[0]!=='--invite'||!args[1]||args[1].startsWith('--'))throw new Error('Missing invitation');
+  const options={file:args[1],start:false};
+  for(let i=2;i<args.length;i++) {
+    if(args[i]==='--accept-assigned-work'&&!options.start) options.start=true;
+    else if(args[i]==='--name'&&!Object.hasOwn(options,'displayName')&&validWorkerDisplayName(args[i+1])) options.displayName=args[++i];
+    else throw new Error('Invalid join option');
+  }
+  return options;
+}
 export async function joinInvitation(args,directory,output=console) {
-  if(![2,3].includes(args.length)||args[0]!=='--invite'||(args.length===3&&args[2]!=='--accept-assigned-work')){output.error('Usage: gpulink join --invite FILE [--accept-assigned-work]');return 2;}
+  if(args.length===1&&args[0]==='--help'){output.log(joinUsage);return 0;}
+  let options;
+  try{options=parseJoinOptions(args);}catch{output.error(joinUsage+'; NAME: 1–40 letters, digits, spaces, dots, underscores or hyphens, start/end alphanumeric.');return 2;}
   let tmp;
   try {
-    const st=lstatSync(args[1]);if(!st.isFile()||st.isSymbolicLink()||st.size>65536) throw new Error('Invalid invitation file.');
-    const payload=openInvitation(JSON.parse(readFileSync(args[1],'utf8')),await promptCode());
+    const st=lstatSync(options.file);if(!st.isFile()||st.isSymbolicLink()||st.size>65536) throw new Error('Invalid invitation file.');
+    const payload=openInvitation(JSON.parse(readFileSync(options.file,'utf8')),await promptCode());
     tmp=mkdtempSync(path.join(tmpdir(),'gpl-join-'));
     const bundle=path.join(tmp,'worker.json'),ca=path.join(tmp,'ca.pem');
     writeFileSync(bundle,JSON.stringify(payload.bundle),{mode:0o600,flag:'wx'});writeFileSync(ca,payload.ca,{mode:0o600,flag:'wx'});
-    if(runWorkerEnrollment(['--bundle',bundle,'--ca-file',ca],directory,output))return 1;
-    return await runWorkerCommand(args.length===3?['start','--accept-assigned-work']:['doctor','--live','--gpu'],directory,output);
+    if(runWorkerEnrollment(['--bundle',bundle,'--ca-file',ca,...(options.displayName?['--name',options.displayName]:[])],directory,output))return 1;
+    const result=await runWorkerCommand(options.start?['start','--accept-assigned-work']:['doctor','--live','--gpu'],directory,output);
+    if(result===0&&!options.start) output.log('READY TO START: worker is configured and GPU checks passed, but it is not registered. Run worker start --accept-assigned-work with the same --config-dir when you authorize execution. It will then appear in Manager.');
+    else if(result!==0) output.log('Worker profile was created. Retry worker doctor --live --gpu or worker start --accept-assigned-work with the same --config-dir; do not join again.');
+    return result;
   }catch{output.error('Join failed. Check the invitation, code, expiry and new worker configuration directory.');return 1;}
   finally{if(tmp)rmSync(tmp,{recursive:true,force:true});}
 }
