@@ -4,8 +4,9 @@ import {parseEnv} from 'node:util';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {readSnapshot} from './snapshot.mjs';
+import {createChangeFeed} from './change-feed.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
-const files=new Map([['/',['index.html','text/html; charset=utf-8']],['/manager.css',['manager.css','text/css; charset=utf-8']],['/manager.js',['manager.js','text/javascript; charset=utf-8']]]);
+const files=new Map([['/',['index.html','text/html; charset=utf-8']],['/manager.css',['manager.css','text/css; charset=utf-8']],['/manager.js',['manager.js','text/javascript; charset=utf-8']],['/refresh-controller.js',['refresh-controller.js','text/javascript; charset=utf-8']]]);
 export function loadProfile(directory){
   if(process.platform!=='linux')throw new Error('This preview supports Linux and WSL only.');
   const dir=path.resolve(directory),d=lstatSync(dir);
@@ -24,8 +25,21 @@ export function loadProfile(directory){
 export function createManager(config,{monotonicNow=()=>performance.now()}={}){
   if(!/^http:\/\/127\.0\.0\.1:\d+$/.test(config.origin))throw new Error('Loopback Core required');
   const assets=new Map([...files].map(([url,[file,type]])=>[url,{body:readFileSync(path.join(root,'public',file)),type}]));
-  let inflight=null,last=null,lastAt=0;
-  async function snapshot(){if(last&&monotonicNow()-lastAt<1000)return last;if(!inflight){inflight=readSnapshot(config).then(s=>{last={...s,context:config.fixture===true?'isolated-test':'local-installation'};lastAt=monotonicNow();return last;}).finally(()=>{inflight=null;});}return inflight;}
+  let inflight=null,last=null,lastAt=0,generation=0;
+  const changes=createChangeFeed(config,()=>{generation++;last=null;});
+  async function snapshot(){
+    if(last&&monotonicNow()-lastAt<1000)return last;
+    if(!inflight){
+      const started=generation;
+      inflight=readSnapshot(config).then(s=>{
+        const value={...s,context:config.fixture===true?'isolated-test':'local-installation'};
+        // An invalidation during a read must not restore the invalidated cache.
+        if(started===generation){last=value;lastAt=monotonicNow();}
+        return value;
+      }).finally(()=>{inflight=null;});
+    }
+    return inflight;
+  }
   const server=http.createServer(async(req,res)=>{
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Cross-Origin-Resource-Policy','same-origin');
     res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
@@ -38,9 +52,18 @@ export function createManager(config,{monotonicNow=()=>performance.now()}={}){
       if(req.headers['x-gpulink-manager']!=='snapshot-v1')return send(403,'{"error":"forbidden"}');
       try{return send(200,JSON.stringify(await snapshot()));}catch{return send(503,'{"error":"core_unavailable_or_invalid"}');}
     }
+    if(req.url==='/api/changes'){
+      // Native EventSource cannot set a custom header. Require same-origin
+      // browser metadata, or the existing explicit local API header for tools.
+      if(req.headers['sec-fetch-site']!=='same-origin'&&req.headers['x-gpulink-manager']!=='snapshot-v1')return send(403,'{"error":"forbidden"}');
+      if(!changes.add(res))return send(503,'{"error":"changes_unavailable"}');
+      return;
+    }
     const asset=assets.get(req.url);if(asset)return send(200,asset.body,asset.type);
     return send(404,'{"error":"not_found"}');
   });
+  server.closeEventStreams=()=>changes.close();
+  server.on('close',server.closeEventStreams);
   server.requestTimeout=8000;server.headersTimeout=5000;server.maxHeadersCount=40;return server;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
@@ -49,6 +72,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
     const config=loadProfile(process.argv[3]);const server=createManager(config);
     server.on('error',()=>{console.error('Manager could not listen. No other service was stopped.');process.exitCode=1;});
     server.listen(0,'127.0.0.1',()=>console.log(`GPULink Manager — read-only\nhttp://127.0.0.1:${server.address().port}/\nCtrl+C to close manager only.`));
-    for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{server.close();server.closeAllConnections();});
+    for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{server.closeEventStreams();server.close();server.closeAllConnections();});
   }catch(e){console.error('Manager startup refused: '+(e.message?.startsWith('Usage:')?e.message:'Invalid or inaccessible private loopback installation.'));process.exitCode=1;}
 }

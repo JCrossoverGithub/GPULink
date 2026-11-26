@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {randomUUID} from 'node:crypto';
+import {once} from 'node:events';
+import {createHttpServer} from '../src/control-plane/http-server.mjs';
+import {signalFrame} from '../src/shared/change-signals.mjs';
 import pg from 'pg';
 import {PostgresPersistence} from '../src/control-plane/persistence/postgres.mjs';
 import {Scheduler} from '../src/control-plane/scheduler.mjs';
@@ -101,5 +104,29 @@ test('PostgreSQL: external batch placement and bounded persisted result use exis
   } finally {
     try {await raw.query('DELETE FROM events WHERE subject_id=ANY($1::text[])',[ids.concat(jobs)]);await raw.query('DELETE FROM jobs WHERE project_id=$1',[projectId]);await raw.query('DELETE FROM workers WHERE id=ANY($1::text[])',[ids]);}
     finally {await raw.end();await db.close();}
+  }
+});
+
+// Uses the existing explicitly disposable CI database. A different persistence
+// instance commits the event: the HTTP stream must see the LISTEN/NOTIFY signal.
+test('PostgreSQL: committed cross-instance changes wake the payload-free manager channel',
+  {skip:url&&ack?false:'requires disposable PostgreSQL and GPULINK_JOB_CLEANUP_TEST_DB_ACK=YES_DISPOSABLE',timeout:30000},async()=>{
+  const db=new PostgresPersistence(url),writer=new PostgresPersistence(url),raw=new pg.Pool({connectionString:url,max:1});
+  const tag=randomUUID(),config={tokens:{admin:'manager-admin-token-for-disposable-test-only',client:'manager-client-token-for-disposable-test-only',worker:'manager-worker-token-for-disposable-test-only'},heartbeatTimeoutMs:60000,leaseDurationMs:10000,vramSafetyMiB:512};
+  const scheduler=new Scheduler(db,config),service=new ControlPlaneService(db,scheduler,config);
+  const server=createHttpServer({database:db,scheduler,service});const abort=new AbortController();let reader;
+  try{
+    await db.initialize();await writer.initialize();await server.startEventNotifications();server.listen(0,'127.0.0.1');await once(server,'listening');
+    const origin=`http://127.0.0.1:${server.address().port}`,headers={Authorization:'Bearer '+config.tokens.admin};
+    const response=await fetch(origin+'/v1/admin/operational-changes',{headers,signal:AbortSignal.any([abort.signal,AbortSignal.timeout(15000)])});assert.equal(response.status,200);reader=response.body.getReader();
+    const decoder=new TextDecoder();let buffer='';
+    async function next(){while(!buffer.includes('\n\n')){const {done,value}=await reader.read();assert.equal(done,false);buffer+=decoder.decode(value,{stream:true});}const n=buffer.indexOf('\n\n')+2,frame=buffer.slice(0,n);buffer=buffer.slice(n);return frame;}
+    assert.equal(await next(),signalFrame('ready'));
+    await writer.appendEvent('qa.manager_cross_instance',tag,{private:'not streamed'},Date.now());
+    let frame;do{frame=await next();}while(frame===signalFrame('heartbeat'));assert.equal(frame,signalFrame('changed'));
+    const snap=await (await fetch(origin+'/v1/admin/operational-snapshot',{headers})).json();assert.ok(snap.events.some(e=>e.subjectId===tag));assert.ok(!JSON.stringify(snap).includes('not streamed'));
+  }finally{
+    abort.abort();await reader?.cancel().catch(()=>{});server.closeEventStreams();if(server.listening){server.closeAllConnections();await new Promise(r=>server.close(r));}await server.stopEventNotifications();
+    try{await raw.query('DELETE FROM events WHERE subject_id=$1',[tag]);}finally{await raw.end();await writer.close();await db.close();}
   }
 });

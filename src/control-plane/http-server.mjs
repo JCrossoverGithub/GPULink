@@ -1,11 +1,13 @@
 import http from "node:http";
 import { URL } from "node:url";
+import { createSignalHub } from "../shared/change-signals.mjs";
 import { ValidationError } from "../shared/validation.mjs";
 
 const MAX_BODY_BYTES = 1_048_576;
 
 export function createHttpServer({ service, database, scheduler }) {
   const eventClients = new Set();
+  const changeSignals = createSignalHub();
 
   let unsubscribeEventNotifications =
     null;
@@ -32,6 +34,15 @@ export function createHttpServer({ service, database, scheduler }) {
       if (request.method === "GET" && url.pathname === "/v1/admin/operational-snapshot") {
         if (!authorize(service, request, response, ["admin"])) return;
         return sendJson(response, 200, await database.readOperationalState(service.clock,service.config.heartbeatTimeoutMs));
+      }
+
+      // Manager invalidation only: no event payload, history, or replay cursor.
+      if (request.method === "GET" && url.pathname === "/v1/admin/operational-changes") {
+        if (!authorize(service, request, response, ["admin"])) return;
+        if (!unsubscribeEventNotifications || !changeSignals.add(response)) {
+          return sendJson(response, 503, {error:{code:"changes_unavailable",message:"change notification unavailable"}});
+        }
+        return;
       }
 
       if (request.method === "GET" && url.pathname === "/v1/events") {
@@ -474,11 +485,10 @@ export function createHttpServer({ service, database, scheduler }) {
       unsubscribeEventNotifications =
         await database
           .subscribeToEvents(
-            () =>
-              broadcastNewEvents(
-                database,
-                eventClients,
-              ),
+            () => {
+              changeSignals.changed();
+              return broadcastNewEvents(database,eventClients);
+            },
           );
     };
 
@@ -490,6 +500,7 @@ export function createHttpServer({ service, database, scheduler }) {
       unsubscribeEventNotifications =
         null;
 
+      changeSignals.close();
       if (unsubscribe) {
         await unsubscribe();
       }
@@ -497,6 +508,7 @@ export function createHttpServer({ service, database, scheduler }) {
 
   server.closeEventStreams =
     () => {
+      changeSignals.close();
       for (
         const client of eventClients
       ) {
