@@ -6,7 +6,7 @@ import { copyFileSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync, 
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prepareCliPackage } from './build-cli-package.mjs';
+import { prepareCliPackage, managerRuntimeFiles } from './build-cli-package.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const npmCli = process.env.npm_execpath;
@@ -29,6 +29,9 @@ try {
       git(['ls-files', '--others', '--ignored', '--exclude-standard', '--', 'src'])) {
     throw new Error('Untracked or ignored files under src; remove them from the build checkout before packaging.');
   }
+  // Do not claim a reviewed artifact if an allowlisted Manager asset has
+  // been supplied outside the tracked source tree.
+  for (const file of managerRuntimeFiles) git(['ls-files','--error-unmatch','--',`manager/${file}`]);
   // New directory only: never replace an existing candidate or delete operator data.
   mkdirSync(path.dirname(dest), {recursive: true, mode: 0o700});
   mkdirSync(dest, {mode: 0o700});

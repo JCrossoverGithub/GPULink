@@ -8,6 +8,13 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const destination = path.resolve(process.argv[2] ?? path.join(repoRoot, "data", "cli-artifacts"));
 
+// Only runtime assets are shipped. The design archive, QA fixtures, test
+// credentials, screenshots, and contributor files are never copied.
+export const managerRuntimeFiles = Object.freeze([
+  'gateway.mjs','change-feed.mjs','operations.mjs','snapshot.mjs',
+  'public/index.html','public/manager.css','public/manager.js','public/refresh-controller.js',
+]);
+
 // Packaging is explicit and opt-in. Never npm-publish the private monorepo.
 export function prepareCliPackage(sourceRoot, outputRoot) {
   const root = path.resolve(sourceRoot);
@@ -33,6 +40,20 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
         return true;
       },
     });
+    for (const relative of managerRuntimeFiles) {
+      const segments = ['manager', ...relative.split('/')];
+      let input = root;
+      for (const [index, segment] of segments.entries()) {
+        input = path.join(input, segment);
+        const st = lstatSync(input);
+        if (st.isSymbolicLink() || (index === segments.length - 1 ? !st.isFile() : !st.isDirectory())) {
+          throw new Error('Unsafe Manager runtime asset.');
+        }
+      }
+      const dest = path.join(output, 'manager', relative);
+      mkdirSync(path.dirname(dest), {recursive:true});
+      cpSync(input, dest);
+    }
     cpSync(path.join(root, "LICENSE"), path.join(output, "LICENSE"));
     writeFileSync(path.join(output, "package.json"), JSON.stringify({
       name: "@gpulink/cli",
@@ -44,12 +65,12 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
       engines: original.engines,
       dependencies: original.dependencies,
       bin: { gpulink: "./src/cli/main.mjs" },
-      files: ["src", "LICENSE", "README.md"],
+      files: ["src", "manager", "LICENSE", "README.md"],
     }, null, 2) + "\n");
     writeFileSync(path.join(output, "README.md"),
       "# @gpulink/cli — Developer preview\n\n" +
       "A self-contained GPULink CLI + matching Core source runtime for independently owned local and Linux server deployments. " +
-      "Requires Node.js 24+. No daemon, GPU workload, TLS ingress, or cloud provisioning merely by installation. Optional explicit managed LAN setup is a WSL2 NAT preview.\n" +
+      "Requires Node.js 24+. No daemon, GPU workload, TLS ingress, or cloud provisioning merely by installation. Optional explicit managed LAN setup is a WSL2 NAT preview. Run gpulink manager on the selected running Linux/WSL installation for local browser access; read-only by default.\n" +
       "This artifact is private/nonpublished pending clean-machine release acceptance.\n");
     if (!existsSync(path.join(output, "src/cli/main.mjs")) ||
         !existsSync(path.join(output, "src/control-plane/main.mjs")) ||

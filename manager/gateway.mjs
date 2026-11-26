@@ -36,7 +36,7 @@ export function createManager(config,{monotonicNow=()=>performance.now()}={}){
     if(!inflight){
       const started=generation;
       const pending=readSnapshot(config).then(s=>{
-        const value={...s,context:config.fixture===true?'isolated-test':'local-installation',...(controlToken?{controlToken}:{})};
+        const value={...s,context:config.fixture===true?'isolated-test':'local-installation',...(config.installation?{installation:config.installation}:{}),...(controlToken?{controlToken}:{})};
         // An invalidation during a read must not restore the invalidated cache.
         if(started===generation){last=value;lastAt=monotonicNow();}
         return value;
@@ -94,11 +94,6 @@ export function createManager(config,{monotonicNow=()=>performance.now()}={}){
   server.requestTimeout=8000;server.headersTimeout=5000;server.maxHeadersCount=40;return server;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{
-    if(![4,5].includes(process.argv.length)||process.argv[2]!=='--config-dir'||(process.argv.length===5&&process.argv[4]!=='--enable-controls'))throw new Error('Usage: node manager/gateway.mjs --config-dir DIRECTORY [--enable-controls]');
-    const config={...loadProfile(process.argv[3]),controls:process.argv[4]==='--enable-controls'};const server=createManager(config);
-    server.on('error',()=>{console.error('Manager could not listen. No other service was stopped.');process.exitCode=1;});
-    server.listen(0,'127.0.0.1',()=>console.log(`GPULink Manager (${config.controls?'operator controls enabled':'read-only'})\nhttp://127.0.0.1:${server.address().port}/\nCtrl+C to close manager only.`));
-    for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{server.closeEventStreams();server.close();server.closeAllConnections();});
-  }catch(e){console.error('Manager startup refused: '+(e.message?.startsWith('Usage:')?e.message:'Invalid or inaccessible private loopback installation.'));process.exitCode=1;}
+  console.error('Use gpulink [--config-dir DIRECTORY] manager [--enable-controls] [--no-open] (or npm run cli -- with the same arguments from a checkout).');
+  process.exitCode=2;
 }

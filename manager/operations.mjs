@@ -42,6 +42,7 @@ async function recoverJobHold(config,operation){
     if(!snapshot.holds.some(same)||!worker||worker.status!=='offline'||!worker.drainMode||
       [...snapshot.jobs,...snapshot.sessions].some(r=>r.assignedGpuUuid===gpuUuid&&['leased','running','allocated','connecting','active'].includes(r.status)))return reply(409,'state-changed');
     // Resolve the exact lease on the server; never send it to the browser.
+    await config.assertCore?.();
     const response=await fetch(config.origin+'/v1/admin/job-cleanup-holds',{headers,redirect:'error',signal:AbortSignal.timeout(4000)});
     if(!response.ok){await response.body?.cancel();return reply(503,'not-dispatched');}
     const {holds}=await boundedJson(response);
@@ -52,6 +53,7 @@ async function recoverJobHold(config,operation){
   }catch{return reply(503,'not-dispatched');}
   // Core atomically checks the exact epoch, lease, worker, terminal job and
   // absence of open execution attempts/active allocations before releasing.
+  try{await config.assertCore?.();}catch{return reply(503,'not-dispatched');}
   try{
     const response=await fetch(config.origin+'/v1/admin/job-cleanup-holds/release',{method:'POST',headers:{...headers,'Content-Type':'application/json'},redirect:'error',signal:AbortSignal.timeout(4000),body:JSON.stringify({workerId,gpuUuid,jobId,epoch,leaseId,confirmStopped:true})});
     if(!response.ok){await response.body?.cancel();return [400,401,403,404,409].includes(response.status)?reply(409,'rejected'):reply(502,'uncertain');}
@@ -68,6 +70,7 @@ export async function executeOperation(config,operation){
   try{snapshot=await readSnapshot(config);}catch{return reply(503,'not-dispatched');}
   const target=snapshot[spec.kind].find(r=>r.id===id);
   if(!target||(spec.record==='worker'?target.drainMode:target.status)!==expected)return reply(409,'state-changed');
+  try{await config.assertCore?.();}catch{return reply(503,'not-dispatched');}
   try{
     const r=await fetch(`${config.origin}/v1/${spec.kind}/${encodeURIComponent(id)}/${spec.suffix}`,{
       method:'POST',redirect:'error',signal:AbortSignal.timeout(4000),headers:{Authorization:'Bearer '+config[spec.token],Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify(spec.record==='worker'?{drain:spec.desired}:{})});

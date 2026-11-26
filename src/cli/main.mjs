@@ -3,6 +3,7 @@ import { runManagedSetup } from "./managed-lan.mjs";
 import { joinInvitation } from "./managed-lan-invite.mjs";
 import { defaultServerSetupDirectory, hasServerMarker, readServerSetup, runServerInit, runServerDoctor, runServerLifecycle } from "./server-profile.mjs";
 import { defaultRemoteWorkerDirectory, hasRemoteWorkerMarker, runWorkerBundle, runWorkerCommand } from "./remote-worker-profile.mjs";
+import { runManager } from "./manager.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { runLocalInit } from "./local-init.mjs";
 import { readLocalSmokeSetup, runLocalSmoke } from "./local-smoke.mjs";
@@ -34,7 +35,9 @@ try {
   } else {
     // Server management uses a separate profile and the same owned loopback backend.
     // Local worker/smoke commands cannot operate on server installations.
-    if (command === "setup") {
+    if (command === "manager") {
+      process.exitCode = await runManager(arguments_, explicitDirectory);
+    } else if (command === "setup") {
       process.exitCode = await runManagedSetup(arguments_, explicitDirectory);
     } else if (command === "join") {
       process.exitCode = await joinInvitation(arguments_, explicitDirectory ?? defaultRemoteWorkerDirectory());
@@ -285,6 +288,7 @@ function usage(error = true) {
   gpulink [--config-dir DIRECTORY] local start
   gpulink [--config-dir DIRECTORY] local stop
   gpulink [--config-dir DIRECTORY] local status
+  gpulink [--config-dir DIRECTORY] manager [--enable-controls] [--no-open]
   gpulink [--config-dir DIRECTORY] local smoke --real-gpu [setup-directory]
   gpulink [--config-dir DIRECTORY] doctor <control-plane|worker>
   gpulink [--config-dir DIRECTORY] workers
