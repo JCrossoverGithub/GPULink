@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { defaultLocalSetupDirectory, parseGlobalCliOptions } from "../src/cli/setup-directory.mjs";
-import { prepareCliPackage } from "../scripts/build-cli-package.mjs";
+import { prepareCliPackage, managerRuntimeFiles } from "../scripts/build-cli-package.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), "gpulink-cli-distribution-"));
@@ -23,6 +23,13 @@ function fixture(t) {
   for (const file of ["cli/main.mjs", "control-plane/main.mjs", "worker/main.mjs"]) {
     writeFileSync(path.join(repo, "src", file), "export {};\n");
   }
+  for (const file of managerRuntimeFiles) {
+    const dest=path.join(repo,'manager',file);
+    mkdirSync(path.dirname(dest),{recursive:true});
+    writeFileSync(dest,'fixture asset\n');
+  }
+  mkdirSync(path.join(repo,'manager','qa'));
+  writeFileSync(path.join(repo,'manager','qa','private.env'),'NOT_RUNTIME=fixture\n');
   return { root, repo };
 }
 
@@ -56,6 +63,8 @@ test("a separate private CLI artifact contains the matching Core but excludes re
   assert.ok(existsSync(path.join(dest, "src/control-plane/main.mjs")));
   assert.ok(!existsSync(path.join(dest, "scripts")));
   assert.ok(!existsSync(path.join(dest, "test")));
+  for (const file of managerRuntimeFiles) assert.ok(existsSync(path.join(dest,'manager',file)));
+  assert.ok(!existsSync(path.join(dest,'manager','qa')));
   assert.throws(() => prepareCliPackage(repo, dest), /already exists/);
 });
 

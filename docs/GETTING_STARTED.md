@@ -32,6 +32,8 @@ For a complete bounded CUDA reference application, see the
 [standalone vector-search example](../examples/vector-search/README.md) and
 [physical acceptance record](acceptance/independent-vector-search-2026-11-25.md).
 
+For a local operator browser interface, see [GPULink Manager](CLI_PREVIEW_RELEASE.md#open-gpulink-manager), included in the matching CLI distribution candidate on Linux/WSL.
+
 ## Deployment choices
 
 - **Run your own GPULink:** You or your organization deploy the control plane,

@@ -40,7 +40,21 @@ gpulink doctor worker
 
 These commands create a fresh private configuration and perform offline checks. They do not start services or run GPU jobs. On Linux/WSL, explicitly use `gpulink local start`, `gpulink local status`, and `gpulink local stop` for the existing localhost lifecycle. An occupied port 8088 is a refusal, not authority to stop another process. For GPU execution, consult [local lifecycle safeguards](CLI_DISTRIBUTION.md) and the explicit opt-in requirements. Do not use the local profile for remote enrollment. For an independent control-plane host with operator-managed HTTPS ingress, follow [the server preview guide](SERVER_PREVIEW.md).
 
-To uninstall the CLI, first stop the owned worker (if running), then stop the owned control plane and confirm its offline status. Remove the package with `npm uninstall --global --prefix "$HOME/.local/share/gpulink-cli" --offline --ignore-scripts @gpulink/cli` (or uninstall from your private consumer project). This intentionally preserves instance configuration and SQLite data under `~/.gpulink/instances/` or your selected directory. Back up and remove those separately only if you no longer need them. An unknown supervisor or stale ownership record requires investigation, not force removal.
+## Open GPULink Manager
+
+On Linux/WSL, from the installed CLI with the selected managed Core already running:
+
+```sh
+gpulink manager
+# or explicitly select a custom/server installation
+gpulink --config-dir /absolute/path/to/installation manager
+# opt into local management controls
+gpulink --config-dir /absolute/path/to/installation manager --enable-controls
+```
+
+The default command chooses a single existing default local or server profile. If both exist, choose explicitly with `--config-dir`. The Manager binds only to an OS-selected loopback port and prints the exact URL. It attempts to open a browser on a graphical Linux/WSL desktop; `--no-open` prints the URL only. Ctrl+C closes the Manager, not Core or workers. If the selected installation is stopped, start it explicitly using the matching `local start` or `server start` workflow. The Manager refuses unverified installation ownership and does not adopt other listeners or start services. The browser receives sanitized operational state, not Core credentials. Read-only is the default; operator mode assumes a trusted local operator. Never expose the Manager over a LAN or reverse proxy. Native Windows managed services and network-facing administration are not supported. The Manager is part of the same candidate tarball, not a separate Python or frontend installation.
+
+To uninstall the CLI, first close any running Manager, then stop the owned worker (if running), then stop the owned control plane and confirm its offline status. Remove the package with `npm uninstall --global --prefix "$HOME/.local/share/gpulink-cli" --offline --ignore-scripts @gpulink/cli` (or uninstall from your private consumer project). This intentionally preserves instance configuration and SQLite data under `~/.gpulink/instances/` or your selected directory. Back up and remove those separately only if you no longer need them. An unknown supervisor or stale ownership record requires investigation, not force removal.
 
 ## Build and verify as a contributor
 

@@ -27,6 +27,44 @@ function cli(args, expected = 0) {
   }
   return invoke('gpulink', args, {cwd, env}, expected);
 }
+// Test the installed, PATH-resolved command outside the source checkout.
+// Manager is foreground-owned and we stop only this directly spawned process.
+async function managerPreview(profile, name, controls=false) {
+  const child=spawn('gpulink',[...profile,'manager','--no-open',...(controls?['--enable-controls']:[])],{cwd,env,stdio:['ignore','pipe','pipe']});
+  child.stderr.resume();
+  const exited=once(child,'close');
+  exited.catch(()=>{});
+  try {
+    const origin=await new Promise((resolve,reject)=>{
+      let buffer='';
+      const timer=setTimeout(()=>reject(new Error('Manager startup timed out')),12000);
+      const fail=()=>{clearTimeout(timer);reject(new Error('Installed Manager failed to start'));};
+      child.once('error',fail);child.once('exit',fail);
+      child.stdout.on('data',chunk=>{buffer+=chunk;if(buffer.length>4096){fail();return;}const first=buffer.split('\n')[0].trim();if(buffer.includes('\n')&&/^http:\/\/127\.0\.0\.1:[0-9]+\/$/.test(first)){clearTimeout(timer);resolve(first);}});
+    });
+    const request=async (relative,options={})=>fetch(new URL(relative,origin),{...options,signal:AbortSignal.timeout(6000)});
+    const html=await request('/');assert.equal(html.status,200);assert.match(await html.text(),/<title>GPULink Manager<\/title>/);
+    for(const asset of ['/manager.css','/manager.js','/refresh-controller.js'])assert.equal((await request(asset)).status,200);
+    assert.equal((await request('/design/CPlus.html')).status,404);
+    const snapshot=await request('/api/snapshot',{headers:{'X-GPULink-Manager':'snapshot-v1'}});assert.equal(snapshot.status,200);
+    const text=await snapshot.text(),state=JSON.parse(text);
+    assert.deepEqual(state.installation,{name,kind:name==='s'?'server':'local'});
+    assert.equal(state.schemaVersion,2);assert.equal(state.context,'local-installation');
+    assert.equal(typeof state.controlToken,controls?'string':'undefined');
+    const installed=parseEnv(readFileSync(path.join(scratch,name,'control-plane.env'),'utf8'));
+    for(const secret of ['GPULINK_ADMIN_TOKEN','GPULINK_CLIENT_TOKEN','GPULINK_WORKER_TOKEN','GPULINK_DATA_PLANE_SIGNING_KEY'])assert.ok(!text.includes(installed[secret]),'Core credential leaked');
+    assert.equal((await request('/api/operation',{method:'POST'})).status,controls?403:405);
+    // A real SSE connection is intentionally open at shutdown.
+    const stream=await request('/api/changes',{headers:{'X-GPULink-Manager':'snapshot-v1'}});assert.equal(stream.status,200);const reader=stream.body.getReader();let signals='';
+    while(!signals.includes('event: ready\n')){const {done,value}=await reader.read();assert.ok(!done,'SSE ended before ready');signals+=Buffer.from(value).toString();assert.ok(signals.length<4096);}
+    child.kill('SIGTERM');
+    const stopped=await Promise.race([exited,delay(8000).then(()=>null)]);
+    assert.deepEqual(stopped,[0,null],'Manager must exit cleanly even with an open SSE stream');
+  } finally {
+    if(child.exitCode===null&&child.signalCode===null){child.kill('SIGTERM');await Promise.race([exited,delay(2000)]);}
+    if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exited;}
+  }
+}
 const a = ['--config-dir', '../a'];
 const server = ['--config-dir', '../s'];
 try {
@@ -65,6 +103,9 @@ try {
   assert.match(help, /worker approve-catalog/);
   assert.match(help, /cleanup-holds/);
   assert.match(help, /release-job-hold/);
+  assert.match(help, /manager \[--enable-controls\]/);
+  cli(['manager','--help']);
+  cli(['manager','--unknown'],2);
   cli(['worker','approve-catalog'],2);
   cli(['join'],2);
   cli(['setup','server'],1);
@@ -94,6 +135,11 @@ try {
     assert.equal(JSON.parse(cli([...a,'local','status'])).controlPlane,'ready-managed-local');
     assert.deepEqual(JSON.parse(cli([...a,'jobs'])).jobs,[]);
     assert.deepEqual(JSON.parse(cli([...a,'cleanup-holds'])).holds,[]);
+    cli(['--config-dir','../b','manager','--no-open'],1); // A different private installation must not adopt the running Core.
+    await managerPreview(a,'a');
+    await managerPreview(a,'a',true);
+    assert.equal(JSON.parse(cli([...a,'local','status'])).controlPlane,'ready-managed-local');
+    console.log('PASS: installed Manager assets, read-only and operator modes, wrong-installation refusal, SSE shutdown, Core preserved');
     cli([...a,'release-job-hold'],1);
     cli([...a,'local','stop']);
     assert.equal(JSON.parse(cli([...a,'local','status'])).controlPlane,'offline');
@@ -133,6 +179,8 @@ try {
     cli([...server,'server','start'],1);
     assert.deepEqual(JSON.parse(cli([...server,'jobs'])).jobs,[]);
     assert.deepEqual(JSON.parse(cli([...server,'cleanup-holds'])).holds,[]);
+    await managerPreview(server,'s');
+    assert.equal(JSON.parse(cli([...server,'server','status'])).controlPlane,'ready-managed-local');
     // Explicit TLS enforcement must reject an untrusted certificate even with
     // the insecure global Node setting. Never use that setting in deployment.
     env.NODE_TLS_REJECT_UNAUTHORIZED='0';
@@ -165,6 +213,7 @@ try {
     delete env.NODE_TLS_REJECT_UNAUTHORIZED;
     cli([...w,'worker','enroll','--bundle',bundle,'--ca-file',cert]);
     cli([...w,'worker','doctor']);
+    cli([...w,'manager','--no-open'],1);
     assert.match(cli([...w,'worker','doctor','--live']),/PASS: trusted HTTPS and worker-role authorization/);
     assert.equal(JSON.parse(cli([...w,'worker','status'])).managedState,'not-running');
     cli([...w,'worker','start'],2);
@@ -206,6 +255,7 @@ try {
     console.log('PASS: installed server lifecycle, real trusted HTTPS proxy, untrusted TLS and invalid client auth rejection, authenticated empty jobs, stopped backend');
   } else {
     cli([...a,'local','start'],1);
+    cli([...a,'manager','--no-open'],1);
     cli([...server,'init','server','--public-url','https://gpu.example.org'],1);
     console.log('PASS: Windows CLI install; unsupported managed lifecycle refused');
   }

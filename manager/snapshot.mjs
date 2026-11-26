@@ -7,6 +7,7 @@ async function getJson(origin,path,token){
   finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
-export async function readSnapshot({origin,adminToken}){
+export async function readSnapshot({origin,adminToken,assertCore}){
+  await assertCore?.();
   return normalizeOperationalSnapshot(await getJson(origin,'/v1/admin/operational-snapshot',adminToken));
 }
