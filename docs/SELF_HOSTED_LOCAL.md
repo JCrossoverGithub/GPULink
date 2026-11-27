@@ -3,7 +3,7 @@
 This is an **operator-owned, localhost-only development setup**, not a hosted
 GPULink service, cross-machine deployment, production installer, or an approval
 to run arbitrary code. The setup generator requires Node.js 24+ and a GPULink
-source checkout or an explicitly built local CLI artifact. It does **not** install dependencies, start processes, expose
+installed CLI or a source checkout. It does **not** install dependencies, start processes, expose
 ports, enroll GPUs, modify an existing environment, or create a cloud account.
 
 ## Generate your own configuration
@@ -23,9 +23,9 @@ An independently installed `gpulink` executable uses the same default:
 gpulink init local
 ```
 
-The `gpulink` executable is provided by the explicitly packaged preview
-artifact described in [CLI_DISTRIBUTION.md](CLI_DISTRIBUTION.md), **not** by
-publishing the private repository root. Nothing is published automatically.
+Install the published CLI with `npm install -g @gpulink/cli@0.1.0` using a
+user-owned prefix; see [CLI installation](CLI_PREVIEW_RELEASE.md). The private
+source build remains available to contributors.
 
 This creates `~/.gpulink/instances/local/` containing four separate
 profiles:

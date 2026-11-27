@@ -1,6 +1,6 @@
-# GPULink Adapter SDK — external conformance candidate
+# GPULink Adapter SDK — public preview
 
-**Status: pre-v1 Adapter SDK preview.**
+**Status: public pre-v1 Adapter SDK preview.** Install with `npm install @gpulink/adapter-sdk@0.1.0` in an independent Node.js 24+ project.
 
 This initial, dependency-free author tool checks the existing **GLIP v1
 Python echo profile**, independently of GPULink Core imports. It does not
@@ -12,11 +12,11 @@ language-neutral framing contract themselves.
 ## Try an adapter in an external directory
 
 Copy `examples/external-adapter/echo-subprocess.py` into your *own* directory,
-then run the following from this package directory with a trusted Python
-executable on PATH (for example `python3`):
+then run the following from the independent project containing the installed
+SDK, with a trusted Python executable on PATH (for example `python3`):
 
 ```sh
-node bin/conformance.mjs -- python3 -I -S /absolute/path/to/your/echo-subprocess.py
+npx --no-install gpulink-adapter-conformance -- python3 -I -S /absolute/path/to/your/echo-subprocess.py
 ```
 
 Six positive and negative checks cover opaque binary, UTF-8, END, bad initial
@@ -43,14 +43,13 @@ operator configures an adapter for the worker.
   are handled by the existing trusted-loader code. This tool neither authors
   nor automatically installs or approves a catalog entry.
 - Operator trust, pinned dependency closure, process-tree/GPU cleanup,
-  isolation, independent GPU-backed workload proof and SDK publishing remain
-  separate unaccepted DP3 criteria.
+  and isolation remain separate criteria. See the repository capability status for later physical workload and publication acceptance.
 
 ## Offline package and operator preview (accepted scoped DP3 foundation)
 
 The `gpulink-adapter-package` CLI provides a minimal author-to-operator
-workflow for **one GLIP program file**. It is independently installable from an
-npm tarball, imports no worker/Core internals, and makes no changes to GPULink
+workflow for **one GLIP program file**. It is independently installable from a
+public npm package or offline tarball, imports no worker/Core internals, and makes no changes to GPULink
 Core. A portable directory contains the entry program and a SHA-256 lock, not
 host-specific Python or CUDA paths. For an example recipe, see
 `examples/external-adapter/gpulink.adapter.example.json` in the repository.
@@ -98,8 +97,7 @@ TEXT output, empty END acknowledgment and exit 0. Each JSON object is limited
 to 32 KiB UTF-8. The echo conformance command remains a streaming echo test,
 not a batch semantic or GPU qualification test. Operators approve trusted code
 and runtime; do not launch escaping descendants. The client uses the existing
-job API and can retrieve persistent results after disconnecting. No registry
-publication, arbitrary-code sandbox or large artifact transport is implied.
+job API and can retrieve persistent results after disconnecting. Packaging does not publish an adapter, provide an arbitrary-code sandbox or transport large artifacts.
 
 ### Guided batch author and Python operator preview
 

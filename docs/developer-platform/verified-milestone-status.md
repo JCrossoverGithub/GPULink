@@ -1,5 +1,7 @@
 # GPULink — verified developer-platform status and milestone evidence
 
+> Historical October checkpoint: the dated status and evidence below are retained unchanged. For the November 27 public preview and current capabilities, see [release acceptance](../acceptance/public-preview-2026-11-27.md) and [Capability Status](../CAPABILITY_STATUS.md).
+
 **Status:** living evidence index; scoped development accepted and pushed through `8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` on `feature/phase6a-streaming-asr-foundation` (2026-10-16). **Not merged into `main`, not deployed, and not a public SDK v1 release.**
 **Historical source-audit baseline:** `37dc692d19aa0581f1365c5bce3d721904a8b980` on the same feature branch.
 **Original source review:** a user-supplied source archive established this baseline without Git/remote state or runtime execution verification; the initial milestone tables and source map below record that historical baseline.

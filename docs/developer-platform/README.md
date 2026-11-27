@@ -1,6 +1,6 @@
 # GPULink Developer Platform v1 — design and implementation evidence
 
-> **Current feature checkpoint:** `8a90539f42bd9c169f3ae0a3e28c1bfc2c78c8e5` (accepted and pushed on the development branch, 2026-10-16). Start with the [living evidence index](verified-milestone-status.md); the original 2026-10-15 designs and gate reports are retained as historical decisions. Neither SDK has a completed public v1 release, and this feature branch is not merged into `main` or deployed.
+> **Current release:** [public preview 0.1.0](../acceptance/public-preview-2026-11-27.md). Both npm SDKs are public pre-v1 packages. The [October milestone evidence index](verified-milestone-status.md) and original designs preserve their dated acceptance scope; consult [Capability Status](../CAPABILITY_STATUS.md) for current implementation and acceptance.
 
 - **Status:** approved architectural direction, **not** a declaration of implemented SDK v1 behavior.
 - **Decision date:** 2026-10-15.
@@ -10,18 +10,18 @@
 
 Read in this order (implemented development interfaces first, historical proposals afterward):
 
-1. [Living milestone and evidence index](verified-milestone-status.md) — current accepted scope and open gates.
+1. [October milestone and evidence index](verified-milestone-status.md) — historical accepted scope and open gates.
 2. [Client SDK](../../packages/gpulink-sdk/README.md) and [Adapter SDK](../../packages/gpulink-adapter-sdk/README.md) — actual pre-v1 packages.
 3. [Adapter SDK compatibility contract](adapter-sdk-developer-contract-v0.1.md) and [operator-reviewed package workflow](operator-trusted-adapter-package-workflow.md) — accepted experimental author/operator path.
 4. [Architecture decision (ADR 0001)](adr-0001-direct-sdk-platform.md) — the generic Core / independent SDK boundaries.
 5. [Original Client SDK v1 proposal](client-sdk-v1-contract.md), [Adapter SDK v1 proposal](adapter-sdk-v1-contract.md), and [planned gates](implementation-roadmap.md) — historical targets, not shipping API declarations.
 6. [CaptionLink integration design](captionlink-direct-sdk.md) and [original trusted-loader evidence](operator-approved-adapters-dp3b.md) — reference materials, not generic Core requirements.
 
-**DP3 independent packaging (scoped JPCMAIN acceptance, October 16, 2026):** [Operator-trusted package workflow](operator-trusted-adapter-package-workflow.md) documents an accepted portable single-file bundle, independent npm consumer gate, and manual operator catalog review. The authoring SDK remains private and pre-v1; this is not signed distribution, complete dependency pinning, or untrusted isolation.
+**DP3 independent packaging (scoped JPCMAIN acceptance, October 16, 2026):** [Operator-trusted package workflow](operator-trusted-adapter-package-workflow.md) documents an accepted portable single-file bundle, independent npm consumer gate, and manual operator catalog review. The authoring SDK is now public and pre-v1; this is not signed distribution, complete dependency pinning, or untrusted isolation.
 
-**DP3 versioned developer contract (scoped JPCMAIN acceptance, October 16, 2026):** [Adapter SDK developer compatibility contract](adapter-sdk-developer-contract-v0.1.md) records independently installed npm compatibility exports and a separately packaged physical CUDA workload through the existing operator-approved loader and Client SDK. The SDK remains experimental, private and pre-v1; no new Core/runtime or public release is claimed.
+**DP3 versioned developer contract (scoped JPCMAIN acceptance, October 16, 2026):** [Adapter SDK developer compatibility contract](adapter-sdk-developer-contract-v0.1.md) records independently installed npm compatibility exports and a separately packaged physical CUDA workload through the existing operator-approved loader and Client SDK. The SDK remains experimental and pre-v1; public distribution is recorded separately above.
 
-**External adapter-author conformance candidate:** [`packages/gpulink-adapter-sdk/README.md`](../../packages/gpulink-adapter-sdk/README.md) documents a deliberately small, not-yet-public GLIP v1 echo-profile tester. This complements the existing worker-side tests; it does not replace the adapter contract or establish DP3 completion.
+**External adapter-author conformance candidate:** [`packages/gpulink-adapter-sdk/README.md`](../../packages/gpulink-adapter-sdk/README.md) documents a deliberately small GLIP v1 echo-profile tester. This complements the existing worker-side tests; it does not replace the adapter contract or establish DP3 completion.
 
 ## Historical 2026-10-15 design checkpoint (superseded)
 

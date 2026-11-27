@@ -1,6 +1,6 @@
 # GPULink CLI preview — package and configuration contract
 
-**Status:** local and Linux server-installation preview. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds a versioned dependency-bundled artifact for offline consumer installation; publication requires a separate release decision. Candidate builds do not publish to npm or install GPU drivers.
+**Status:** public 0.1.0 CLI preview for local and Linux server installation. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds versioned dependency-bundled artifacts; public publication is a separate maintainer action. Candidate builds do not publish to npm or install GPU drivers.
 
 ## Roles and boundaries
 
@@ -12,6 +12,13 @@
 - The source repository root remains `private: true`. Build output is staged
   under Git-ignored `data/cli-artifacts/`; `npm publish` is never run.
 - Node.js 24 or newer is required. This is not a standalone native executable.
+
+## Public installation
+
+Install the public preview with `npm install -g @gpulink/cli@0.1.0` using a
+user-owned npm prefix. See [CLI installation](CLI_PREVIEW_RELEASE.md) for PATH
+setup and offline alternatives. The private source build below remains a
+contributor workflow.
 
 ## Build and install from source (explicit, no publication)
 
@@ -65,7 +72,7 @@ creates credentials, or changes AWS merely by being installed.
 owned service processes, and retains SQLite state. See
 [SELF_HOSTED_LOCAL.md](SELF_HOSTED_LOCAL.md).
 
-## External acceptance before registry release
+## External acceptance for candidate builds
 
 From **outside the source tree** on both supported developer OSes: install
 the tarball, invoke the npm-generated CLI executable, verify `--help` and
@@ -75,9 +82,7 @@ existing setup, unknown profiles, inherited conflicting credentials, and
 occupied port. Document architecture/hardware support accurately; do not
 conflate CLI portability with native GPU worker support.
 
-Publishing, compatibility policy, signing/provenance, upgrade/recovery,
-remote worker enrollment, and production-grade service supervision
-remain separate future milestones. A Linux-only developer preview is described below.
+Public preview publication passed on November 27. Stable compatibility, signing/attestation and production-grade service supervision remain separate work. The Linux local lifecycle is described below.
 
 ## Read-only local status (single-machine development)
 
@@ -152,8 +157,7 @@ non-authoritative. An unexpected control-plane exit is not treated as success.
 fail closed pending a separately validated Windows-native ownership and
 permission implementation. `local smoke --real-gpu` is unchanged. Remote
 GPU worker enrollment, multi-machine clusters, production supervision,
-and service auto-start at boot remain separate features. CLI packaging
-remains private; nothing is published or deployed automatically.
+and service auto-start at boot remain separate features. The private source-build workflow remains available; these lifecycle commands do not publish or deploy to a remote host.
 
 ## Linux lifecycle reliability and recovery
 

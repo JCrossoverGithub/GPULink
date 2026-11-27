@@ -19,8 +19,8 @@ adapters keep their existing contract. Batch capabilities cannot be used with
 the session API. Bare capability-only legacy worker advertisements cannot
 satisfy batch jobs; placement requires a matching ready v2 batch manifest.
 
-Use `gpulink-adapter-package pack`, `inspect`, and `catalog` from the private
-Adapter SDK to produce an offline bundle and a candidate approval catalog.
+Use `gpulink-adapter-package pack`, `inspect`, and `catalog` from the public preview
+Adapter SDK (`npm install @gpulink/adapter-sdk@0.1.0`) to produce an offline bundle and a candidate approval catalog.
 Review code and runtime before approving. The existing stopped-worker
 `worker approve-catalog --file FILE --sha256 SHA256` workflow accepts batch,
 streaming, or mixed catalogs. A batch spec omits `completionMode`. An optional

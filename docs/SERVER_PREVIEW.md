@@ -1,7 +1,7 @@
 # GPULink server preview (DEV-02)
 
 One trusted operator, one Linux control plane/relay, SQLite, Node.js 24+.
-Use the reviewed installable CLI candidate, not a Core checkout. No GPU,
+Install `@gpulink/cli@0.1.0` from npm using a user-owned prefix. No GPU,
 CUDA, WSL or container runtime is needed on the control-plane host. The
 initial managed lifecycle uses the existing Linux supervisor, not a systemd
 service. It does not restart automatically after a reboot or supervisor crash.

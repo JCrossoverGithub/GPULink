@@ -1,7 +1,7 @@
 # GPULink remote GPU worker preview (DEV-03)
 
 This is the installed operator path for a trusted private deployment, not a
-public GPU marketplace. Use the same reviewed CLI artifact on a Linux server
+public GPU marketplace. Use the same published CLI version (`@gpulink/cli@0.1.0`) on a Linux server
 and a separate Linux NVIDIA GPU host (WSL is optional). Node.js 24+, npm,
 a working `nvidia-smi`, and a reachable operator-owned HTTPS endpoint are
 required. The control plane remains loopback-only behind its TLS proxy.

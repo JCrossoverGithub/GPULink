@@ -52,3 +52,23 @@ test('live GPU acceptance stays explicitly opted in and is not a CI step', () =>
   assert.match(gate, /GPULINK_E2E_DIAGNOSTIC_ACK/u);
   assert.doesNotMatch(ci, /scripts\/acceptance\/installed-local-gpu-diagnostic\.sh/u);
 });
+
+test('public entry points use the verified release package identities', () => {
+  const readme = read('README.md');
+  const guide = read('docs/GETTING_STARTED.md');
+  const cli = read('docs/CLI_PREVIEW_RELEASE.md');
+  const quickstart = read('docs/DEVELOPER_BATCH_QUICKSTART.md');
+  for (const name of ['cli', 'client', 'adapter-sdk']) {
+    const command = `@gpulink/${name}@0.1.0`;
+    assert.ok(readme.includes(command));
+    assert.ok(guide.includes(command));
+  }
+  assert.ok(cli.includes('npm install -g @gpulink/cli@0.1.0'));
+  assert.ok(quickstart.includes('npm install @gpulink/client@0.1.0'));
+  assert.ok(quickstart.includes('npm install @gpulink/adapter-sdk@0.1.0'));
+  assert.doesNotMatch(guide, /no accepted public npm release|still marked `private: true`/u);
+  assert.doesNotMatch(quickstart, /not public npm releases/u);
+  const evidence = read('docs/acceptance/public-preview-2026-11-27.md');
+  assert.match(evidence, /e1406c0ec98f43f15d93705d7666f0a51a2b2931/u);
+  assert.match(evidence, /operator-guided registry installation/u);
+});

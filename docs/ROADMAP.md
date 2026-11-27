@@ -1,5 +1,7 @@
 # GPULink Roadmap
 
+The [public preview release](acceptance/public-preview-2026-11-27.md) is available. For current capabilities and remaining gates, see [Capability Status](CAPABILITY_STATUS.md).
+
 This roadmap describes GPULink's engineering sequence, not an automatic declaration that every planned gate has shipped. For source-grounded developer-platform DP0–DP9 progress and later JPCMAIN acceptance through feature-branch checkpoint `8a90539` (2026-10-16), use the [verified developer-platform milestone index](developer-platform/verified-milestone-status.md). That index preserves `37dc692` as its historical source-audit baseline. Feature-branch development acceptance is distinct from merging into `main`, public SDK release, and the earlier Phase 4 AWS production acceptance.
 
 GPULink began as a way to reuse otherwise-idle GPUs across several personal

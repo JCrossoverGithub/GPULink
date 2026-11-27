@@ -1,8 +1,7 @@
 # DP3 — independent adapter package and operator catalog preview
 
 **Status: scoped packaging workflow accepted on JPCMAIN, October 16, 2026.**
-This describes `@gpulink/adapter-sdk@0.1.0` developer tooling. It remains intentionally **private**,
-not a public stable v1 SDK, signed publisher system, full dependency closure or
+This describes `@gpulink/adapter-sdk@0.1.0` developer tooling. It is now a public pre-v1 package, not a stable v1 SDK, signed publisher system, full dependency closure or
 safe untrusted workload installer. No Core runtime, scheduler, protocol, or
 catalog schema change is introduced by this work.
 
@@ -39,14 +38,15 @@ single root-level `entry`. Only the current `explicit-text-v1` completion mode,
 if present, is accepted. No public Core API, worker path, or host runtime path is
 recorded inside the source package.
 
-The SDK can be used from its package directory or from a **separately installed
-npm tarball**. From any working directory with its CLI available:
+Install the SDK in a new independent npm project. Run these commands in that project, with the author directory prepared as above:
 
 ```bash
-node /path/to/sdk/bin/package.mjs pack \
-  --source /absolute/author --out /absolute/new-bundle
-node /path/to/sdk/bin/package.mjs inspect \
-  --bundle /absolute/new-bundle
+npm init -y
+npm install @gpulink/adapter-sdk@0.1.0
+./node_modules/.bin/gpulink-adapter-package pack \
+  --source "$PWD/author" --out "$PWD/new-bundle"
+./node_modules/.bin/gpulink-adapter-package inspect \
+  --bundle "$PWD/new-bundle"
 ```
 
 The output directory is created only if it does not already exist:

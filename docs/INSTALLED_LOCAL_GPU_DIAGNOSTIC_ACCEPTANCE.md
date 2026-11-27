@@ -1,6 +1,6 @@
 # Installed local GPU diagnostic — opt-in acceptance
 
-**Scope:** one real, bounded GPU-status diagnostic through the **source-built, privately installed** GPULink CLI. This is a **Linux/WSL developer acceptance**, not a production deployment, remote-cluster test, benchmark, or automatic CI requirement.
+**Scope:** one real, bounded GPU-status diagnostic through an independently installed GPULink CLI (source-built by default, or the public registry release with `--registry`). This is a **Linux/WSL developer acceptance**, not a production deployment, remote-cluster test, benchmark, or automatic CI requirement.
 
 The gate validates the complete developer journey: build CLI artifact → install outside the repo → generate private localhost installation → start managed control plane → verify empty queue → start one managed GPU worker with explicit consent → schedule **exactly one** `diagnostic.gpu-status` job → verify authoritative completion, GPU UUID and scheduling → stop worker before control plane → restart control plane → retrieve durable SQLite job result → stop and clean up.
 
@@ -18,6 +18,8 @@ From the repository root:
 GPULINK_E2E_DIAGNOSTIC_ACK=YES_ALLOW_ONE_BOUNDED_GPU_DIAGNOSTIC \
   bash scripts/acceptance/installed-local-gpu-diagnostic.sh
 ```
+
+To use the published npm CLI instead of building a candidate, append `--registry` to the command above. This uses an isolated npm home/cache and validates the installed package integrity against the November 27 release. The first-workload instructions are in [First GPU workload](FIRST_GPU_WORKLOAD.md).
 
 This gate is never invoked by the normal `npm test`/`npm run check` CI workflow. The automated `test/installed-local-gpu-diagnostic-gate.test.mjs` tests **only** script syntax, policy structure and refusal without consent; they never launch a GPU worker.
 

@@ -1,11 +1,11 @@
 # DEV-04A — operator-approved external GPU workloads
 
 This increment connects the existing GLIP v1 subprocess/session backend and
-private Adapter SDK package workflow to the **installed remote-worker CLI**.
+Adapter SDK package workflow to the **installed remote-worker CLI**.
 It does not introduce a scheduler, generic batch-job API, runtime or protocol.
 The earlier October 16 physical local CUDA acceptance remains valid for its
 original scope; cross-host installed workload acceptance for this increment
-is pending.
+was subsequently accepted on November 25 (PR #34); see [Capability Status](CAPABILITY_STATUS.md). The original procedure below describes the milestone gate.
 
 ## Roles and trust boundary
 
@@ -91,10 +91,9 @@ interpreter into system Python and assume its packages are available. No
 runtime installation is done by this increment.
 
 Use a fresh DEV-03B managed server and fresh worker profile; do not reuse the
-previously disclosed test invitation credential. Install the same candidate
-on both hosts. Join without assignment consent, approve the reviewed catalog,
+previously disclosed test invitation credential. Install the matching CLI version on both hosts (`npm install -g @gpulink/cli@0.1.0` for the public preview). Join without assignment consent, approve the reviewed catalog,
 then start the worker explicitly. On the server host, run the matrix client
-from an independent directory using only the client SDK tarball and client-role
+from an independent directory using only the installed client SDK and client-role
 credentials, not worker/admin credentials. Its loopback API requests allocate
 a remote GPU session and the managed HTTPS relay carries data to the worker.
 The external client example checks CUDA-ready, the numerical result, execution

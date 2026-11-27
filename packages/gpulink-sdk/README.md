@@ -8,13 +8,12 @@ Experimental application client for GPULink's existing `/v1` HTTP contract.
 - Rejects HTTP redirects to avoid forwarding bearer credentials to another origin.
 - Does not expose worker lease renewal, administrator events, or scheduler internals.
 - Authenticated WebSocket streaming supports legacy v1 and opt-in relay readiness v2.
-- Capability discovery, richer runtime schemas, publication policy, and C# / Python
-  bindings remain future work.
+- Capability discovery, richer runtime schemas and Python bindings remain future work for this package. The separate .NET client has its own contract.
 
-Run `npm ci --ignore-scripts && npm run build && npm test` inside this package.
-This is the pre-v1 Client SDK. Registry preview publication is performed separately from candidate builds.
+For source contributors only, run `npm ci --ignore-scripts && npm run build && npm test` inside this package.
+For application use, install the public pre-v1 SDK in a Node.js 24+ project: `npm install @gpulink/client@0.1.0`. Candidate builds do not publish.
 
-## Durable job quickstart (private preview)
+## Durable job quickstart (public preview)
 
 Use a matching installed SDK and an operator-provided endpoint and **client**
 credential. In Node, `GPULinkClient.fromEnv(process.env)` reads only
@@ -52,7 +51,7 @@ waiting timed out. Only explicit `cancelJob(id)` requests cancellation.
 Never ship client secrets in browser code or commit credential files.
 Use trusted HTTPS remotely and the operator's private CA if required.
 For authoring/approval see the repository's `docs/DEVELOPER_BATCH_QUICKSTART.md`.
-Capability discovery and public registry distribution remain separate work.
+Capability discovery remains separate work.
 
 ## Authenticated streaming (Phase 5E-2)
 

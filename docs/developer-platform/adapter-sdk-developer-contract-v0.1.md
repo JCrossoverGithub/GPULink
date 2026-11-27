@@ -1,7 +1,7 @@
 # Adapter SDK developer compatibility contract — experimental v0.1
 
 **Status: scoped JPCMAIN acceptance on October 16, 2026; experimental pre-v1.**
-Applies to the intentionally private `@gpulink/adapter-sdk@0.1.0` developer
+Applies to the public preview `@gpulink/adapter-sdk@0.1.0` developer
 *toolkit*, not a published v1 library. Supersedes **no** existing wire,
 manifest, operator or scheduler contracts. This milestone makes existing
 compatibility boundaries explicit.
@@ -37,10 +37,9 @@ compatibility boundaries explicit.
 
 CLI names `gpulink-adapter-conformance` and `gpulink-adapter-package` are
 provided in the npm tarball. `gpulink-adapter-package` verbs are `pack`,
-`inspect`, `catalog` and `catalog-direct`, as documented in the package README.
+`inspect`, `catalog` and `catalog-direct` for the original streaming workflow. The later `init-batch` and `prepare-python` commands are described in the [batch quickstart](../DEVELOPER_BATCH_QUICKSTART.md).
 Node >=24 is the **author toolkit** support floor; Python/C++ adapter processes
-are not required to execute Node code. Install tooling from a controlled build
-or locally packed tarball until a release decision is approved.
+are not required to execute Node code. Install tooling in an independent project with `npm install @gpulink/adapter-sdk@0.1.0`. Controlled builds and offline tarballs remain useful for reproducing earlier acceptance.
 
 The version comparison surface requires **exactly** these declaration fields:
 
@@ -79,8 +78,8 @@ compatibility does **not** implicitly approve package integrity or code trust.
 
 ## Versioning policy and what would break compatibility
 
-- SDK `0.1.x` is **pre-1.0 and private**. No general SemVer public stability
-  promise, public registry publication, or browser/Python/.NET SDK parity.
+- SDK `0.1.x` is **public pre-1.0**. No general SemVer public stability
+  promise or browser/Python/.NET SDK parity.
 - A wire-frame or handshake behavior change needs a separately reviewed GLIP
   contract version; a manifest shape change needs a reviewed schema revision.
   Neither follows automatically from the npm package version.

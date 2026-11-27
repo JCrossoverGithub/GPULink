@@ -9,7 +9,7 @@ GPULink's existing `CLI preview candidate` workflow builds a **nonpublished regi
 | `@gpulink/adapter-sdk` | `0.1.0` | Workload authoring and package review tools; Node.js 24+, npm; Python runtime separately supplied |
 | `GPULink.Client` | `0.1.0-preview.1` | Native .NET session client; .NET 10 |
 
-The npm package names and versions above are internal candidate identities, not a claim of registry availability or publication. The existing NuGet publishing workflow and previous .NET preview are unchanged. The .NET SDK is not represented as having the TypeScript SDK's new durable-job helpers. The coordinator requires the three npm versions to match and the .NET version to be a corresponding preview. Version changes must update the existing manifests, lockfiles, package verifier and applicable compatibility documentation deliberately.
+Candidate identities alone do not establish publication. The November 27 public npm release is verified separately in [release acceptance](acceptance/public-preview-2026-11-27.md). The existing NuGet publishing workflow and previous .NET preview are unchanged. The .NET SDK is not represented as having the TypeScript SDK's new durable-job helpers. The coordinator requires the three npm versions to match and the .NET version to be a corresponding preview. Version changes must update the existing manifests, lockfiles, package verifier and applicable compatibility documentation deliberately.
 
 ## Obtain and verify
 
@@ -66,7 +66,7 @@ Use a fresh cache when testing the exact candidate rather than the previously pu
 
 The workflow reuses the existing CLI build, the locked TypeScript compiler, `npm pack`, `dotnet pack`, and the existing NuGet content verifier. The new coordinator refuses dirty build checkouts, wrong CLI provenance, unexpected SDK package contents, altered SDK metadata, extra candidate files and existing output directories. The install jobs verify the same combined artifact and exercise the existing CLI acceptance, offline npm SDK installation (including durable wait tests and adapter packaging), and local-feed .NET restoration into a fresh consumer. The existing separate CI contract suites remain required.
 
-The candidate is not a public release, signed attestation, bit-for-bit reproducibility claim, or proof of public registry ownership. Package publishing, signing/attestation, public prerelease numbering, upgrade policies and clean developer validation remain separate decisions. No GPU execution or external deployment is added by this workflow.
+The candidate is not a public release, signed attestation, bit-for-bit reproducibility claim, or proof of public registry ownership. The November 27 publication was a separate maintainer action. Signing/attestation, future release numbering, upgrade policies and independent newcomer validation remain separate decisions. No GPU execution or external deployment is added by this workflow.
 
 For the accepted-main delivery archive, release authorization and conservative
 update procedure, see [release delivery](RELEASE_DELIVERY.md).

@@ -1,441 +1,160 @@
 # GPULink
 
-GPULink is a distributed GPU compute platform for turning otherwise-idle
-computers into a shared pool of useful compute.
+GPULink is an open-source, self-hosted GPU execution platform for running
+application workloads on distributed GPU workers. Applications submit durable
+jobs or open streaming sessions through a control plane that schedules work on
+eligible GPUs and manages resource ownership.
 
-It started with a simple problem: I had multiple computers with capable GPUs,
-but I could only actively use one machine at a time. Most of that GPU capacity
-spent its time sitting idle.
+[Website and documentation](https://gpulink.dev) · [Public preview release](https://github.com/JCrossoverGithub/GPULink/releases/tag/gpulink-v0.1.0-preview.1) · [Getting started](docs/GETTING_STARTED.md)
 
-That became especially frustrating while working with local AI models. VRAM
-was often the limiting resource in the quality of the models I could run, while
-other GPU-capable machines were doing nothing. Independent work such as
-embeddings, speech recognition, preprocessing, benchmarks, or other inference
-tasks could consume resources on my primary machine that I would rather
-dedicate to the main model.
+## Install
 
-GPULink turns those machines into a compute fabric.
+GPULink 0.1.0 is available as a public preview. The CLI and npm SDKs require
+Node.js 24 or newer; the .NET SDK targets .NET 10.
 
-Applications submit supported workloads to a central control plane. GPULink
-tracks available workers and their GPUs, chooses an appropriate device, leases
-the work to it, and records the result. The application using GPULink does not
-need to run on the machine containing the GPU — or even on a machine that has a
-GPU at all.
+| Package | Install |
+| --- | --- |
+| [CLI and Core](https://www.npmjs.com/package/@gpulink/cli) | `npm install -g @gpulink/cli@0.1.0` |
+| [TypeScript / JavaScript client](https://www.npmjs.com/package/@gpulink/client) | `npm install @gpulink/client@0.1.0` |
+| [Adapter SDK](https://www.npmjs.com/package/@gpulink/adapter-sdk) | `npm install @gpulink/adapter-sdk@0.1.0` |
+| [.NET client](https://www.nuget.org/packages/GPULink.Client/0.1.0-preview.1) | `dotnet add package GPULink.Client --version 0.1.0-preview.1` |
 
-That creates two useful capabilities:
+Use a user-owned npm installation or prefix; see the [CLI installation guide](docs/CLI_PREVIEW_RELEASE.md).
 
-- local AI workflows can move independent GPU work away from the GPU whose VRAM
-  is needed for a larger primary model;
-- other software can treat GPU compute as infrastructure instead of requiring
-  every end-user device to own a compatible accelerator.
+## Run your first GPU workload
 
-For example, a future CaptionLink integration could run its user interface on a
-lightweight device such as a Chromebook while GPULink supplies GPU compute for
-an ASR model running on another machine.
+On Linux/WSL with Node.js 24+, an accessible NVIDIA GPU and free loopback
+port 8088, follow the [first GPU workload guide](docs/FIRST_GPU_WORKLOAD.md).
+It takes you from npm installation through worker registration, one scheduled
+GPU diagnostic, result inspection and shutdown. A fresh installation and
+explicit consent to execute assignments are required.
 
-> **GPU compute should be a capability an application requests, not a piece of
-> hardware the application has to own.**
+For a cluster across machines, use [managed LAN onboarding](docs/MANAGED_LAN_PREVIEW.md)
+or [Linux server setup](docs/SERVER_PREVIEW.md). Applications connecting to an
+existing authorized cluster only need a client SDK.
 
-GPULink began as a way to make better use of hardware I already owned. It has
-grown into a practical distributed-systems project covering heterogeneous GPU
-scheduling, durable state, concurrency, failure recovery, safe deployment,
-backup and restore verification, and eventually Kubernetes and cloud
-infrastructure.
+## Integrate an application
 
-## Current status
+The client SDK connects to your own deployment or one you are authorized to use.
+Set `GPULINK_BASE_URL` and `GPULINK_CLIENT_TOKEN` through private application
+configuration. This example assumes an operator has approved and installed the
+`external.batch.scale` adapter from the [batch quickstart](docs/DEVELOPER_BATCH_QUICKSTART.md).
+Save the example as `scale.mjs` in a Node.js 24+ project with the Client SDK installed. Run `node scale.mjs YOUR_REQUEST_KEY`, using a key persisted by your application for this logical request.
 
-**Independent two-host operator acceptance (October 24, 2026):** On exact source revision `c88b9f8e795399d73d74b9b34a9c157728de2600`, separate physical hosts completed one approved RTX 3070 Ti GPU telemetry job over authenticated HTTPS. The result persisted with cleared leases; controlled control-plane/worker restart and scoped-auth/TLS/liveness checks passed; test-specific network exposure was removed. This operator-guided source-checkout acceptance is **not** a published remote installer, an arbitrary CUDA workload test, or independent newcomer onboarding. See [G9 evidence](docs/acceptance/independent-two-host-acceptance-2026-10-24.md).
+<!-- gpulink-example: readme-scale -->
+```js
+import assert from 'node:assert/strict';
+import { GPULinkClient } from '@gpulink/client';
 
-**Developer-platform acceptance (October 20, 2026):** GPULink has a
-source-built, independently installable CLI preview with a managed local
-control plane, an explicitly opted-in GPU worker, and a repository-owned,
-real-hardware diagnostic acceptance gate. The installed Linux/WSL workflow
-passed against a physical GPU, including authoritative scheduling, durable
-SQLite job completion, verified shutdown, and restart. See
-[installed GPU diagnostic acceptance](docs/INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md).
+const requestKey = process.argv[2];
+if (!requestKey) throw new Error('Provide a persisted request key');
+const client = GPULinkClient.fromEnv(process.env);
+const { job } = await client.submitJob({
+  projectId: 'scale-example',
+  type: 'external.batch.scale',
+  constraints: { gpuCount: 1, minVramMiB: 1000 },
+  payload: { values: [1, 2, 3] },
+  maxAttempts: 1,
+}, { idempotencyKey: requestKey });
 
-**Historical distributed-environment acceptance (October 13, 2026):** the
-AWS/K3s + PostgreSQL deployment completed its Phase 4E migration and
-production workload gate. This is dated acceptance evidence, **not** a claim
-that a live deployment was just rechecked, a turnkey multi-host installer,
-or a generally available GPU service. See
-[Phase 4E evidence](docs/security/aws-phase4e-production-acceptance-2026-10-13.md).
+// Record the job ID before waiting so observation can resume after a timeout.
+console.log(job.id);
+const terminal = await client.waitForJob(job.id, { timeoutMs: 60_000 });
+if (terminal.status !== 'succeeded') throw new Error(`Job ended: ${terminal.status}`);
+assert.deepEqual(terminal.result.values, [2, 4, 6]);
+assert.equal(terminal.result.backend, 'pytorch-cuda');
+console.log(terminal.result);
+// Expected with the approved CUDA adapter: { values: [2, 4, 6], backend: 'pytorch-cuda' }
+```
 
-**Application and SDK evidence:** jobs, streaming sessions, and the
-client/adapter contracts are implemented. The .NET Client SDK has a
-published **preview**; the TypeScript Client SDK and Adapter SDK are still
-pre-v1 tooling. An operator-trusted CaptionLink Multitalker
-integration was accepted across two machines on October 20, 2026; that
-is not independently reproducible operator onboarding or an untrusted-code
-sandbox. See [getting started](docs/GETTING_STARTED.md).
+Use the [client SDK documentation](packages/gpulink-sdk/README.md) for session
+streaming, cancellation, deadlines and durable job observation. The
+[Adapter SDK](packages/gpulink-adapter-sdk/README.md) provides workload authoring,
+conformance and packaging tools for operator review.
 
-For feature-by-feature evidence and publication/deployment limitations, see
-[Capability Status](docs/CAPABILITY_STATUS.md). Historical development
-checkpoints remain in the [milestone record](docs/developer-platform/verified-milestone-status.md)
-and [Roadmap](docs/ROADMAP.md); they are not current release instructions.
-
-## Start developing with GPULink
-
-GPULink is **self-hostable open-source infrastructure**, not a public cluster operated by this project. You can deploy your own control plane and GPU workers, or connect to another operator's GPULink deployment with their authorization. See the [getting-started guide](docs/GETTING_STARTED.md) for application developers, adapter authors, and GPU operators; it distinguishes published SDKs, experimental tooling, and operator responsibilities.
-
-## What GPULink does
-
-### Reuse idle GPU capacity
-
-A machine running a large local model can offload independent GPU work to
-another GPULink worker. That does not combine several GPUs into one shared VRAM
-address space; instead, it moves separate workloads away from the GPU whose
-resources are most valuable.
-
-This is useful for workloads such as:
-
-- embeddings;
-- automatic speech recognition;
-- preprocessing;
-- GPU benchmarks;
-- independent inference jobs;
-- future workload adapters.
-
-### Give GPU compute to devices that do not have a GPU
-
-A client submits a supported workload through the GPULink API. The scheduler
-chooses an eligible GPU worker and the worker executes the allowlisted workload.
-
-The client therefore does not need to know which physical computer owns the GPU.
-
-A laptop, Chromebook, server, web application, or another product can request
-GPU compute through the same platform.
-
-## What GPULink is not
-
-GPULink does **not** currently:
-
-- merge several GPUs into one logical pool of shared VRAM;
-- accept arbitrary shell commands;
-- execute arbitrary uploaded Python;
-- execute arbitrary user-provided containers;
-- expose worker machines directly to inbound Internet traffic;
-- act as a general-purpose Kubernetes cluster;
-- automatically provision commercial cloud GPUs.
-
-Workloads are explicit, versioned, validated capabilities.
-
-## GPULink as an application framework
-
-GPULink Core is the GPU orchestration layer, not a single end-user application.
-
-It provides reusable infrastructure for:
-
-- GPU worker discovery and inventory;
-- capability-aware scheduling;
-- leases and resource ownership;
-- adapter and model readiness;
-- authentication;
-- durable lifecycle state;
-- retries and worker recovery;
-- batch execution;
-- persistent real-time sessions and authenticated relay transport.
-
-Applications consume those primitives while keeping their own product behavior
-outside the scheduler.
-
-CaptionLink is the first operator-trusted real-time integration. Its
-Multitalker inference was accepted across a separate client machine and GPU
-worker on October 20, 2026. Audio capture, rendering, and accessibility UX
-remain CaptionLink responsibilities; a turnkey integration installer is
-not yet claimed.
-
-Future reference applications may demonstrate other uses of the same framework,
-including batch scheduling, secure remote inference access, organizational fleet
-management, and external capacity sharing. Those applications are not current
-GPULink Core features.
-
-See [Application Framework](docs/APPLICATION_FRAMEWORK.md) for the architectural
-boundary and execution model.
-
-## Current architecture
-
-The dated October 13, 2026 production acceptance used AWS/K3s for the
-authoritative control-plane and persistence tier. The following diagram is
-that accepted deployment topology, not a universal installation recipe or
-a current live-environment health assertion.
-
-The former DigitalOcean deployment is frozen and retained only as a rollback
-target. Its control plane remains stopped while AWS is authoritative.
-
-The physical GPU workers remain outside AWS and initiate outbound HTTPS
-connections to the public AWS control plane.
+## Architecture
 
 ```mermaid
-flowchart TD
-    Client["Application / Product / CLI"]
-
-    subgraph DO["Frozen rollback target — DigitalOcean"]
-        Nginx["Nginx + TLS — rollback only"]
-        DOControl["GPULink Control Plane — stopped"]
-        DOPostgres[("PostgreSQL 17 — frozen state")]
-    end
-
-    subgraph AWS["Authoritative production — AWS/K3s"]
-        Traefik["Traefik + HTTPS"]
-        AWSControl["GPULink Control Plane"]
-        AWSPostgres[("PostgreSQL 17 on gp3")]
-        Recovery["pgBackRest"]
-        S3["Off-host S3 backup + WAL"]
-    end
-
-    subgraph Fleet["Outbound-only physical GPU workers"]
-        GPU1["MAINPC\nRTX 3070 Ti 8 GB"]
-        GPU2["JPCMAIN\nRTX 3090 Ti 24 GB"]
-        GPU3["Laptop\nRTX 4060 8 GB"]
-    end
-
-    Client -->|"production HTTPS"| Traefik
-
-    Nginx --> DOControl
-    DOControl --> DOPostgres
-    Traefik --> AWSControl
-    AWSControl --> AWSPostgres
-    AWSPostgres --> Recovery
-    Recovery --> S3
-
-    GPU1 -->|"outbound HTTPS"| Traefik
-    GPU2 -->|"outbound HTTPS"| Traefik
-    GPU3 -->|"outbound HTTPS"| Traefik
+flowchart LR
+    App[Application / SDK] -->|HTTPS API| CP[Control plane]
+    App <-->|Authenticated WSS| Relay[Data-plane relay]
+    CLI[CLI / local Manager] -->|Scoped API| CP
+    CP --> DB[(SQLite or PostgreSQL)]
+    CP --- Relay
+    W1[GPU worker A] -->|Outbound API| CP
+    W2[GPU worker B] -->|Outbound API| CP
+    W1 <-->|Outbound WSS| Relay
+    W2 <-->|Outbound WSS| Relay
+    W1 --> A1[Approved workload adapter]
+    W2 --> A2[Approved workload adapter]
 ```
 
-PostgreSQL in AWS remains internal. pgBackRest provides off-host S3 backup and
-continuous WAL archival, while cert-manager owns steady-state public certificate
-management.
+- Capability and VRAM-aware scheduling, model locality, worker inventory and leases.
+- Durable job state, cancellation and explicit recovery of uncertain GPU ownership.
+- Authenticated streaming sessions for workload-specific binary and text protocols.
+- Operator-approved external adapters using a language-neutral subprocess protocol.
+- Local browser Manager for workers, jobs, sessions, telemetry and guarded operations.
+- SQLite for local installations; PostgreSQL for supported distributed control-plane deployments.
 
-Workers initiate outbound connections, so GPULink does not require inbound
-worker ports on personal GPU computers.
+Each assignment uses an eligible GPU; GPULink distributes independent workloads,
+not a single model across a shared VRAM address space. Remote connections use
+trusted HTTPS/WSS, scoped credentials and explicit operator approval of workloads.
+See [architecture](docs/ARCHITECTURE.md) and [security policy](SECURITY.md).
 
-Phase 4E proved the post-migration production path through the public AWS
-endpoint and executed real CUDA on JPCMAIN's physical RTX 3090 Ti while
-preserving its migrated worker identity.
+## Demonstrated workloads
 
-The DigitalOcean components shown above are not live production writers. They
-are retained only for rollback until an explicit retirement decision.
+| Example | Accepted scope |
+| --- | --- |
+| CaptionLink | Real Multitalker speech inference across two physical machines over HTTPS/WSS (October 20, 2026); [integration evidence](docs/GETTING_STARTED.md#what-has-actually-been-proven). |
+| Vector search | Independent application and CUDA worker, correct result and teardown (November 25); [example](examples/vector-search/README.md), [acceptance](docs/acceptance/independent-vector-search-2026-11-25.md). |
+| GPULink Manager | Two-host installed workflow with GPU telemetry, physical CUDA work and drain/resume (November 26); [acceptance](docs/acceptance/installed-manager-two-host-2026-11-26.md). |
 
-See [Architecture](docs/ARCHITECTURE.md) for the detailed design.
+The November 25 vector-search run returned these exact top-three results on a
+remote RTX 3090 Ti. The application independently checked the ranking, and a
+separate process retrieved the persisted result. The November 26 Manager run
+also verified queueing while drained and execution after resume.
 
-## Scheduling
+| Rank | Item | Inner-product score |
+| --- | --- | ---: |
+| 1 | audio | 95 |
+| 2 | video | 93 |
+| 3 | render | 88 |
 
-Workers report validated GPU inventories and supported capabilities.
-
-The scheduler considers factors including:
-
-- required capability;
-- minimum VRAM;
-- worker health;
-- drain state;
-- active GPU assignment;
-- warm-model locality;
-- verified cached-model locality;
-- utilization and available headroom.
-
-A physical GPU receives at most one active GPULink job at a time.
-
-Scheduler decisions occur inside database transactions. PostgreSQL advisory
-locking prevents multiple control-plane replicas from independently scheduling
-the same work.
-
-## Persistence and events
-
-PostgreSQL is the authoritative production store for:
-
-- workers;
-- jobs;
-- leases;
-- scheduler state;
-- durable operational events.
-
-SQLite remains in the repository for focused tests and migration fixtures. It
-is no longer the production source of truth.
-
-Event notifications are commit-aware. PostgreSQL uses `LISTEN` / `NOTIFY` to
-wake subscribers across persistence instances, while the durable event record
-remains in PostgreSQL.
-
-## Workload security
-
-GPULink uses scoped credentials for clients, workers, and administrators.
-
-Workers execute only allowlisted workload implementations. Runtime input is
-validated and bounded before execution.
-
-The durable scheduler is intended for workload control, assignment, metadata,
-and results. High-rate streaming payloads such as live audio should use a
-workload-specific data path rather than being written packet-by-packet through
-the durable job scheduler.
-
-## Production safety
-
-The current deployment includes:
-
-- immutable Git-derived control-plane image tags;
-- OCI source, revision, and version labels;
-- installed and deployed revision tracking;
-- a shared deploy/rollback exclusion lock;
-- active-job checks before rollback;
-- a verified PostgreSQL backup before rollback;
-- refusal to roll back to legacy/untraceable releases;
-- no-build rollback to retained immutable images;
-- bounded traceable-release retention;
-- `/healthz` and `/readyz` acceptance checks.
-
-A real production rollback and forward restore have both been exercised while
-leaving the PostgreSQL container and durable state unchanged.
-
-See [Production Operations](docs/PRODUCTION_OPERATIONS.md).
-
-## Backup and recovery
-
-The October 13, 2026 Phase 4E acceptance migrated authoritative production
-state from DigitalOcean to AWS/K3s. DigitalOcean remained a **stopped,
-frozen rollback target**; it is not the current production writer in that
-accepted deployment. See the
-[Phase 4E migration evidence](docs/security/aws-phase4e-production-acceptance-2026-10-13.md).
-
-AWS reference-environment recovery acceptance includes pgBackRest full and
-incremental backups, off-host S3 WAL archival, isolated restore rehearsal,
-and named point-in-time recovery. These are historical acceptance results,
-not a guaranteed recovery-time objective or an assertion of present-day
-operational health. See the
-[Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md) and
-[operator recovery runbook](docs/security/aws-postgres-disaster-recovery-runbook.md).
-
-## Operations console
-
-The repository also contains a read-only
-[operations console](dashboard/README.md) with an Angular frontend and loopback
-Flask gateway. It visualizes fleet and scheduler state without putting
-administrator or client credentials in browser JavaScript.
-
-## Requirements
-
-### Control plane / development
-
-- Node.js 24 or newer
-- PostgreSQL 17 for PostgreSQL integration tests and production persistence
-- Docker Engine
-- Docker Compose v2
-- Ubuntu 24.04 for the current production host
-
-### GPU workers
-
-- Windows 11 with WSL2 and systemd for the current personal-computer workers
-- Node.js 24 or newer inside WSL
-- NVIDIA drivers with a working `nvidia-smi` inside WSL
-- Python 3.10 through 3.14 for the optional isolated benchmark runtime
-
-### Operations console
-
-- Python 3.12 or newer for the optional Flask gateway
-- Node/Angular tooling for the dashboard frontend
-
-## Local verification
-
-Install dependencies:
-
-```bash
-npm ci
-```
-
-The complete repository check is:
-
-```bash
-npm run check
-```
-
-PostgreSQL integration tests use:
-
-```bash
-export GPULINK_TEST_POSTGRES_URL='postgresql://gpulink:gpulink-dev-only@127.0.0.1:5432/gpulink'
-npm run check
-```
-
-The repository test count changes as work is added. Hardware acceptance is
-separately and explicitly opted in; see
-[Installed Local GPU Diagnostic Acceptance](docs/INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md).
-
-## Command-line operations
-
-Configure the public URL and the credential appropriate to the operation:
-
-```bash
-export GPULINK_URL=https://gpulink.example.invalid  # replace with your authorized deployment
-export GPULINK_CLIENT_TOKEN=replace-me
-export GPULINK_ADMIN_TOKEN=replace-me
-```
-
-Examples:
-
-```bash
-npm run cli -- workers
-npm run cli -- submit-diagnostic 256
-npm run cli -- submit-benchmark 4096 3 10
-npm run cli -- wait <job-id>
-npm run cli -- drain <worker-id>
-npm run cli -- resume <worker-id>
-```
-
-Never commit real credentials to the repository.
-
-## Deployment
-
-The current production deployment and recovery procedures are documented in
-[Production Operations](docs/PRODUCTION_OPERATIONS.md).
-
-The original
-[First Operational Target](docs/FIRST_OPERATIONAL_TARGET.md) is retained as
-historical documentation for the first physical-fleet acceptance milestone. It
-should not be treated as the current production architecture.
-
-## Roadmap
-
-The current architecture rework is organized into major phases:
-
-- **Phase 0 — physical GPU acceptance:** complete
-- **Phase 1 — PostgreSQL persistence:** complete
-- **Phase 2 — distributed scheduler/event correctness:** complete
-- **Phase 3 — production hardening and recovery:** complete
-- **Phase 4 — AWS + K3s production GPU fabric:** historically accepted in production on 2026-10-13
-- **Phase 5 — application platform:** jobs/sessions/transport and preview SDKs implemented; stable publication and general adoption remain open
-- **Phase 6 — reference applications:** CaptionLink two-machine operator-trusted integration accepted; wider reference onboarding remains open
-- **Phase 7 — private multi-user GPU fleet:** future
-- **Phase 8 — cross-trust distributed GPU network:** long-term future
-- **Phase 9 — optional capacity exchange:** long-term concept
-
-See [Roadmap](docs/ROADMAP.md) for details.
+[Reproduce the application](examples/vector-search/README.md) ·
+[Inspect the physical acceptance record](docs/acceptance/independent-vector-search-2026-11-25.md)
 
 ## Documentation
-- [Current capability and acceptance status](docs/CAPABILITY_STATUS.md)
-- [Getting started by role](docs/GETTING_STARTED.md)
-- [Installed CLI developer preview](docs/CLI_DISTRIBUTION.md)
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Application Framework](docs/APPLICATION_FRAMEWORK.md)
-- [ADR 0002 — Application Framework Boundary](docs/adr/0002-application-framework-boundary.md)
-- [API](docs/API.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Verified Developer-Platform Milestone Status](docs/developer-platform/verified-milestone-status.md)
-- [Phase 4 AWS Foundation](docs/PHASE4_AWS_FOUNDATION.md)
-- [Production Operations](docs/PRODUCTION_OPERATIONS.md)
-- [GPU Benchmark Workload](docs/GPU_BENCHMARK.md)
-- [AWS Control-Plane Staging Acceptance](docs/security/aws-control-plane-staging-acceptance.md)
-- [AWS GPU Workload Acceptance](docs/security/aws-gpu-workload-acceptance.md)
-- [AWS PostgreSQL Disaster-Recovery Runbook](docs/security/aws-postgres-disaster-recovery-runbook.md)
-- [Model Cache Inventory](docs/MODEL_CACHE.md)
-- [Operations Console](dashboard/README.md)
-- [First Operational Target — historical](docs/FIRST_OPERATIONAL_TARGET.md)
-- [Security Policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+- [Getting started by role](docs/GETTING_STARTED.md)
+- [CLI installation and Manager](docs/CLI_PREVIEW_RELEASE.md)
+- [Local lifecycle](docs/CLI_DISTRIBUTION.md), [server](docs/SERVER_PREVIEW.md), [remote worker](docs/REMOTE_WORKER_PREVIEW.md)
+- [Managed LAN onboarding](docs/MANAGED_LAN_PREVIEW.md)
+- [First external batch workload](docs/DEVELOPER_BATCH_QUICKSTART.md)
+- [Application framework](docs/APPLICATION_FRAMEWORK.md), [API](docs/API.md), [adapter contracts](docs/developer-platform/README.md)
+- [GPU benchmark](docs/GPU_BENCHMARK.md), [model cache](docs/MODEL_CACHE.md), [legacy operations dashboard](dashboard/README.md)
+- [Capability Status](docs/CAPABILITY_STATUS.md), [release evidence](docs/acceptance/public-preview-2026-11-27.md), [roadmap](docs/ROADMAP.md)
+- [Production operations](docs/PRODUCTION_OPERATIONS.md) and [historical AWS acceptance](docs/security/aws-phase4e-production-acceptance-2026-10-13.md)
+
+The preview is intended for trusted self-hosted environments. See Capability
+Status for platform and execution boundaries, including the lack of hostile-code
+isolation and the remaining independent newcomer onboarding work.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). For Node.js source validation:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm ci --prefix packages/gpulink-sdk --ignore-scripts --no-audit --no-fund
+npm run build --prefix packages/gpulink-sdk
+npm test --prefix packages/gpulink-sdk
+npm run check
+```
+
+Hardware acceptance is explicitly opted in; see the
+[installed GPU diagnostic gate](docs/INSTALLED_LOCAL_GPU_DIAGNOSTIC_ACCEPTANCE.md).
 
 ## License
 
-GPULink is licensed under Apache-2.0.
-
-GPULink does not bundle model weights. Operators are responsible for complying
-with the license and usage requirements of every model they install.
+Apache-2.0. See [LICENSE](LICENSE). Model weights are not bundled; operators
+are responsible for the licenses of their installed models.

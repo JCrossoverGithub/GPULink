@@ -1,8 +1,29 @@
-# Installable GPULink CLI — release candidate
+# Installable GPULink CLI — public preview
 
-**Scope:** local, Linux server and remote worker developer preview, not a public v0.1 release. Linux/WSL managed local control-plane/worker commands are unchanged; Windows supports CLI configuration and diagnostics, not native managed services. Node.js 24+ and npm are required. GPU drivers and Python/model dependencies are not bundled. macOS acceptance is not yet claimed.
+**Scope:** local, Linux server and remote worker developer preview, public v0.1 preview. Linux/WSL managed local control-plane/worker commands are unchanged; Windows supports CLI configuration and diagnostics, not native managed services. Node.js 24+ and npm are required. GPU drivers and Python/model dependencies are not bundled. macOS acceptance is not yet claimed.
 
-## Obtain and verify the candidate
+## Install from npm
+
+```sh
+npm install -g @gpulink/cli@0.1.0
+gpulink --version
+gpulink --help
+```
+
+If your npm global prefix is not user-writable, use a dedicated prefix:
+
+```sh
+npm install -g --prefix "$HOME/.local/share/gpulink-cli" @gpulink/cli@0.1.0
+export PATH="$HOME/.local/share/gpulink-cli/bin:$PATH"
+```
+
+On Windows, use a user-owned npm prefix and put it on your PATH; invoke
+`gpulink.cmd`. No elevation is required for npm installation. The public npm
+packages and GitHub release are recorded in [release acceptance](acceptance/public-preview-2026-11-27.md).
+
+<a name="obtain-and-verify-the-candidate"></a>
+
+## Obtain and verify an offline candidate
 
 The `CLI preview candidate` GitHub Actions workflow creates `gpulink-cli-candidate-<commit>` containing the versioned tarball, `SHA256SUMS` and `release.json`. Download it from a reviewed successful workflow run (both install jobs must pass). The artifact is a candidate, not a GitHub Release or npm publication. The metadata records build revision, dependency lock digest and artifact digest; these are not signatures. Verify the expected commit against the trusted workflow run and the checksum before installing. On Linux:
 
@@ -16,7 +37,9 @@ For the coordinated CLI, Client SDK, Adapter SDK and .NET candidate, see
 [distribution candidate installation](DISTRIBUTION_CANDIDATE.md).
 The existing CLI-only download remains available.
 
-## Install outside Core
+<a name="install-outside-core"></a>
+
+## Offline installation outside Core
 
 From an unrelated user-owned directory, with the downloaded tarball (no source checkout and no dependency download required):
 
@@ -52,9 +75,17 @@ gpulink --config-dir /absolute/path/to/installation manager
 gpulink --config-dir /absolute/path/to/installation manager --enable-controls
 ```
 
-The default command chooses a single existing default local or server profile. If both exist, choose explicitly with `--config-dir`. The Manager binds only to an OS-selected loopback port and prints the exact URL. It attempts to open a browser on a graphical Linux/WSL desktop; `--no-open` prints the URL only. Ctrl+C closes the Manager, not Core or workers. If the selected installation is stopped, start it explicitly using the matching `local start` or `server start` workflow. The Manager refuses unverified installation ownership and does not adopt other listeners or start services. The browser receives sanitized operational state, not Core credentials. Read-only is the default; operator mode assumes a trusted local operator. Never expose the Manager over a LAN or reverse proxy. Native Windows managed services and network-facing administration are not supported. The Manager is part of the same candidate tarball, not a separate Python or frontend installation.
+The default command chooses a single existing default local or server profile. If both exist, choose explicitly with `--config-dir`. The Manager binds only to an OS-selected loopback port and prints the exact URL. It attempts to open a browser on a graphical Linux/WSL desktop; `--no-open` prints the URL only. Ctrl+C closes the Manager, not Core or workers. If the selected installation is stopped, start it explicitly using the matching `local start` or `server start` workflow. The Manager refuses unverified installation ownership and does not adopt other listeners or start services. The browser receives sanitized operational state, not Core credentials. Read-only is the default; operator mode assumes a trusted local operator. Never expose the Manager over a LAN or reverse proxy. Native Windows managed services and network-facing administration are not supported. The Manager is part of the same CLI package, not a separate Python or frontend installation.
 
-To uninstall the CLI, first close any running Manager, then stop the owned worker (if running), then stop the owned control plane and confirm its offline status. Remove the package with `npm uninstall --global --prefix "$HOME/.local/share/gpulink-cli" --offline --ignore-scripts @gpulink/cli` (or uninstall from your private consumer project). This intentionally preserves instance configuration and SQLite data under `~/.gpulink/instances/` or your selected directory. Back up and remove those separately only if you no longer need them. An unknown supervisor or stale ownership record requires investigation, not force removal.
+## Remove the CLI
+
+To uninstall the CLI, first close any running Manager, then stop the owned worker (if running), then stop the owned control plane and confirm its offline status. Remove the package using the same installation scope you originally chose:
+
+- Normal global install: `npm uninstall -g @gpulink/cli`.
+- Dedicated prefix: `npm uninstall -g --prefix "$HOME/.local/share/gpulink-cli" @gpulink/cli`. Remove the corresponding PATH addition if no longer needed.
+- Private consumer project: run `npm uninstall @gpulink/cli` in that project.
+
+This intentionally preserves instance configuration and SQLite data under `~/.gpulink/instances/` or your selected directory. Back up and remove those separately only if you no longer need them. An unknown supervisor or stale ownership record requires investigation, not force removal.
 
 ## Build and verify as a contributor
 

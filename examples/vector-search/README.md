@@ -4,18 +4,30 @@ A small standalone application performing top-k inner-product retrieval over sup
 
 ## Prepare
 
-Requires Node 24+, npm, Bash, Python 3 and the trusted, previously verified DEV-05 delivery extracted from revision `6220a093d5a70abd8d735df2d51163315dc67090`. No source checkout required. `prepare.sh` checks the accepted manifest revision and package bytes, creates two fresh independent projects, installs local SDK tarballs offline, uses the public Adapter SDK CLI to generate the starter, replaces only `run(payload)`, packs and inspects it, and runs local client tests. The destination must not exist. If preparation fails, inspect the output; use a fresh destination on retry. This starts no GPULink services, installs no Python dependencies and approves no workload. One isolated mock HTTP server is used by the tests; it is not a GPULink deployment.
+Requires Node.js 24+, npm, Bash, Python 3 and `sha256sum`. Obtain this example
+folder from the repository (or download the source archive and extract the
+folder); no Core build is required. The registry path uses the published SDKs
+and checks their integrity against the November 27 release. Preparation
+creates separate author and client projects, generates and packages the
+CUDA-only adapter, and runs five reference/client tests. It starts no GPULink
+services, installs no Python dependencies and approves no workload.
+The destination must be an absolute, nonexistent path.
 
 ```sh
-sha256sum -c SHA256SUMS
-bash prepare.sh /absolute/verified/extracted "$HOME/gpulink-dev06-vector-search"
+bash prepare.sh --registry "$HOME/gpulink-vector-search"
 ```
+
+For original November 25 offline reproduction, use the [original example at
+its accepted revision](https://github.com/JCrossoverGithub/GPULink/tree/6220a093d5a70abd8d735df2d51163315dc67090/examples/vector-search)
+with the accepted DEV-05 delivery. The current script retains the original
+offline mode, `bash prepare.sh /absolute/verified/extracted /absolute/new-project`,
+which checks that original revision and its package hashes.
 
 The project contains `author-project/author`, `author-project/bundle`, and `client-project` (with its own package and client SDK). The sample expects audio:95, video:93, render:88. A fifth test uses mock HTTP responses solely to test the application/SDK boundary. None of these tests establishes physical GPU execution.
 
 ## GPU operator
 
-Use only a new, independently installed worker profile and the matching CLI from the verified distribution. Review the bundle program and a trusted CUDA PyTorch virtual environment, then use the installed Adapter SDK's `prepare-python --bundle ... --interpreter ... --out ...` (optionally `--library-path /usr/lib/wsl/lib` for WSL). Review the resulting launcher and catalog before computing its digest and explicitly approving it with the existing stopped-worker `worker approve-catalog` command. No automatic approval or runtime installation is performed by this app. Server and worker onboarding use existing supported GPULink procedures. Keep the approved paths protected and unchanged. Credentials are provided by the operator, not embedded in the application or workload.
+Use only a new, independently installed worker profile and the public CLI `npm install -g @gpulink/cli@0.1.0`. Review the bundle program and a trusted CUDA PyTorch virtual environment, then use the installed Adapter SDK's `prepare-python --bundle ... --interpreter ... --out ...` (optionally `--library-path /usr/lib/wsl/lib` for WSL). Review the resulting launcher and catalog before computing its digest and explicitly approving it with the existing stopped-worker `worker approve-catalog` command. No automatic approval or runtime installation is performed by this app. Server and worker onboarding use existing supported GPULink procedures. Keep the approved paths protected and unchanged. Credentials are provided by the operator, not embedded in the application or workload.
 
 ## Client usage
 
@@ -31,6 +43,14 @@ node search.mjs get JOB_ID
 
 `wait` verifies successful completion, exact ranks, CUDA backend, one execution attempt and recorded GPU/worker assignment. It observes only; timeout does not cancel or resubmit. Use the original key for retrying the same logical submission. `cancel JOB_ID` is explicit and subject to the existing GPULink cleanup rules. Do not print client secrets or invite contents. The numerical check cannot by itself prove actual CUDA execution; use the physical worker assignment and reviewed CUDA-only source for the physical acceptance.
 
-## Scope and next gate
+## Physical evidence
 
-No Core change. Local development used reconstructed SDK tarballs, Node 22 and CPU-only PyTorch; SDK tooling emits an engine warning outside Node 24. Author scaffolding, package inspection, independent reference tests, mock HTTP integration and refusal of CPU execution were checked locally. The accepted-main artifact, Node 24, actual remote execution and operator experience remain the acceptance gates on the target machines. Do not use prior retired credentials or installation profiles.
+The [November 25 acceptance](../../docs/acceptance/independent-vector-search-2026-11-25.md)
+used an independent application and a separate RTX 3090 Ti worker, with a
+successful first attempt and the exact reference ranking. The [November 26
+Manager acceptance](../../docs/acceptance/installed-manager-two-host-2026-11-26.md)
+reused the unchanged workload and verified drain/resume. Those runs used
+verified distribution archives; this registry preparation path does not change
+workload or client code. A new public-registry preparation check does not by
+itself establish physical execution. Use a fresh profile and new private
+credentials for any new hardware run.

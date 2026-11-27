@@ -20,7 +20,7 @@ The automation here is a separate deployment adapter, not a change to Core.
 
 ## Server
 
-Install the candidate outside the source checkout. Use a fresh short Linux
+Install the same public CLI version on both hosts (`npm install -g @gpulink/cli@0.1.0`); use a user-owned npm prefix. Use a fresh short Linux
 configuration path (never reuse an existing installation for this preview).
 Get the intended worker's Windows LAN IPv4 address from its operator; do not
 allow an entire subnet. For example:
