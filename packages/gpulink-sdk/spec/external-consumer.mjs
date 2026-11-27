@@ -132,7 +132,7 @@ test('packed SDK works in independent finite-job and v2 streaming applications',
     assert.equal(manifest[0].name, '@gpulink/client');
     assert.equal(manifest[0].version, '0.1.0');
     assert.deepEqual(new Set(manifest[0].files.map((file) => file.path)), new Set([
-      'README.md', 'package.json', 'dist/index.js', 'dist/index.d.ts',
+      'LICENSE', 'README.md', 'package.json', 'dist/index.js', 'dist/index.d.ts',
       'dist/data-plane.js', 'dist/data-plane.d.ts',
       'dist/session.js', 'dist/session.d.ts',
     ]));
