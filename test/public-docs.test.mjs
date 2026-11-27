@@ -22,7 +22,8 @@ const current = [
 // Check inline Markdown links outside fenced code. This is deliberately not
 // a full Markdown parser or an external URL checker. GitHub ATX headings
 // and explicit HTML anchors are supported, including repeated headings.
-function prose(markdown) { return markdown.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[ \t]*$/gm,''); }
+function normalizeMarkdown(markdown) { return markdown.replace(/\r\n/g,'\n'); }
+function prose(markdown) { return normalizeMarkdown(markdown).replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[ \t]*$/gm,''); }
 function anchors(markdown) {
   const found=new Set(), counts=new Map();
   const text=prose(markdown);
@@ -58,25 +59,47 @@ test('public guides do not regress to obsolete unpublished npm claims',()=>{
   assert.match(read('docs/developer-platform/verified-milestone-status.md'),/Historical October checkpoint/);
 });
 
-test('documented first-workload lifecycle orders consent, observation and shutdown',()=>{
-  const content=read('docs/FIRST_GPU_WORKLOAD.md');
+function shellBlocks(markdown) {
+  return [...normalizeMarkdown(markdown).matchAll(/```(?:bash|sh)\n([\s\S]*?)\n```/g)].map(m=>m[1]);
+}
+
+function assertFirstWorkloadLifecycle(content) {
   const commands=[
     'init local','doctor control-plane','local start','jobs','local worker start --accept-assigned-work',
     'local status','workers','submit-diagnostic 256','wait "$JOB_ID"','manager --no-open','local worker stop','local stop',
   ];
-  const shell=[...content.matchAll(/```bash\n([\s\S]*?)\n```/g)].map(m=>m[1]).join('\n');
+  const shell=shellBlocks(content).join('\n');
   let offset=-1;
   for(const command of commands){const next=shell.indexOf(`gpulink --config-dir "$SETUP" ${command}`,offset+1);assert.ok(next>offset,command);offset=next;}
   assert.match(shell,/job\['assignedGpuUuid'\] == job\['result'\]\['gpu'\]\['uuid'\]/);
   assert.equal((shell.match(/submit-diagnostic 256/g)||[]).length,1);
   assert.doesNotMatch(shell,/\bsudo\b|\bkill\b|\brm -rf\b/);
+}
+
+test('documented first-workload lifecycle orders consent, observation and shutdown',()=>{
+  assertFirstWorkloadLifecycle(read('docs/FIRST_GPU_WORKLOAD.md'));
+});
+
+test('Markdown checks preserve lifecycle and fenced-code semantics for LF and CRLF',()=>{
+  const lf=normalizeMarkdown(read('docs/FIRST_GPU_WORKLOAD.md'));
+  const consent='local worker start --accept-assigned-work';
+  for(const ending of ['\n','\r\n']) {
+    const encode=text=>text.replace(/\n/g,ending);
+    const content=encode(lf);
+    assert.deepEqual(shellBlocks(content),shellBlocks(lf));
+    assertFirstWorkloadLifecycle(content);
+    assert.throws(()=>assertFirstWorkloadLifecycle(encode(lf.replace(consent,'local worker start'))), /local worker start --accept-assigned-work/);
+    const sample=encode('# Visible\n```bash\n# Hidden\n[not a link](missing.md)\n```\n## After\n');
+    assert.deepEqual([...anchors(sample)],['visible','after']);
+    assert.doesNotMatch(prose(sample),/missing\.md/);
+  }
 });
 
 test('Linux public guide Bash snippets and acceptance scripts parse',t=>{
   if(process.platform!=='linux')return t.skip('Linux/WSL shell guides');
   for(const file of ['docs/FIRST_GPU_WORKLOAD.md','docs/DEVELOPER_BATCH_QUICKSTART.md','examples/vector-search/README.md']){
-    for(const m of read(file).matchAll(/```(?:bash|sh)\n([\s\S]*?)\n```/g)){
-      const result=spawnSync('bash',['-n'],{input:m[1],encoding:'utf8',timeout:5000});assert.equal(result.status,0,`${file}: ${result.stderr}`);
+    for(const block of shellBlocks(read(file))){
+      const result=spawnSync('bash',['-n'],{input:block,encoding:'utf8',timeout:5000});assert.equal(result.status,0,`${file}: ${result.stderr}`);
     }
   }
   for(const file of ['examples/vector-search/prepare.sh','scripts/acceptance/installed-local-gpu-diagnostic.sh','scripts/acceptance/public-docs-registry.sh']){
