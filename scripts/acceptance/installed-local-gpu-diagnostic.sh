@@ -10,6 +10,11 @@ if [[ "${GPULINK_E2E_DIAGNOSTIC_ACK:-}" != "$CONSENT" ]]; then
   exit 2
 fi
 
+MODE="${1:---source}"
+[[ $# -le 1 && ( "$MODE" == --source || "$MODE" == --registry ) ]] || {
+  echo 'Usage: installed-local-gpu-diagnostic.sh [--source|--registry]' >&2; exit 2;
+}
+
 [[ "$(uname -s)" == Linux ]] || { echo 'REFUSED: Linux/WSL-only managed service lifecycle.' >&2; exit 1; }
 for bin in git node npm python3 nvidia-smi timeout; do
   command -v "$bin" >/dev/null 2>&1 || { echo "REFUSED: Missing dependency: $bin" >&2; exit 1; }
@@ -27,14 +32,18 @@ cd "$REPO_ROOT"
 BASE_SHA="$(git rev-parse HEAD)"
 ORIGINAL_WORKTREE="$(git status --porcelain --untracked-files=all)"
 
-# Never allow inherited role credentials or URLs to mix with the disposable installation.
-for variable in \
-  GPULINK_CONTROL_HOST GPULINK_CONTROL_PORT GPULINK_CONTROL_DATABASE GPULINK_CONTROL_DATA_PATH \
-  GPULINK_CLIENT_TOKEN GPULINK_WORKER_TOKEN GPULINK_ADMIN_TOKEN \
-  GPULINK_DATA_PLANE_SIGNING_KEY GPULINK_CONTROL_PLANE_URL GPULINK_URL GPULINK_WORKER_NAME; do
-  if [[ -v "$variable" ]]; then
-    echo "REFUSED: Inherited local profile variable $variable is set; unset it." >&2
+# Refuse all inherited GPULINK settings except the explicit opt-in, including
+# synthetic inventory, worker execution and configuration overrides.
+while IFS= read -r variable; do
+  if [[ "$variable" == GPULINK_* && "$variable" != GPULINK_E2E_DIAGNOSTIC_ACK ]]; then
+    echo "REFUSED: Inherited profile variable $variable is set; unset it." >&2
     exit 1
+  fi
+done < <(compgen -e)
+# Prevent injected Node modules or flags in the live test.
+for variable in NODE_OPTIONS NODE_PATH; do
+  if [[ -v "$variable" ]]; then
+    echo "REFUSED: Inherited $variable is set; unset it." >&2; exit 1
   fi
 done
 
@@ -120,16 +129,41 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 printf '%s\n' '===== GPULINK — REPRODUCIBLE INSTALLED GPU DIAGNOSTIC ====='
-echo '===== Build and install private CLI outside source checkout ====='
-VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.-]+)?$ ]] || {
-  echo 'STOP: Unsupported package version.' >&2; exit 1;
-}
-npm run build:cli -- "$ARTIFACTS"
-TARBALL="$ARTIFACTS/gpulink-cli-$VERSION.tgz"
-[[ -f "$TARBALL" ]] || { echo 'STOP: Built private CLI tarball missing.' >&2; exit 1; }
 mkdir -p "$CONSUMER"
-npm install --prefix "$CONSUMER" --no-audit --no-fund "$TARBALL"
+if [[ "$MODE" == --registry ]]; then
+  echo '===== Install public CLI outside source checkout ====='
+  VERSION=0.1.0
+  mkdir -p "$TMP_ROOT/npm-home"
+  touch "$TMP_ROOT/user.npmrc" "$TMP_ROOT/global.npmrc"
+  (
+    cd "$CONSUMER"
+    printf '{"name":"gpulink-public-diagnostic","private":true}\n' > package.json
+    env -i PATH="$PATH" HOME="$TMP_ROOT/npm-home" \
+      npm_config_cache="$TMP_ROOT/cache" \
+      npm_config_userconfig="$TMP_ROOT/user.npmrc" \
+      npm_config_globalconfig="$TMP_ROOT/global.npmrc" \
+      npm install --save-exact --ignore-scripts --registry=https://registry.npmjs.org/ @gpulink/cli@0.1.0
+    node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const pkg=JSON.parse(readFileSync('package-lock.json')).packages['node_modules/@gpulink/cli'];
+assert.equal(pkg.version,'0.1.0');
+assert.equal(pkg.integrity,'sha512-9Le1pSopFXIxnLJK8STAMDk18OBnEDLnm8PePhb8wLGBnLR18mRvf3dFmJaJEe+Vy8XsNJ3w671nlAVvQkLcYw==');
+assert.equal(new URL(pkg.resolved).origin,'https://registry.npmjs.org');
+console.log('PASS: public CLI matches accepted release integrity');
+JS
+  )
+else
+  echo '===== Build and install private CLI outside source checkout ====='
+  VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
+  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.-]+)?$ ]] || {
+    echo 'STOP: Unsupported package version.' >&2; exit 1;
+  }
+  npm run build:cli -- "$ARTIFACTS"
+  TARBALL="$ARTIFACTS/gpulink-cli-$VERSION.tgz"
+  [[ -f "$TARBALL" ]] || { echo 'STOP: Built private CLI tarball missing.' >&2; exit 1; }
+  npm install --prefix "$CONSUMER" --no-audit --no-fund "$TARBALL"
+fi
 [[ -x "$CLI" && "$("$CLI" --version)" == "$VERSION" ]] || {
   echo 'STOP: Installed CLI executable/version invalid.' >&2; exit 1;
 }

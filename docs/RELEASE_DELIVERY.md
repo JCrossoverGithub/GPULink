@@ -1,6 +1,6 @@
 # Release delivery (DEV-05B)
 
-The first distribution channel is GitHub Releases. The `CLI preview candidate`
+Public npm and GitHub Releases are available as of November 27, 2026. See [release acceptance](acceptance/public-preview-2026-11-27.md). The `CLI preview candidate`
 workflow now has a read-only `release-delivery` job on `main` (push or manual
 workflow dispatch), dependent on both installed-package acceptance jobs. It
 archives their existing candidate bytes, not a second build. PR runs do not
@@ -45,7 +45,7 @@ its `.zip.sha256` companion. They are intended for delivery together. The
 archive contains the unchanged candidate directory contents, including the
 inner `candidate.json` and `SHA256SUMS`. It does not contain credentials,
 configuration, databases, models, or GPU drivers. The manifest still says
-`candidate-not-published` because the packages are not registry publications.
+`candidate-not-published` as a record of the build-time state, even after the exact npm bytes are published.
 
 ## Maintainer: explicit draft release only
 
@@ -75,7 +75,9 @@ replace an existing release asset or reuse a released tag for different bytes.
 No script in DEV-05B performs these write operations automatically. Public
 visibility depends on repository visibility; draft access depends on permissions.
 
-## Consumer: install without a source checkout
+## Consumer: offline installation without a source checkout
+
+For ordinary installation use the registry commands in [getting started](GETTING_STARTED.md). The archive workflow below is useful for offline installation or verifying a specific build.
 
 Once a release is explicitly published, download both assets from its trusted
 GitHub release page. For internal testing use the reviewed Actions artifact

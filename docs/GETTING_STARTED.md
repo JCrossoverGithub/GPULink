@@ -1,30 +1,23 @@
 # Getting started with GPULink
 
-GPULink is open-source, self-hostable software for connecting applications
-to approved GPU workloads. **There is no central, public GPULink cluster
-operated by the project that everyone connects to.** Individuals, teams, and
-organizations can run separate GPULink deployments with their own control
-planes, GPU workers, access policies, and credentials.
+GPULink connects applications to GPU workers managed by an operator. Run your own
+control plane and workers, or use a deployment your team has authorized you to
+access. Each deployment has its own endpoint, credentials and workload catalog.
 
-A developer can deploy and operate GPULink themselves, or connect an application
-to an existing deployment **only when that deployment's operator grants
-access**. The project's development machines and AWS reference environment are
-not a public GPU service.
+For a new local deployment, start with the [first GPU workload guide](FIRST_GPU_WORKLOAD.md).
 
-**Choose your role first.** Application developers, adapter authors, and GPU
-operators have different prerequisites and security responsibilities.
+Choose the guide for your role: [application developer](#1-application-developer--use-remote-gpu-compute),
+[adapter developer](#2-adapter-developer--author-a-workload), or [GPU operator](#3-gpu-operator--provide-the-execution-environment).
 
-This guide describes the accepted developer workflows through the
-October 20, 2026 installed-local diagnostic milestone (PR #25) and the
-separately validated two-machine CaptionLink integration. See the
-[capability status matrix](CAPABILITY_STATUS.md) for implemented, tested,
-published, and still-unproven boundaries. Neither milestone provides a
-general one-command cross-host installer or safe untrusted-code execution.
+The November 27 public preview provides registry-installed CLI and SDK packages.
+See the [capability status matrix](CAPABILITY_STATUS.md) and
+[release acceptance record](acceptance/public-preview-2026-11-27.md) for the
+verified distribution and deployment boundaries.
 
 For the November 25 installed batch preview and the guided Python author/operator
 workflow, see [your first external batch workload](DEVELOPER_BATCH_QUICKSTART.md).
 
-For a coordinated set of independently installable candidate packages, see
+For offline artifacts and maintainer release verification, see
 [distribution candidate installation](DISTRIBUTION_CANDIDATE.md) and
 [release delivery](RELEASE_DELIVERY.md).
 
@@ -32,13 +25,13 @@ For a complete bounded CUDA reference application, see the
 [standalone vector-search example](../examples/vector-search/README.md) and
 [physical acceptance record](acceptance/independent-vector-search-2026-11-25.md).
 
-For a local operator browser interface, see [GPULink Manager](CLI_PREVIEW_RELEASE.md#open-gpulink-manager), included in the matching CLI distribution candidate on Linux/WSL.
+For a local operator browser interface, see [GPULink Manager](CLI_PREVIEW_RELEASE.md#open-gpulink-manager), included in the published CLI on Linux/WSL.
 
 The November 26 [installed two-host Manager acceptance](acceptance/installed-manager-two-host-2026-11-26.md)
 verified the integrated distribution with physical CUDA and Manager drain/resume.
 For an operator setting up a new cluster on the supported WSL2 NAT path, follow
 [managed LAN onboarding](MANAGED_LAN_PREVIEW.md) in this order: install the
-matching candidate on both hosts; plan/apply server setup; launch Manager;
+matching CLI version on both hosts; plan/apply server setup; launch Manager;
 export and transfer an invitation; join on the GPU host (optionally `--name`);
 review and approve the intended adapter if needed; explicitly start the worker.
 Joining does not register a worker. The start step is when the GPU appears in
@@ -121,22 +114,29 @@ The SDK currently targets `net10.0` and is a **preview**, not a stable v1
 compatibility guarantee. See its [full README](../packages/gpulink-dotnet/GPULink.Client/README.md)
 for the precise contract and limitations.
 
-### TypeScript / Node.js (development SDK)
+<a name="typescript--nodejs-development-sdk"></a>
+
+### TypeScript / Node.js (published preview)
 
 [`@gpulink/client` `0.1.0`](../packages/gpulink-sdk/README.md) provides
-`openSession`, finite-job operations, and the authenticated v2 WebSocket relay.
-At this source checkpoint it is still marked `private: true`, targets Node.js
-24+, and has no accepted public npm release. Do **not** tell users to run
-`npm install @gpulink/client` as if public availability were verified. Its
-existing README and packaged external-consumer tests are the current
-integration references.
+finite jobs, `openSession` and authenticated WebSocket relay access on Node 24+.
+
+```sh
+npm install @gpulink/client@0.1.0
+```
+
+Configure `GPULINK_BASE_URL` and `GPULINK_CLIENT_TOKEN` privately for
+`GPULinkClient.fromEnv(process.env)`. See the
+[batch quickstart](DEVELOPER_BATCH_QUICKSTART.md) for a complete example.
 
 **Success for this role** means: an independent application uses only its
 packaged Client SDK and an authorized endpoint, receives workload output, and
 verifies remote session closure and lease/resource release. The consuming
 application does not import GPULink Core or worker internals.
 
-## 2. Adapter developer — implement a drill bit
+<a name="2-adapter-developer--implement-a-drill-bit"></a>
+
+## 2. Adapter developer — author a workload
 
 Adapter authors implement a workload against GPULink's versioned manifest and
 GLIP process protocol. You do **not** need to modify the scheduler, HTTP server,
@@ -149,8 +149,8 @@ Python echo implementation without a GPU or control plane, but currently
 requires Node.js 24+ to run the test tool:
 
 ```sh
-# From packages/gpulink-adapter-sdk in a GPULink source checkout:
-node bin/conformance.mjs -- python3 -I -S /absolute/path/to/echo-subprocess.py
+npm install @gpulink/adapter-sdk@0.1.0
+npx --no-install gpulink-adapter-conformance -- python3 -I -S /absolute/path/to/echo-subprocess.py
 ```
 
 Packaging produces an **operator-review candidate**, not an auto-installed
@@ -178,19 +178,22 @@ consumers, nor a universal production deployment prescription.**
 Begin with [architecture](ARCHITECTURE.md),
 [production operations](PRODUCTION_OPERATIONS.md), and
 [approved adapter packaging](developer-platform/operator-trusted-adapter-package-workflow.md).
-For separate Host A/Host B operation, see the [independent two-host operator design contract](INDEPENDENT_TWO_HOST_OPERATOR.md). It is not an accepted installer or permission to start a worker.
+For separate hosts, use the [installed remote-worker guide](REMOTE_WORKER_PREVIEW.md) or the [managed LAN guide](MANAGED_LAN_PREVIEW.md). The [two-host design contract](INDEPENDENT_TWO_HOST_OPERATOR.md) preserves the earlier offline policy checkpoint.
 
 ### Offline configuration preflight
 
-From a GPULink source checkout with Node.js 24+, installed repository
-dependencies, and the appropriate process-local configuration, run:
+Install the CLI using a user-owned npm prefix (see the
+[CLI installation guide](CLI_PREVIEW_RELEASE.md)), then initialize a new local
+profile and validate its configuration:
 
 ```sh
-npm run cli -- doctor control-plane
-npm run cli -- doctor worker
+npm install -g @gpulink/cli@0.1.0
+gpulink init local
+gpulink doctor control-plane
+gpulink doctor worker
 ```
 
-Each role is checked separately. The first candidate validates environment
+Each role is checked separately. The CLI validates environment
 configuration and optional catalog-file readability without connecting to a
 control plane, printing credential values, installing anything, or touching a
 GPU. A passing result **does not** certify TLS trust, live connectivity,
@@ -222,25 +225,21 @@ authentication, or multi-tenant code isolation.
 ## Known developer-experience gaps
 
 - A guided, installed WSL2 LAN onboarding path is accepted with the project operator; unassisted newcomer onboarding and other network/platform paths remain outstanding.
-- The TypeScript and Adapter SDKs need publication and compatibility decisions.
+- All three npm packages are public pre-v1 previews; stable API compatibility remains a future decision.
 - The independently published .NET Client SDK is still a preview.
-- Independent first-use conformance should be executable from a clean external
-  application directory without GPULink source imports.
+- Clean registry installation and adapter authoring passed with the project operator; unassisted third-party onboarding is still open.
 - Reduce manual transfer, approval and onboarding friction without weakening the accepted cross-host setup/teardown or explicit execution authorization.
 
-Treat these as separate implementation targets. Do not invent a universal
-single-command installer before deciding which role, trust boundary and host
-runtime it is actually installing.
+These remain separate engineering and adoption targets.
 
-## Local GPU operator preview — source-built CLI
+<a name="local-gpu-operator-preview--source-built-cli"></a>
 
-For a local, independently owned development installation, build a private
-CLI artifact in a GPULink source checkout with Node.js 24+ (`npm ci`, then
-`npm run build:cli`). Install its tarball in a **separate** consumer
-directory and use the resulting `gpulink` command. See
-[CLI distribution and lifecycle](CLI_DISTRIBUTION.md) for the precise
-commands and platform boundaries. `gpulink init local` creates a private
-localhost configuration; it does not start services or enroll a worker.
+## Local GPU operator preview — installed CLI
+
+Install `@gpulink/cli@0.1.0` as above. See
+[CLI distribution and lifecycle](CLI_DISTRIBUTION.md) for platform boundaries.
+`gpulink init local` creates a private localhost configuration; it does not
+start services or enroll a worker.
 
 On Linux (including WSL), operators can deliberately start the managed
 local control plane and, with `--accept-assigned-work`, a GPU worker.

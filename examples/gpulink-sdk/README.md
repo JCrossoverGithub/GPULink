@@ -1,6 +1,6 @@
 # External applications using `@gpulink/client`
 
-These examples use **only the public SDK package**; they do not import any GPULink scheduler, database, worker, or control-plane source. Install a separately built `@gpulink/client` tarball in your own Node.js 24+ ESM project, then use:
+These examples use **only the public SDK package**; they do not import any GPULink scheduler, database, worker, or control-plane source. Copy the example files to your own Node.js 24+ ESM project and run `npm install @gpulink/client@0.1.0`. The finite-job example tests submission, idempotency and cancellation against a disposable queue with no eligible worker; do not run it against an active worker. The streaming example requires a matching, authorized `speech.streaming` adapter that implements the example's echo behavior and an immediately allocated session; it is a CI fixture, not a production ASR client. Then use:
 
 ```sh
 export GPULINK_BASE_URL='https://your-gpulink-control-plane.example'

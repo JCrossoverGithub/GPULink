@@ -1,19 +1,21 @@
-# Your first external batch workload (private preview)
+# Your first external batch workload (public preview)
 
 This guide assumes an operator has a GPULink server and Linux/WSL NVIDIA worker
 installation. For a new deployment see [managed LAN onboarding](MANAGED_LAN_PREVIEW.md)
-and [remote worker setup](REMOTE_WORKER_PREVIEW.md). Obtain the matching private
-Adapter SDK and Client SDK tarballs from the operator or reviewed build. They
-are not public npm releases. Node.js 24+ is required for the developer tools.
+and [remote worker setup](REMOTE_WORKER_PREVIEW.md). Install the matching published Adapter SDK and Client SDK from npm. Node.js 24+ is required for the developer tools.
 Python is an example workload language, not a platform requirement.
 
 ## 1. Author: write a function
 
-In an independent directory, install the Adapter SDK from the tarball:
+In a new independent directory, install the Adapter SDK from npm (run the commands in that directory):
 
 ```sh
 npm init -y
-npm install --offline --ignore-scripts --no-audit --no-fund /absolute/gpulink-adapter-sdk-0.1.0.tgz
+npm install @gpulink/adapter-sdk@0.1.0
+```
+
+<!-- gpulink-example: batch-init -->
+```sh
 ./node_modules/.bin/gpulink-adapter-package init-batch --out author --type external.batch.scale
 ```
 
@@ -22,6 +24,7 @@ GLIP v1 framing. The generated function is explicitly a CPU echo starter, not a
 CUDA test. Replace only the function with your workload. For example, with an
 operator-provided CUDA-enabled PyTorch environment:
 
+<!-- gpulink-example: batch-function -->
 ```python
 def run(payload):
     import math
@@ -47,21 +50,28 @@ selects the GPU. A workload must synchronize GPU work before returning, may
 not leave independent descendants, and must accept/return JSON objects no
 larger than 32 KiB. Pack your source; this does not execute or approve it:
 
+<!-- gpulink-example: batch-pack -->
 ```sh
 ./node_modules/.bin/gpulink-adapter-package pack --source "$PWD/author" --out "$PWD/bundle"
 ```
 
-Transfer the two-file `bundle` directory to the GPU operator through a trusted
+<!-- gpulink-example: batch-inspect -->
+```sh
+./node_modules/.bin/gpulink-adapter-package inspect --bundle "$PWD/bundle"
+```
+
+Transfer the portable `bundle` directory to the GPU operator through a trusted
 channel. A hash check is integrity evidence, not proof of publisher identity.
 
 ## 2. Operator: review and approve
 
-On the Linux/WSL GPU host, install the matching private Adapter SDK. With the
-bundle and a known, trusted Python runtime available:
+On the Linux/WSL GPU host, install `@gpulink/adapter-sdk@0.1.0` into an independent project. With the
+bundle and a known, trusted Python runtime available, set `PYTHON` to its absolute interpreter path (for example `/absolute/venv/bin/python`):
 
+<!-- gpulink-example: batch-prepare -->
 ```sh
 ./node_modules/.bin/gpulink-adapter-package prepare-python \
-  --bundle ./bundle --interpreter /absolute/venv/bin/python --out ./review
+  --bundle "$PWD/bundle" --interpreter "$PYTHON" --out "$PWD/review"
 ```
 
 For WSL installations whose runtime requires it, add the explicit option
@@ -91,13 +101,19 @@ direct executable and system Python package commands remain unchanged.
 
 ## 3. Application developer: submit and retrieve
 
-On the application host, install the matching private Client SDK tarball in
+On the application host, run `npm install @gpulink/client@0.1.0` in
 an independent Node application. Use the operator-provided client endpoint
 and client-role secret (not admin or worker credentials). HTTPS must be
-trusted; HTTP is allowed only on exact loopback. For this example:
+trusted; HTTP is allowed only on exact loopback. Configure `GPULINK_BASE_URL`
+and `GPULINK_CLIENT_TOKEN` privately. Save this as `submit.mjs` and run
+`node submit.mjs YOUR_REQUEST_KEY`. Persist the request key before submission;
+reuse it only for retries of that logical request:
 
+<!-- gpulink-example: batch-submit -->
 ```js
 import { GPULinkClient } from '@gpulink/client';
+const requestKey = process.argv[2];
+if (!requestKey) throw new Error('Provide a persisted request key');
 const client = GPULinkClient.fromEnv(process.env);
 const {job} = await client.submitJob({
   projectId: 'scale-example',
@@ -105,18 +121,27 @@ const {job} = await client.submitJob({
   constraints: {gpuCount: 1, minVramMiB: 1000},
   payload: {values: [1, 2, 3]},
   maxAttempts: 1,
-}, {idempotencyKey: 'scale-request-001'});
+}, {idempotencyKey: requestKey});
 console.log(job.id);
 ```
 
 Save the returned ID. In a later invocation of the application, call
 `client.getJob(jobId)` to retrieve status and result, or wait for a terminal
-record without using the operator CLI:
+record without using the operator CLI. Save this as `wait.mjs` and run
+`node wait.mjs JOB_ID` with the returned ID:
 
+<!-- gpulink-example: batch-wait -->
 ```js
+import assert from 'node:assert/strict';
+import { GPULinkClient } from '@gpulink/client';
+const jobId = process.argv[2];
+if (!jobId) throw new Error('Provide the submitted job ID');
+const client = GPULinkClient.fromEnv(process.env);
 const terminal = await client.waitForJob(jobId, { timeoutMs: 60_000 });
-if (terminal.status === 'succeeded') console.log(terminal.result);
-else console.error('Job ended:', terminal.status);
+if (terminal.status !== 'succeeded') throw new Error(`Job ended: ${terminal.status}`);
+assert.deepEqual(terminal.result.values, [2, 4, 6]);
+assert.equal(terminal.result.backend, 'pytorch-cuda');
+console.log(terminal.result);
 ```
 
 A wait timeout (`JOB_WAIT_TIMEOUT`) or caller abort stops observation only;
@@ -132,5 +157,5 @@ the application to remain connected while the job runs.
 The existing [batch contract](EXTERNAL_BATCH_PREVIEW.md) and
 [cleanup recovery](JOB_CLEANUP_SAFETY.md) govern cancellation and leases.
 This is a trusted self-hosted preview, not a hostile-code sandbox. Native
-Windows worker lifecycle, public package distribution, independent newcomer
+Windows worker lifecycle, independent newcomer
 acceptance and arbitrary multi-file dependency packaging are not claimed.
