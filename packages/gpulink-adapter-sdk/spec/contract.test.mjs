@@ -21,7 +21,10 @@ const bad = code => e => e instanceof AdapterCompatibilityError && e.code===code
 test('SDK version declaration matches npm package; stable pre-v1 surface is immutable', async () => {
   const pkg=JSON.parse(await readFile(fileURLToPath(new URL('../package.json',import.meta.url)),'utf8'));
   assert.equal(c.sdkVersion,pkg.version);
-  assert.equal(pkg.private,true,'pre-v1 SDK must not become public without release review');
+  assert.equal(pkg.private,false,'reviewed SDK must be publishable');
+  assert.equal(pkg.publishConfig.access,'public');
+  assert.equal(pkg.publishConfig.registry,'https://registry.npmjs.org/');
+  assert.equal(pkg.publishConfig.tag,'preview');
   assert.equal(pkg.exports['./contract'],'./src/contract.mjs');
   assert.equal(c.stability,'experimental-pre-v1');
   assert.ok(Object.isFrozen(c) && Object.isFrozen(c.ipc) && Object.isFrozen(c.completionModes));

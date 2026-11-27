@@ -29,14 +29,21 @@ test('capability status has independently resolvable local evidence references',
   }
 });
 
-test('source SDK publication flags agree with the documented pre-v1 boundary', () => {
-  for (const name of ['gpulink-sdk', 'gpulink-adapter-sdk']) {
-    const pkg = JSON.parse(read(`packages/${name}/package.json`));
-    assert.equal(pkg.private, true, `${name} must not be described as public npm`);
+test('source SDK publication flags agree with the documented pre-v1 preview boundary', () => {
+  assert.equal(JSON.parse(read('package.json')).private, true, 'root monorepo must remain private');
+  for (const [directory, name] of [['gpulink-sdk', '@gpulink/client'], ['gpulink-adapter-sdk', '@gpulink/adapter-sdk']]) {
+    const pkg = JSON.parse(read(`packages/${directory}/package.json`));
+    assert.equal(pkg.name, name);
+    assert.equal(pkg.private, false, `${name} must be publishable`);
+    assert.equal(pkg.version, '0.1.0');
+    assert.equal(pkg.license, 'Apache-2.0');
+    assert.equal(pkg.publishConfig.access, 'public');
+    assert.equal(pkg.publishConfig.registry, 'https://registry.npmjs.org/');
+    assert.equal(pkg.publishConfig.tag, 'preview');
   }
   const status = read('docs/CAPABILITY_STATUS.md');
-  assert.match(status, /TypeScript Client SDK[^\n]+\*\*private\*\*/u);
-  assert.match(status, /Adapter SDK[^\n]+\*\*private\*\*/u);
+  assert.match(status, /TypeScript Client SDK[^\n]+`@gpulink\/client` pre-v1/u);
+  assert.match(status, /Adapter SDK[^\n]+`@gpulink\/adapter-sdk` pre-v1/u);
 });
 
 test('live GPU acceptance stays explicitly opted in and is not a CI step', () => {

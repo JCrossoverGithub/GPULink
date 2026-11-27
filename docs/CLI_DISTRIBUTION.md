@@ -1,6 +1,6 @@
 # GPULink CLI preview — package and configuration contract
 
-**Status:** private local and Linux server-installation preview. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds a versioned dependency-bundled artifact for offline consumer installation; publication requires a separate release decision. Not an npm registry release, OS installer, production service supervisor, or automatic hardware setup.
+**Status:** local and Linux server-installation preview. The [CLI release candidate workflow](CLI_PREVIEW_RELEASE.md) builds a versioned dependency-bundled artifact for offline consumer installation; publication requires a separate release decision. Candidate builds do not publish to npm or install GPU drivers.
 
 ## Roles and boundaries
 
@@ -35,7 +35,7 @@ npm install --prefix /tmp/gpulink-cli-consumer ./data/cli-artifacts/gpulink-cli-
 
 On Windows use a private consumer directory and the npm-generated
 `node_modules\\.bin\\gpulink.cmd` shim. This is an installer acceptance
-candidate, not a globally published command yet. To invoke `gpulink` by name,
+candidate built from source, separate from registry publication. To invoke `gpulink` by name,
 place the consumer directory's `node_modules/.bin` on your `PATH` or install
 the tarball to a user-owned npm prefix. **Do not elevate privileges.**
 

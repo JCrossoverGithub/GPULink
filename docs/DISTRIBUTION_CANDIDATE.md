@@ -1,6 +1,6 @@
 # Coordinated distribution candidate (DEV-05A)
 
-GPULink's existing `CLI preview candidate` workflow builds a **private, nonpublished candidate** from one Git revision. The four packages remain separate products. The combined artifact is a convenient delivery and validation unit, not a combined runtime, universal installer, or registry release.
+GPULink's existing `CLI preview candidate` workflow builds a **nonpublished registry-ready candidate** from one Git revision. The four packages remain separate products. The combined artifact is a convenient delivery and validation unit, not a combined runtime, universal installer, or registry release.
 
 | Package | Candidate version | Purpose and prerequisites |
 | --- | --- | --- |

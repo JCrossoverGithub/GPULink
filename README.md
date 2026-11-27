@@ -64,7 +64,7 @@ or a generally available GPU service. See
 **Application and SDK evidence:** jobs, streaming sessions, and the
 client/adapter contracts are implemented. The .NET Client SDK has a
 published **preview**; the TypeScript Client SDK and Adapter SDK are still
-private, pre-v1 tooling. An operator-trusted CaptionLink Multitalker
+pre-v1 tooling. An operator-trusted CaptionLink Multitalker
 integration was accepted across two machines on October 20, 2026; that
 is not independently reproducible operator onboarding or an untrusted-code
 sandbox. See [getting started](docs/GETTING_STARTED.md).

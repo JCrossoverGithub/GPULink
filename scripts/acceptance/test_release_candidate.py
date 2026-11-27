@@ -27,7 +27,7 @@ class CandidateTests(unittest.TestCase):
         self.revision = r.git('rev-parse', 'HEAD').decode().strip()
         self.version, self.dotnet, self.client, self.adapter = r.contract()
         self.cli_name = f'gpulink-cli-{self.version}.tgz'
-        (self.cli / self.cli_name).write_bytes(b'fixture CLI bytes, not an executable package')
+        self.make_cli()
         data = r.describe(self.cli / self.cli_name)
         meta = {'schemaVersion': 1, 'package': '@gpulink/cli', 'version': self.version, 'artifact': self.cli_name,
                 'sourceRevision': self.revision, 'baseRevision': self.revision, 'workingTreeClean': True,
@@ -41,10 +41,44 @@ class CandidateTests(unittest.TestCase):
             for name in ['lib/net10.0/GPULink.Client.dll', 'README.md', 'LICENSE']:
                 z.writestr(name, 'synthetic fixture only')
 
+    def make_cli(self, changes=None, extra=None):
+        root = r.json_file(r.ROOT / 'package.json')
+        meta = {**self.client, 'name': '@gpulink/cli', 'version': self.version,
+                'dependencies': root['dependencies'], 'bundleDependencies': list(root['dependencies']),
+                'bin': {'gpulink': './src/cli/main.mjs'}, 'files': ['src', 'manager', 'LICENSE', 'README.md']}
+        meta.pop('scripts', None)
+        meta.update(changes or {})
+        files = {'package.json': json.dumps(meta).encode(), 'LICENSE': r.git('show', 'HEAD:LICENSE'),
+                 'README.md': b'fixture', 'src/cli/main.mjs': b'fixture', 'src/control-plane/main.mjs': b'fixture',
+                 'src/worker/main.mjs': b'fixture', 'manager/public/index.html': b'fixture',
+                 **{'node_modules/' + name + '/package.json': b'{}' for name in root['dependencies']}}
+        if extra:
+            files[extra] = b'fixture'
+        with tarfile.open(self.cli / self.cli_name, 'w:gz') as archive:
+            for name, data in files.items():
+                member = tarfile.TarInfo('package/' + name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+
+    def test_cli_private_metadata_rejected(self):
+        self.make_cli({'private': True})
+        with self.assertRaisesRegex(ValueError, 'CLI registry metadata mismatch'):
+            r.validate_cli(self.cli / self.cli_name, self.version)
+
+    def test_cli_unexpected_member_rejected(self):
+        self.make_cli(extra='config/credentials.json')
+        with self.assertRaisesRegex(ValueError, 'Unexpected CLI package contents'):
+            r.validate_cli(self.cli / self.cli_name, self.version)
+
+    def test_cli_wrong_registry_rejected(self):
+        self.make_cli({'publishConfig': {**r.PUBLIC_CONFIG, 'registry': 'https://example.invalid/'}})
+        with self.assertRaisesRegex(ValueError, 'CLI registry metadata mismatch'):
+            r.validate_cli(self.cli / self.cli_name, self.version)
+
     def make_sdk(self, kind, meta, extra=None):
         with tarfile.open(self.sdk / f'gpulink-{kind}-{self.version}.tgz', 'w:gz') as archive:
             for name in sorted(r.SDK_FILES[kind] | ({extra} if extra else set())):
-                data = json.dumps(meta).encode() if name == 'package.json' else b'fixture'
+                data = json.dumps(meta).encode() if name == 'package.json' else (r.git('show', 'HEAD:LICENSE') if name == 'LICENSE' else b'fixture')
                 member = tarfile.TarInfo('package/' + name)
                 member.size = len(data)
                 archive.addfile(member, io.BytesIO(data))
@@ -81,8 +115,8 @@ class CandidateTests(unittest.TestCase):
             self.assemble()
         self.assertFalse(self.output.exists())
 
-    def test_public_sdk_metadata_rejected(self):
-        self.make_sdk('adapter-sdk', {**self.adapter, 'private': False})
+    def test_private_sdk_metadata_rejected(self):
+        self.make_sdk('adapter-sdk', {**self.adapter, 'private': True})
         with self.assertRaisesRegex(ValueError, 'metadata mismatch'):
             self.assemble()
         self.assertFalse(self.output.exists())

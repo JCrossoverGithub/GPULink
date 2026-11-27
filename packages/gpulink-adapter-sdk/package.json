@@ -1,7 +1,7 @@
 {
   "name": "@gpulink/adapter-sdk",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "Pre-v1 independent GLIP adapter conformance, package tooling and compatibility contract",
   "type": "module",
   "engines": {
@@ -22,7 +22,22 @@
   "files": [
     "bin/",
     "src/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JCrossoverGithub/GPULink.git",
+    "directory": "packages/gpulink-adapter-sdk"
+  },
+  "homepage": "https://gpulink.dev/",
+  "bugs": {
+    "url": "https://github.com/JCrossoverGithub/GPULink/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "preview"
+  }
 }

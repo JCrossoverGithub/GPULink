@@ -37,7 +37,7 @@ try {
   mkdirSync(dest, {mode: 0o700});
   output = dest;
   scratch = mkdtempSync(path.join(os.tmpdir(), 'gpl-release-'));
-  const stage = prepareCliPackage(root, path.join(scratch, 'package'));
+  const stage = prepareCliPackage(root, path.join(scratch, 'package'), {registryCandidate: true});
   const pkgFile = path.join(stage, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgFile, 'utf8'));
   // Reuse exactly the checked-in dependency graph. Bundle it for a network-free consumer install.

@@ -15,7 +15,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 | Capability | Implemented | Accepted evidence | Distribution / current limit |
 | --- | --- | --- | --- |
-| Versioned CLI distribution | Yes | PR #30 (November 25): Node 24 local acceptance, Linux/Windows package CI passed | Private downloadable CI candidate; not a registry release |
+| Versioned CLI distribution | Yes | PR #30 (November 25): Node 24 local acceptance, Linux/Windows package CI passed | Downloadable CI candidate; registry availability is verified separately |
 | Linux server profile with operator-managed HTTPS ingress | Yes | PR #31 (November 25): installed Linux server lifecycle and real local HTTPS acceptance, all eight CI checks passed | Single loopback backend, separately configured proxy; no public TLS provisioning |
 | Managed remote worker profile | Yes | [PR #32 acceptance](acceptance/installed-remote-worker-acceptance-2026-11-25.md) (November 25): installed cross-host HTTPS diagnostic, drain, stop, offline and same-identity rejoin; corrected commit CI passed | Trusted worker-role bundle, Linux/NVIDIA diagnostics only; no one-time invite or per-worker revocation |
 | Scheduler, leases, workers and finite GPU jobs | Yes | Physical fleet, AWS/K3s history (October 13); fresh installed local diagnostic (October 20) | Approved jobs only; not raw shell or pooled VRAM |
@@ -25,8 +25,8 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 | PostgreSQL multi-replica control plane and disaster recovery | Yes | October 13 AWS/K3s Phase 4E and earlier staging acceptance | Historical environment evidence; clean-room external operator procedure still missing |
 | Session scheduling and authenticated WebSocket relay | Yes | Core contract tests and operator-trusted two-machine CaptionLink integration (October 20) | Adapter/model readiness is distinct from relay readiness |
 | .NET Client SDK | Yes | Cross-platform SDK CI and CaptionLink two-machine inference | NuGet `GPULink.Client` **0.1.0-preview.1**, .NET 10, not stable API |
-| TypeScript Client SDK | Yes | Build/contract/external-consumer tests | `@gpulink/client` **private**, pre-v1, Node.js 24+; not a verified public npm release |
-| Adapter SDK and pinned subprocess packaging | Yes | Echo conformance, reviewable packaging, independently approved adapters | `@gpulink/adapter-sdk` **private**, pre-v1; approved subprocess is **not** a hostile-code sandbox |
+| TypeScript Client SDK | Yes | Build/contract/external-consumer tests | `@gpulink/client` pre-v1, Node.js 24+; not a verified public npm release |
+| Adapter SDK and pinned subprocess packaging | Yes | Echo conformance, reviewable packaging, independently approved adapters | `@gpulink/adapter-sdk` pre-v1; approved subprocess is **not** a hostile-code sandbox |
 | Visual operations console | Yes (installed C+ Manager) | [DEV-07F physical acceptance](acceptance/installed-manager-two-host-2026-11-26.md): private package, live GPU telemetry, job placement and drain/resume, PRs #42–#48 | Local operator boundary; guarded recovery tested in synthetic fixture; no public multi-user administration |
 | Independent two-host operator deployment | Yes (manual operator-guided packaged path) | October 24 source-checkout acceptance; November 25 PR #32 packaged server/worker diagnostic and lifecycle acceptance | Manual ingress/enrollment; mixed protocol-compatible artifact revisions; no independent newcomer acceptance |
 | Managed LAN onboarding | Yes | PR #33 (November 25): physical WSL2 NAT provisioning, enrollment, remote diagnostic, durable result and automatic cleanup; 8 CI checks passed | Optional WSL2 NAT private LAN foreground session; no generalized native service installer or automatic in-place IP repair |
@@ -47,7 +47,7 @@ instructions. Keep this matrix synchronized when a new acceptance gate merges.
 
 1. **Packaged independent two-host onboarding:** The October 24 operator-guided source-checkout diagnostic passed. DEV-01 delivered a versioned installable CLI candidate; DEV-02 delivered the installed server profile. DEV-03 delivered the [remote worker preview](REMOTE_WORKER_PREVIEW.md) and passed guided physical acceptance (PR #32). The [managed LAN onboarding preview](MANAGED_LAN_PREVIEW.md) passed physical acceptance in PR #33. Version upgrades/rollback and independent newcomer acceptance remain outstanding.
 2. **Disposable PostgreSQL CI acceptance:** job cleanup gate passed in PR #35; additional optional database integration suites remain separately scoped.
-3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; do not describe `private` npm packages as published.
+3. **SDK releases and compatibility:** decide supported OS/runtime matrix, provenance and update policy; verify registry availability before describing npm packages as published.
 4. **Adapter portability and isolation:** DEV-06 accepted an independently packaged, team-authored non-ASR vector-search application; external newcomer acceptance and broader runtime portability remain outstanding. Keep trusted operator approval separate from claims of arbitrary-code sandboxing.
 5. **Operator upgrade / rollback and lifecycle ownership:** verify installation migration and crash recovery outside the original deployment, rather than extrapolating the local developer preview into production supervision.
 

@@ -144,7 +144,7 @@ or .NET/TypeScript Client SDK for each application-specific workload.
 
 The experimental [`@gpulink/adapter-sdk`](../packages/gpulink-adapter-sdk/README.md)
 contains echo-profile conformance and an offline single-file packaging flow.
-It is **private and pre-v1**. The author-side conformance CLI can test a trusted
+It is **pre-v1**. The author-side conformance CLI can test a trusted
 Python echo implementation without a GPU or control plane, but currently
 requires Node.js 24+ to run the test tool:
 

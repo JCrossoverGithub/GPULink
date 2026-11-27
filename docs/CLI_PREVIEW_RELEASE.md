@@ -10,7 +10,7 @@ The `CLI preview candidate` GitHub Actions workflow creates `gpulink-cli-candida
 sha256sum -c SHA256SUMS
 ```
 
-On Windows PowerShell compare `Get-FileHash .\gpulink-cli-0.1.0.tgz -Algorithm SHA256` to `SHA256SUMS` from the trusted run. Use the filename supplied by `release.json`. The root monorepo and CLI package remain private to prevent inadvertent npm publication.
+On Windows PowerShell compare `Get-FileHash .\gpulink-cli-0.1.0.tgz -Algorithm SHA256` to `SHA256SUMS` from the trusted run. Use the filename supplied by `release.json`. The root monorepo and development CLI build remain private. The explicit release build carries public registry metadata; its workflow never publishes.
 
 For the coordinated CLI, Client SDK, Adapter SDK and .NET candidate, see
 [distribution candidate installation](DISTRIBUTION_CANDIDATE.md).
