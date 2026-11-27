@@ -1,6 +1,6 @@
 # GPULink Adapter SDK — external conformance candidate
 
-**Status: DP1/DP3 development candidate, not a published or stable v1 Adapter SDK.**
+**Status: pre-v1 Adapter SDK preview.**
 
 This initial, dependency-free author tool checks the existing **GLIP v1
 Python echo profile**, independently of GPULink Core imports. It does not
@@ -26,8 +26,7 @@ credentials or control-plane configuration. **Never use this CLI to run
 untrusted executable code.** It is not a sandbox or a safety validator.
 
 Run `node --test spec/echo-conformance.test.mjs` to test this candidate kit.
-This package is intentionally marked `private: true` pending v1 contract and
-release review. The existing operator-approved catalog remains the way an
+Registry preview publication is performed separately from candidate builds. The existing operator-approved catalog remains the way an
 operator configures an adapter for the worker.
 
 ## Exact existing protocol boundaries

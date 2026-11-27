@@ -102,10 +102,11 @@ Do not point a new version at production data until compatibility and restore
 have been validated; never run two control planes on the same database. Keep
 client dependency versions pinned and update the application independently.
 
-Registry publication is not part of this increment. Confirm npm scope ownership,
-package identity and publishing rights with the registry before changing private
-flags or choosing public versions; a missing registry search result is not proof
-of ownership. Confirm NuGet version availability and publisher authorization
+Registry publication is a separate maintainer action. The release build targets
+public npm packages with the `preview` dist-tag; the monorepo stays private.
+Confirm ownership of the `gpulink` npm scope and publishing rights before
+publication. A missing registry search result is not proof of ownership. Publish
+only the exact verified tarballs from the reviewed main distribution run. Confirm NuGet version availability and publisher authorization
 before using the existing separately authorized NuGet workflow. Do not reuse a
 published version for different bytes. Checksums and source revision metadata
 are not signed provenance or independently authenticated attestations.

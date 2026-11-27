@@ -1,7 +1,7 @@
 {
   "name": "@gpulink/client",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "TypeScript SDK for the public GPULink application API",
   "type": "module",
   "engines": {
@@ -17,7 +17,8 @@
   },
   "files": [
     "dist/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -25,5 +26,20 @@
   },
   "devDependencies": {
     "typescript": "5.9.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JCrossoverGithub/GPULink.git",
+    "directory": "packages/gpulink-sdk"
+  },
+  "homepage": "https://gpulink.dev/",
+  "bugs": {
+    "url": "https://github.com/JCrossoverGithub/GPULink/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "preview"
   }
 }

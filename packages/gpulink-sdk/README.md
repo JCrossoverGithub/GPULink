@@ -12,7 +12,7 @@ Experimental application client for GPULink's existing `/v1` HTTP contract.
   bindings remain future work.
 
 Run `npm ci --ignore-scripts && npm run build && npm test` inside this package.
-This package is private until compatibility and security acceptance are complete.
+This is the pre-v1 Client SDK. Registry preview publication is performed separately from candidate builds.
 
 ## Durable job quickstart (private preview)
 
@@ -156,5 +156,5 @@ try {
   serialize thrown application errors or credentials. `lastError` and `errors`
   allow later subscribers to inspect up to 16 buffered SDK diagnostics. This
   is not a replacement for application logs or workload-level ACKs.
-- The SDK is experimental/private; `openSession()` does not yet certify a
+- The SDK is a pre-v1 preview; `openSession()` does not yet certify a
   public, semver-stable Developer Platform v1 API.

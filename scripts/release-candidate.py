@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = 'candidate.json'
 SUMS = 'SHA256SUMS'
 SDK_FILES = {
-    'client': {'package.json', 'README.md', 'dist/index.js', 'dist/index.d.ts',
+    'client': {'package.json', 'README.md', 'LICENSE', 'dist/index.js', 'dist/index.d.ts',
                'dist/data-plane.js', 'dist/data-plane.d.ts', 'dist/session.js', 'dist/session.d.ts'},
-    'adapter-sdk': {'package.json', 'README.md', 'bin/conformance.mjs', 'bin/package.mjs',
+    'adapter-sdk': {'package.json', 'README.md', 'LICENSE', 'bin/conformance.mjs', 'bin/package.mjs',
                     'src/batch-starter.py', 'src/contract.mjs', 'src/echo-conformance.mjs',
                     'src/package-workflow.mjs'},
 }
@@ -46,11 +46,23 @@ def describe(path):
     return {'sha256': digest(data), 'bytes': len(data)}
 
 
+PUBLIC_CONFIG = {'access': 'public', 'registry': 'https://registry.npmjs.org/', 'tag': 'preview'}
+
+
+def public_metadata(metadata):
+    return (metadata.get('private') is False and metadata.get('license') == 'Apache-2.0' and
+            metadata.get('publishConfig') == PUBLIC_CONFIG and
+            metadata.get('repository', {}).get('url') == 'git+https://github.com/JCrossoverGithub/GPULink.git' and
+            metadata.get('homepage') == 'https://gpulink.dev/' and
+            metadata.get('bugs') == {'url': 'https://github.com/JCrossoverGithub/GPULink/issues'})
+
+
 def contract():
     root = json_file(ROOT / 'package.json')
     client = json_file(ROOT / 'packages/gpulink-sdk/package.json')
     adapter = json_file(ROOT / 'packages/gpulink-adapter-sdk/package.json')
-    require(root['private'] and client['private'] and adapter['private'], 'Private npm boundary changed')
+    require(root.get('private') is True, 'Private monorepo boundary changed')
+    require(public_metadata(client) and public_metadata(adapter), 'SDK registry metadata mismatch')
     require(root['version'] == client['version'] == adapter['version'], 'npm candidate version mismatch')
     require(client['name'] == '@gpulink/client' and adapter['name'] == '@gpulink/adapter-sdk', 'SDK identity mismatch')
     project = ET.parse(ROOT / 'packages/gpulink-dotnet/GPULink.Client/GPULink.Client.csproj')
@@ -67,9 +79,36 @@ def validate_sdk(path, kind, expected):
         require(len(names) == len(members) and all(m.isfile() for m in members), 'Unexpected SDK archive member type or duplicate')
         require(names == {'package/' + name for name in SDK_FILES[kind]}, f'Unexpected {kind} package contents')
         metadata = json.load(archive.extractfile('package/package.json'))
-        require(metadata == expected and metadata['private'] is True, f'{kind} package metadata mismatch')
+        require(metadata == expected and public_metadata(metadata), f'{kind} package metadata mismatch')
         require(not metadata.get('dependencies'), f'{kind} now requires dependencies; review offline install contract')
         require(all(m.size > 0 for m in members), f'Empty {kind} package member')
+        require(archive.extractfile('package/LICENSE').read() == git('show', 'HEAD:LICENSE'), 'SDK license mismatch')
+
+
+def validate_cli(path, version):
+    root = json_file(ROOT / 'package.json')
+    with tarfile.open(path, 'r:gz') as archive:
+        members = archive.getmembers()
+        names = {m.name for m in members}
+        require(len(names) == len(members) and all(m.isfile() for m in members), 'Unexpected CLI member type or duplicate')
+        require(all(n.startswith('package/') and not any(part in ('', '.', '..') for part in n.split('/'))
+                    and '\\' not in n for n in names), 'Unsafe CLI archive path')
+        require(all(n in {'package/package.json', 'package/LICENSE', 'package/README.md'} or
+                    n.startswith(('package/src/', 'package/manager/', 'package/node_modules/'))
+                    for n in names), 'Unexpected CLI package contents')
+        metadata = json.load(archive.extractfile('package/package.json'))
+        require(public_metadata(metadata) and metadata.get('name') == '@gpulink/cli' and
+                metadata.get('version') == version and metadata.get('engines') == root['engines'] and
+                metadata.get('dependencies') == root['dependencies'] and
+                metadata.get('bundleDependencies') == list(root['dependencies']) and
+                metadata.get('bin') == {'gpulink': './src/cli/main.mjs'} and
+                metadata.get('files') == ['src', 'manager', 'LICENSE', 'README.md'] and
+                not metadata.get('scripts'), 'CLI registry metadata mismatch')
+        require(archive.extractfile('package/LICENSE').read() == git('show', 'HEAD:LICENSE'), 'CLI license mismatch')
+        require({'package/src/cli/main.mjs', 'package/src/control-plane/main.mjs',
+                 'package/src/worker/main.mjs', 'package/manager/public/index.html',
+                 *('package/node_modules/' + name + '/package.json' for name in root['dependencies'])} <= names,
+                'Incomplete CLI runtime or bundled dependencies')
 
 
 def paths(version, dotnet):
@@ -92,6 +131,7 @@ def inspect(directory, revision):
             'CLI candidate provenance or content mismatch')
     require((directory / 'cli/SHA256SUMS').read_text() ==
             f"{cli['sha256']}  {cli['artifact']}\n", 'CLI checksum record mismatch')
+    validate_cli(directory / names[0], version)
     validate_sdk(directory / names[3], 'client', client)
     validate_sdk(directory / names[4], 'adapter-sdk', adapter)
     subprocess.run([sys.executable, str(ROOT / 'packages/gpulink-dotnet/verify-package.py'),

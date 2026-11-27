@@ -16,7 +16,7 @@ export const managerRuntimeFiles = Object.freeze([
 ]);
 
 // Packaging is explicit and opt-in. Never npm-publish the private monorepo.
-export function prepareCliPackage(sourceRoot, outputRoot) {
+export function prepareCliPackage(sourceRoot, outputRoot, { registryCandidate = false } = {}) {
   const root = path.resolve(sourceRoot);
   const output = path.resolve(outputRoot);
   if (existsSync(output)) throw new Error("Staging destination already exists; nothing overwritten.");
@@ -59,7 +59,13 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
       name: "@gpulink/cli",
       version: original.version,
       description: "GPULink developer/operator CLI and matching Core runtime (preview)",
-      private: true, // local installable tarball; never silently publish
+      private: !registryCandidate,
+      ...(registryCandidate ? {
+        repository: { type: "git", url: "git+https://github.com/JCrossoverGithub/GPULink.git" },
+        homepage: "https://gpulink.dev/",
+        bugs: { url: "https://github.com/JCrossoverGithub/GPULink/issues" },
+        publishConfig: { access: "public", registry: "https://registry.npmjs.org/", tag: "preview" },
+      } : {}),
       type: "module",
       license: "Apache-2.0",
       engines: original.engines,
@@ -71,7 +77,8 @@ export function prepareCliPackage(sourceRoot, outputRoot) {
       "# @gpulink/cli — Developer preview\n\n" +
       "A self-contained GPULink CLI + matching Core source runtime for independently owned local and Linux server deployments. " +
       "Requires Node.js 24+. No daemon, GPU workload, TLS ingress, or cloud provisioning merely by installation. Optional explicit managed LAN setup is a WSL2 NAT preview. Run gpulink manager on the selected running Linux/WSL installation for local browser access; read-only by default.\n" +
-      "This artifact is private/nonpublished pending clean-machine release acceptance.\n");
+      (registryCandidate ? "Registry preview candidate. See https://gpulink.dev/ for installation and operating requirements.\n" :
+        "Private development artifact.\n"));
     if (!existsSync(path.join(output, "src/cli/main.mjs")) ||
         !existsSync(path.join(output, "src/control-plane/main.mjs")) ||
         !existsSync(path.join(output, "src/worker/main.mjs"))) {

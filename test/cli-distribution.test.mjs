@@ -68,6 +68,19 @@ test("a separate private CLI artifact contains the matching Core but excludes re
   assert.throws(() => prepareCliPackage(repo, dest), /already exists/);
 });
 
+test("explicit registry candidate keeps the root private and retains the runtime boundary", (t) => {
+  const { root, repo } = fixture(t);
+  const dest = path.join(root, "registry");
+  prepareCliPackage(repo, dest, {registryCandidate:true});
+  const pkg = JSON.parse(readFileSync(path.join(dest, "package.json"), "utf8"));
+  assert.equal(pkg.private, false);
+  assert.deepEqual(pkg.publishConfig, {access:"public", registry:"https://registry.npmjs.org/", tag:"preview"});
+  assert.equal(JSON.parse(readFileSync(path.join(repo,"package.json"),"utf8")).private,true);
+  assert.ok(!existsSync(path.join(dest,"manager","qa")));
+  assert.ok(!existsSync(path.join(dest,"test")));
+  assert.ok(!existsSync(path.join(dest,"scripts")));
+});
+
 test("packaging fails closed when private credentials appear under source", (t) => {
   const { root, repo } = fixture(t);
   writeFileSync(path.join(repo, "src", "unwanted.env"), "TOP_SECRET=not-for-publication\n");
